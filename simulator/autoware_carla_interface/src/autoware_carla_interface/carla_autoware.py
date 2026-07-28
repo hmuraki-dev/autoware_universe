@@ -354,21 +354,62 @@ class InitializeInterface(object):
 
     def _cleanup_sumo(self):
         """
-        Close the SUMO/TraCI connection, continuing on error.
+        Tear down the SUMO co-simulation, continuing on error at every step.
 
-        Step 3 scope only: closes the TraCI connection via
-        `SumoSimulation.close()`. Does NOT call
-        `SimulationSynchronization.close()`, which also resets CARLA world
-        settings and destroys synchronized actors - integrating that with
-        `autoware_carla_interface`'s own shutdown path is Step 7.
+        Step 7 (v0.5 section 2.13/3.11/3.12): integrates
+        `SimulationSynchronization`'s actor-destruction + TraCI-disconnect
+        behavior into `autoware_carla_interface`'s own cleanup path, instead
+        of calling `SimulationSynchronization.close()` directly. That method
+        has no per-step error handling: if destroying any single
+        synchronized actor raises, it would also skip the final
+        `self.sumo.close()` (`traci.close()`) call, leaking the TraCI
+        connection/process. Each step here is isolated so one failure cannot
+        prevent the others - in particular, closing the TraCI connection -
+        from running.
+
+        Deliberately does NOT reset CARLA's `synchronous_mode`/
+        `fixed_delta_seconds` settings back to async, unlike upstream
+        `SimulationSynchronization.close()` would: `autoware_carla_interface`'s
+        own shutdown path has never restored these settings even without
+        SUMO, so this keeps shutdown behavior consistent regardless of
+        whether `use_sumo` is enabled.
         """
-        if not self.sumo_sim:
+        if self.sumo_sync is None:
             return
+
+        # Destroy SUMO-origin actors mirrored into CARLA (background traffic
+        # spawned via sync_sumo_to_carla()).
+        for carla_actor_id in list(self.sumo_sync.sumo2carla_ids.values()):
+            try:
+                self.sumo_carla_sim.destroy_actor(carla_actor_id)
+            except Exception as e:
+                print(f"Warning: failed to destroy SUMO-origin CARLA actor {carla_actor_id}: {e}")
+
+        # Destroy CARLA-origin actors mirrored into SUMO (this only removes
+        # the SUMO-side shadow vehicle; the real CARLA actor - e.g. EGO - is
+        # untouched here and is destroyed separately by _cleanup_ego_actor()).
+        for sumo_actor_id in list(self.sumo_sync.carla2sumo_ids.values()):
+            try:
+                self.sumo_sim.destroy_actor(sumo_actor_id)
+            except Exception as e:
+                print(f"Warning: failed to destroy CARLA-origin SUMO actor {sumo_actor_id}: {e}")
+
+        # Un-freeze any traffic lights CarlaSimulation may have frozen
+        # (switch_off_traffic_lights(), used when tls_manager == 'sumo').
+        try:
+            self.sumo_carla_sim.close()
+        except Exception as e:
+            print(f"Warning: CarlaSimulation cleanup failed: {e}")
+
+        # Always attempt to close the TraCI connection, even if the above failed.
         try:
             self.sumo_sim.close()
-            self.sumo_sim = None
         except Exception as e:
-            print(f"Warning: SUMO cleanup failed: {e}")
+            print(f"Warning: SUMO/TraCI cleanup failed: {e}")
+
+        self.sumo_sync = None
+        self.sumo_sim = None
+        self.sumo_carla_sim = None
 
 
 def main():

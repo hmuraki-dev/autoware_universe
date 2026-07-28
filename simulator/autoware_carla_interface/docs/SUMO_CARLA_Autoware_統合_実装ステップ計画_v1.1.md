@@ -267,6 +267,28 @@
 
 **確認方法**: 異常終了(Ctrl+C、例外発生)を含む複数パターンでリソースリーク・ゾンビプロセスがないことを確認
 
+### Step 7実施内容(2026-07-28)
+
+**`carla_autoware.py`(`InitializeInterface._cleanup_sumo()`)を全面改修**:
+
+- `SimulationSynchronization.close()`を直接呼ぶのではなく、その処理内容(同期アクター破棄・TraCI切断)を`_cleanup_sumo()`内で**各ステップごとにtry/exceptで分離**して再実装した。理由: 元の`close()`はステップ間でエラー処理が無く、途中のアクター破棄で例外が出ると後続の`self.sumo.close()`(`traci.close()`)まで飛ばされてしまい、TraCI接続/プロセスがリークする恐れがあったため
+- 具体的な処理順序:
+  1. `sumo2carla_ids`(SUMO由来→CARLAにミラーされた背景交通)の各CARLAアクターを`sumo_carla_sim.destroy_actor()`で破棄(1件ずつtry/except)
+  2. `carla2sumo_ids`(CARLA由来→SUMOにミラーされた車両。EGO含む)の各SUMOアクターを`sumo_sim.destroy_actor()`で破棄(1件ずつtry/except)。**実CARLA上のEGOアクター自体はここでは触らない**(`_cleanup_ego_actor()`が別途担当)
+  3. `sumo_carla_sim.close()`(信号機のfreeze解除)
+  4. `sumo_sim.close()`(`traci.close()`、TraCI切断)— **上記のどれが失敗してもここは必ず実行される**
+- **設計判断**: `SimulationSynchronization.close()`が行うCARLAワールド設定の非同期モードへの復元は、**あえて行わない**。既存の(SUMO未使用時の)`autoware_carla_interface`の終了処理も従来からCARLA設定を復元していないため、`use_sumo`の有無で終了時の挙動に差異を生まないようにした
+- 呼び出し順序(`_cleanup()`内)は変更なし: センサー→ROSインターフェース→EGOアクター→**SUMO**→CarlaDataProvider
+
+**実施した検証**(mockベースの単体テスト):
+
+1. `sumo_sync=None`(SUMO未使用) → 完全no-opであることを確認
+2. 正常系: `sumo2carla_ids`/`carla2sumo_ids`双方の全アクターが正しく破棄され、`CarlaSimulation.close()`/`SumoSimulation.close()`が両方1回ずつ呼ばれ、かつ**CARLAワールド設定(`apply_settings`/`get_settings`)には一切触れていない**ことを確認
+3. **異常系(重要)**: `sumo2carla_ids`側の1アクターの`destroy_actor()`が例外を送出しても、残りのアクター破棄と`CarlaSimulation.close()`/`SumoSimulation.close()`の両方が**必ず実行される**ことを確認(1箇所の失敗が他のクリーンアップをブロックしないことの検証)
+4. `SumoSimulation.close()`(`traci.close()`)自体が例外を送出しても、`_cleanup_sumo()`全体が例外を伝播させず正常終了することを確認
+
+**未実施(次回以降で実施推奨)**: 実際にCtrl+C・例外発生などの異常終了パターンを実機(実CARLA+実SUMO)で発生させ、プロセス・アクターのリークがないことを目視確認する実機テスト。
+
 ---
 
 ## Step 8: 動作安定化(優先度B)
@@ -294,6 +316,6 @@
 | 4 | メインループへの同期処理組み込み | **あり(最重要ステップ)** | 完了(コード配線・単体検証まで、2026-07-28。実SUMOサーバーとのend-to-end動作確認は未実施) |
 | 5 | NPC排他制御 | あり | 完了(2026-07-28) |
 | 6 | EGO登録・双方向同期の検証 | あり | 完了(実機end-to-end検証済み、2026-07-28。Autoware実機自体は未起動、apply_control()による代替検証) |
-| 7 | 終了処理の統合 | あり(終了時) | 未着手 |
+| 7 | 終了処理の統合 | あり(終了時) | 完了(コード改修・単体検証まで、2026-07-28。実機での異常終了パターン確認は未実施) |
 | 8 | 動作安定化 | あり | 未着手 |
 | 9〜 | 機能拡張 | あり | 未着手 |
