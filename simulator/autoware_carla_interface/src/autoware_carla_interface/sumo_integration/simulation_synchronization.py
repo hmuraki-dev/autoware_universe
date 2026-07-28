@@ -23,6 +23,12 @@
 # `autoware_carla_interface`'s `InitializeInterface.load_world()` already
 # configures CARLA's synchronous mode and `fixed_delta_seconds` centrally
 # (v0.5 section 2.6).
+#
+# Modification vs. upstream (Step 4): the original `tick()` method has been
+# split into `sync_sumo_to_carla()` and `sync_carla_to_sumo()`, with CARLA's
+# own `world.tick()` call in between. This lets `autoware_carla_interface`'s
+# main loop own the single CARLA Tick call site (v0.5 section 3.2/3.4/3.7).
+# `tick()` itself is kept as a thin wrapper for standalone/back-compat use.
 """ This module is responsible for the synchronization of the sumo and carla simulations. """
 
 # ==================================================================================================
@@ -84,19 +90,31 @@ class SimulationSynchronization(object):
 
     def tick(self):
         """
-        Tick to simulation synchronization
+        Tick to simulation synchronization.
 
-        NOTE: This still calls `self.carla.tick()` (which calls
-        `world.tick()`) in the middle of this method, and is not yet wired
-        into `autoware_carla_interface`'s main loop. Splitting this into a
-        "sumo->carla sync" call and a "carla->sumo sync" call around
-        `autoware_carla_interface`'s own single `world.tick()` is Step 4
-        (v0.5 section 3.2/3.4/3.7) and is intentionally out of scope for
-        Step 1.
+        NOTE: This calls `self.carla.tick()` itself (which calls
+        `world.tick()`), which would duplicate the single CARLA tick that
+        `autoware_carla_interface`'s main loop already performs. It is kept
+        only for standalone/backwards-compatible use of this class outside
+        `autoware_carla_interface`. The wired main loop (v0.5 section
+        3.2/3.4/3.7, Step 4) does NOT call this; it calls
+        `sync_sumo_to_carla()`, then its own single `world.tick()`, then
+        `sync_carla_to_sumo()`.
         """
-        # -----------------
-        # sumo-->carla sync
-        # -----------------
+        self.sync_sumo_to_carla()
+        self.carla.tick()
+        self.sync_carla_to_sumo()
+
+    def sync_sumo_to_carla(self):
+        """
+        SUMO Tick + "sumo-->carla sync" half of the co-simulation step.
+
+        Advances the SUMO simulation by one step and reflects SUMO-owned
+        vehicles/traffic-lights into CARLA. Does NOT tick CARLA - the caller
+        (`autoware_carla_interface`'s main loop) is expected to call CARLA's
+        own single `world.tick()` right after this, then call
+        `sync_carla_to_sumo()` (v0.5 section 3.4).
+        """
         self.sumo.tick()
 
         # Spawning new sumo actors in carla (i.e, not controlled by carla).
@@ -147,10 +165,18 @@ class SimulationSynchronization(object):
 
                 self.carla.synchronize_traffic_light(landmark_id, carla_tl_state)
 
-        # -----------------
-        # carla-->sumo sync
-        # -----------------
-        self.carla.tick()
+    def sync_carla_to_sumo(self):
+        """
+        "carla-->sumo sync" half of the co-simulation step.
+
+        Assumes CARLA has already been ticked by the caller (v0.5 section
+        3.2/3.6). First refreshes the CARLA actor diff
+        (`self.carla.update_actor_diff()`) so this method sees which vehicle
+        actors were spawned/destroyed by the frame that was just ticked, then
+        reflects CARLA-owned vehicles (EGO included, via the auto-adapt
+        mechanism - v0.5 section 2.10) and traffic lights into SUMO.
+        """
+        self.carla.update_actor_diff()
 
         # Spawning new carla actors (not controlled by sumo)
         carla_spawned_actors = self.carla.spawned_actors - set(self.sumo2carla_ids.values())
