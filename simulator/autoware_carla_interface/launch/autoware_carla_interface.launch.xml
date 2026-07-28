@@ -13,9 +13,9 @@
     <arg name="spawn_point" default="None" description="location of ego vehicle spawn (default is random), example = [0.2 , 4.1, 0.4, 0., 0., 0.]"/>
     <arg name="map_path" default="" description="Autoware map directory path (map name will be extracted for CARLA)"/>
     <arg name="sync_mode" default="True"/>
-    <arg name="fixed_delta_seconds" default="0.05" description="Time step for CARLA, FPS=1/value"/>
+    <arg name="fixed_delta_seconds" default="0.1" description="Time step for CARLA, FPS=1/value. Unified to 0.1s to match SUMO step_length (2026-07-27 decision, see docs/SUMO_CARLA_Autoware_統合修正項目_v0.5.md 2.2)"/>
     <arg name="use_traffic_manager" default="False"/>
-    <arg name="max_real_delta_seconds" default="0.05"/>
+    <arg name="max_real_delta_seconds" default="0.1" description="Kept equal to fixed_delta_seconds so the real-time pacing cap stays at 1x (see docs/SUMO_CARLA_Autoware_統合_実装ステップ計画_v1.1.md Step 2)"/>
 
     <let name="carla_map" value="$(eval &quot;__import__('os').path.basename('$(var map_path)'.strip().rstrip('/')) or 'Town01'&quot;)"/>
 
@@ -31,6 +31,21 @@
     <let name="sensor_mapping_file_default" value="$(find-pkg-share autoware_carla_interface)/config/sensor_mapping_light_weight.yaml" if="$(var use_light_weight_sensor_mapping)"/>
     <let name="sensor_mapping_file_default" value="$(find-pkg-share autoware_carla_interface)/config/sensor_mapping.yaml" unless="$(var use_light_weight_sensor_mapping)"/>
     <arg name="sensor_mapping_file" default="$(var sensor_mapping_file_default)" description="Path to sensor mapping YAML"/>
+
+    <!--
+      SUMO Co-Simulation parameters (Step 2 of docs/SUMO_CARLA_Autoware_統合_実装ステップ計画_v1.1.md).
+      Declared here only; not yet consumed by any node (wiring is Step 3).
+      Names/defaults mirror the upstream `run_synchronization.py` CLI where applicable.
+    -->
+    <arg name="use_sumo" default="False" description="Enable SUMO co-simulation (not yet implemented)"/>
+    <arg name="sumo_cfg_file" default="" description="Path to SUMO .sumocfg configuration file"/>
+    <arg name="sumo_gui" default="False" description="Run SUMO with its GUI (sumo-gui) instead of headless (sumo)"/>
+    <arg name="sumo_host" default="None" description="SUMO TraCI server host. None = launch a local SUMO process instead of connecting to an existing one"/>
+    <arg name="sumo_port" default="None" description="SUMO TraCI server port. None = launch a local SUMO process instead of connecting to an existing one"/>
+    <arg name="sumo_client_order" default="1" description="TraCI client order number for the co-simulation connection"/>
+    <arg name="sync_vehicle_lights" default="False" description="Synchronize vehicle light state between SUMO and CARLA"/>
+    <arg name="sync_vehicle_color" default="False" description="Synchronize vehicle color between SUMO and CARLA"/>
+    <arg name="tls_manager" default="none" description="Traffic light authority: none, sumo, or carla"/>
 
     <!-- CARLA Interface -->
     <node pkg="autoware_carla_interface" exec="autoware_carla_interface" name="autoware_carla_interface" output="screen">
