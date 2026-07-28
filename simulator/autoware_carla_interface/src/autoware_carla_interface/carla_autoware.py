@@ -78,6 +78,21 @@ class InitializeInterface(object):
         self.use_traffic_manager = self.param_["use_traffic_manager"]
         self.max_real_delta_seconds = self.param_["max_real_delta_seconds"]
 
+        # SUMO co-simulation parameters (Step 3: connection + sync engine only,
+        # not yet wired into the main loop; see docs/SUMO_CARLA_Autoware_統合_実装ステップ計画_v1.1.md)
+        self.use_sumo = self.param_["use_sumo"]
+        self.sumo_cfg_file = self.param_["sumo_cfg_file"]
+        self.sumo_gui = self.param_["sumo_gui"]
+        self.sumo_host = self.param_["sumo_host"]
+        self.sumo_port = self.param_["sumo_port"]
+        self.sumo_client_order = self.param_["sumo_client_order"]
+        self.sync_vehicle_lights = self.param_["sync_vehicle_lights"]
+        self.sync_vehicle_color = self.param_["sync_vehicle_color"]
+        self.tls_manager = self.param_["tls_manager"]
+        self.sumo_carla_sim = None
+        self.sumo_sim = None
+        self.sumo_sync = None
+
     def _parse_spawn_point(self):
         """Parse spawn point string and return transform with randomize flag."""
         spawn_point = carla.Transform()
@@ -132,6 +147,51 @@ class InitializeInterface(object):
         for vehicle in vehicles:
             vehicle.set_autopilot(True)
 
+    def _init_sumo_integration(self, client):
+        """
+        Start SUMO/TraCI and construct the (vendored) SimulationSynchronization.
+
+        Step 3 scope only (see docs/SUMO_CARLA_Autoware_統合_実装ステップ計画_v1.1.md):
+        this establishes the CARLA/SUMO connections and builds the
+        synchronization engine (ID maps + coordinate transforms initialized in
+        its constructor). It does NOT call `SimulationSynchronization.tick()`
+        and is not wired into the main loop yet - that is Step 4. When
+        `use_sumo` is False (default), this is a no-op and behavior is
+        unchanged from CARLA-only operation.
+        """
+        if not self.use_sumo:
+            return
+
+        # Deferred import: `sumo_simulation.py` requires `traci`/`sumolib`
+        # (only available when SUMO_HOME is configured on sys.path), so these
+        # must not be imported when SUMO integration is disabled.
+        from .sumo_integration.carla_simulation import CarlaSimulation as SumoCarlaSimulation
+        from .sumo_integration.simulation_synchronization import SimulationSynchronization
+        from .sumo_integration.sumo_simulation import SumoSimulation
+
+        sumo_host = None if self.sumo_host == "None" else self.sumo_host
+        sumo_port = None if self.sumo_port == "None" else int(self.sumo_port)
+
+        self.sumo_carla_sim = SumoCarlaSimulation(client, self.world, self.fixed_delta_seconds)
+        self.sumo_sim = SumoSimulation(
+            self.sumo_cfg_file,
+            self.fixed_delta_seconds,
+            host=sumo_host,
+            port=sumo_port,
+            sumo_gui=self.sumo_gui,
+            client_order=self.sumo_client_order,
+        )
+        self.sumo_sync = SimulationSynchronization(
+            self.sumo_sim,
+            self.sumo_carla_sim,
+            tls_manager=self.tls_manager,
+            sync_vehicle_color=self.sync_vehicle_color,
+            sync_vehicle_lights=self.sync_vehicle_lights,
+        )
+        self.interface.logger.info(
+            "SUMO co-simulation connected (Step 3: connection + sync engine only, not ticking yet)."
+        )
+
     def load_world(self):
         client = carla.Client(self.local_host, self.port)
         client.set_timeout(self.timeout)
@@ -158,6 +218,11 @@ class InitializeInterface(object):
         self.world.apply_settings(settings)
         CarlaDataProvider.set_world(self.world)
         CarlaDataProvider.set_client(client)
+
+        # Step 3: connect to SUMO / build the sync engine before spawning EGO,
+        # per the confirmed initialization order (v0.5 section 2.0). No-op
+        # when `use_sumo` is False.
+        self._init_sumo_integration(client)
 
         spawn_point, randomize = self._parse_spawn_point()
         self.ego_actor = CarlaDataProvider.request_new_actor(
@@ -207,6 +272,7 @@ class InitializeInterface(object):
         self._cleanup_sensors()
         self._cleanup_ros_interface()
         self._cleanup_ego_actor()
+        self._cleanup_sumo()
         self._cleanup_carla_provider()
 
     def _cleanup_sensors(self):
@@ -244,6 +310,24 @@ class InitializeInterface(object):
             CarlaDataProvider.cleanup()
         except Exception as e:
             print(f"Warning: CARLA data provider cleanup failed: {e}")
+
+    def _cleanup_sumo(self):
+        """
+        Close the SUMO/TraCI connection, continuing on error.
+
+        Step 3 scope only: closes the TraCI connection via
+        `SumoSimulation.close()`. Does NOT call
+        `SimulationSynchronization.close()`, which also resets CARLA world
+        settings and destroys synchronized actors - integrating that with
+        `autoware_carla_interface`'s own shutdown path is Step 7.
+        """
+        if not self.sumo_sim:
+            return
+        try:
+            self.sumo_sim.close()
+            self.sumo_sim = None
+        except Exception as e:
+            print(f"Warning: SUMO cleanup failed: {e}")
 
 
 def main():

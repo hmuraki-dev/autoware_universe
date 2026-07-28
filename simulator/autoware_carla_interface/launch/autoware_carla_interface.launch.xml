@@ -33,8 +33,8 @@
     <arg name="sensor_mapping_file" default="$(var sensor_mapping_file_default)" description="Path to sensor mapping YAML"/>
 
     <!--
-      SUMO Co-Simulation parameters (Step 2 of docs/SUMO_CARLA_Autoware_統合_実装ステップ計画_v1.1.md).
-      Declared here only; not yet consumed by any node (wiring is Step 3).
+      SUMO Co-Simulation parameters (Step 2/3 of docs/SUMO_CARLA_Autoware_統合_実装ステップ計画_v1.1.md).
+      Consumed by the autoware_carla_interface node below; only takes effect when use_sumo=True.
       Names/defaults mirror the upstream `run_synchronization.py` CLI where applicable.
     -->
     <arg name="use_sumo" default="False" description="Enable SUMO co-simulation (not yet implemented)"/>
@@ -62,6 +62,15 @@
       <param name="max_real_delta_seconds" value="$(var max_real_delta_seconds)"/>
       <param name="sensor_kit_name" value="$(var sensor_kit_name)"/>
       <param name="sensor_mapping_file" value="$(var sensor_mapping_file)"/>
+      <param name="use_sumo" value="$(var use_sumo)"/>
+      <param name="sumo_cfg_file" value="$(var sumo_cfg_file)"/>
+      <param name="sumo_gui" value="$(var sumo_gui)"/>
+      <param name="sumo_host" value="$(var sumo_host)"/>
+      <param name="sumo_port" value="$(var sumo_port)"/>
+      <param name="sumo_client_order" value="$(var sumo_client_order)"/>
+      <param name="sync_vehicle_lights" value="$(var sync_vehicle_lights)"/>
+      <param name="sync_vehicle_color" value="$(var sync_vehicle_color)"/>
+      <param name="tls_manager" value="$(var tls_manager)"/>
     </node>
 
     <arg name="input_control_cmd" default="/control/command/control_cmd"/>
