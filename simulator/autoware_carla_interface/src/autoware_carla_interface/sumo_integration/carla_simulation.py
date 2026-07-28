@@ -180,23 +180,38 @@ class CarlaSimulation(object):
         traffic_light.set_state(state)
         return True
 
-    def tick(self):
+    def update_actor_diff(self):
         """
-        Tick to carla simulation.
+        Refresh spawned_actors/destroyed_actors for the current frame, without
+        ticking the world.
 
-        NOTE: This still calls `world.tick()` directly, which duplicates the
-        single CARLA tick that `autoware_carla_interface`'s main loop already
-        performs. Unifying CARLA Tick into a single call site is Step 4 (v0.5
-        section 3.2/3.6) and is intentionally out of scope for Step 1.
+        Added in Step 4 (v0.5 section 3.2/3.6): `autoware_carla_interface`'s
+        main loop owns the single `world.tick()` call. Right after that call,
+        it invokes this method (indirectly, via
+        `SimulationSynchronization.sync_carla_to_sumo()`) so the "carla-->sumo
+        sync" half of the co-simulation can see which vehicle actors were
+        spawned/destroyed by the frame that was just ticked.
         """
-        self.world.tick()
-
-        # Update data structures for the current frame.
         current_actors = set(
             [vehicle.id for vehicle in self.world.get_actors().filter('vehicle.*')])
         self.spawned_actors = current_actors.difference(self._active_actors)
         self.destroyed_actors = self._active_actors.difference(current_actors)
         self._active_actors = current_actors
+
+    def tick(self):
+        """
+        Tick to carla simulation.
+
+        NOTE: This calls `world.tick()` itself, which would duplicate the
+        single CARLA tick that `autoware_carla_interface`'s main loop already
+        performs. It is kept only for standalone/backwards-compatible use of
+        this class outside `autoware_carla_interface`. The wired main loop
+        (v0.5 section 3.2/3.6) does NOT call this; it calls `world.tick()`
+        itself and then `update_actor_diff()` (via
+        `SimulationSynchronization.sync_carla_to_sumo()`).
+        """
+        self.world.tick()
+        self.update_actor_diff()
 
     def close(self):
         """

@@ -37,6 +37,11 @@ class SensorLoop(object):
         self.running = False
         self.timestamp_last_run = 0.0
         self.timeout = 20.0
+        # Step 4 (v0.5 3.1-3.7): vendored SimulationSynchronization instance,
+        # or None when SUMO co-simulation is disabled (default). When set,
+        # its sync_sumo_to_carla()/sync_carla_to_sumo() halves are called
+        # around the single CARLA world.tick() below.
+        self.sumo_sync = None
 
     def _stop_loop(self):
         self.running = False
@@ -51,8 +56,17 @@ class SensorLoop(object):
             except SensorReceivedNoData as e:
                 raise RuntimeError(e)
             self.ego_actor.apply_control(ego_action)
+            if self.sumo_sync is not None:
+                # SUMO Tick + "SUMO→CARLA同期" (v0.5 3.3/3.4). Does not touch
+                # CARLA's world.tick(); that stays the single call below.
+                self.sumo_sync.sync_sumo_to_carla()
         if self.running:
             CarlaDataProvider.get_world().tick()
+            if self.sumo_sync is not None:
+                # "CARLA→SUMO同期" (v0.5 3.7). Refreshes CARLA's actor diff
+                # for the frame that was just ticked, then reflects CARLA
+                # (EGO included, via auto-adapt - v0.5 2.10) into SUMO.
+                self.sumo_sync.sync_carla_to_sumo()
 
 
 class InitializeInterface(object):
@@ -151,13 +165,15 @@ class InitializeInterface(object):
         """
         Start SUMO/TraCI and construct the (vendored) SimulationSynchronization.
 
-        Step 3 scope only (see docs/SUMO_CARLA_Autoware_統合_実装ステップ計画_v1.1.md):
-        this establishes the CARLA/SUMO connections and builds the
-        synchronization engine (ID maps + coordinate transforms initialized in
-        its constructor). It does NOT call `SimulationSynchronization.tick()`
-        and is not wired into the main loop yet - that is Step 4. When
-        `use_sumo` is False (default), this is a no-op and behavior is
-        unchanged from CARLA-only operation.
+        See docs/SUMO_CARLA_Autoware_統合_実装ステップ計画_v1.1.md: this
+        establishes the CARLA/SUMO connections and builds the synchronization
+        engine (ID maps + coordinate transforms initialized in its
+        constructor). The resulting `self.sumo_sync` is later handed to
+        `SensorLoop` in `run_bridge()`, which calls its
+        `sync_sumo_to_carla()`/`sync_carla_to_sumo()` halves around the main
+        loop's single `world.tick()` (Step 4). When `use_sumo` is False
+        (default), this is a no-op and behavior is unchanged from CARLA-only
+        operation.
         """
         if not self.use_sumo:
             return
@@ -189,7 +205,7 @@ class InitializeInterface(object):
             sync_vehicle_lights=self.sync_vehicle_lights,
         )
         self.interface.logger.info(
-            "SUMO co-simulation connected (Step 3: connection + sync engine only, not ticking yet)."
+            "SUMO co-simulation connected (sync engine ready; will be ticked each loop iteration)."
         )
 
     def load_world(self):
@@ -241,6 +257,7 @@ class InitializeInterface(object):
         self.bridge_loop = SensorLoop()
         self.bridge_loop.sensor = self.sensor_wrapper
         self.bridge_loop.ego_actor = self.ego_actor
+        self.bridge_loop.sumo_sync = self.sumo_sync
         self.bridge_loop.start_system_time = time.time()
         self.bridge_loop.start_game_time = GameTime.get_time()
         self.bridge_loop.running = True

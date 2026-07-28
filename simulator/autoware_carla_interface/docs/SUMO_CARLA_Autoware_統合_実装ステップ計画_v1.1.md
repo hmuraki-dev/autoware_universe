@@ -162,6 +162,36 @@
 
 **確認方法**: SUMO側で生成した車両がCARLAに、CARLA側(Traffic Managerでのテスト用NPC)の車両がSUMOに、それぞれ反映されることを確認。ログでtick回数が1ループ1回であることを検証
 
+### Step 4実施内容(2026-07-28)
+
+**`sumo_integration/carla_simulation.py`**: `tick()`を分割。
+
+- `update_actor_diff()`(新規): `world.tick()`を呼ばずに`spawned_actors`/`destroyed_actors`/`_active_actors`のみ更新
+- `tick()`: `world.tick()` → `update_actor_diff()`。単体利用時の後方互換のために残すが、配線後のメインループからは呼ばれない
+
+**`sumo_integration/simulation_synchronization.py`**: `tick()`を分割。
+
+- `sync_sumo_to_carla()`(新規、旧`tick()`前半 "sumo-->carla sync"相当): `self.sumo.tick()` → SUMO車両のCARLAへの生成/削除/位置反映 → (`tls_manager=='sumo'`なら)信号反映。**CARLA側は一切tickしない**
+- `sync_carla_to_sumo()`(新規、旧`tick()`後半 "carla-->sumo sync"相当): 冒頭で`self.carla.update_actor_diff()`を呼んでから、CARLA車両(EGO含む、自動アダプト経由)のSUMOへの生成/削除/位置反映 → (`tls_manager=='carla'`なら)信号反映
+- `tick()`: `sync_sumo_to_carla()` → `self.carla.tick()` → `sync_carla_to_sumo()`。単体利用時の後方互換のために残すが、配線後のメインループからは呼ばれない
+
+**`carla_autoware.py`**:
+
+- `SensorLoop.__init__`に`self.sumo_sync = None`を追加(デフォルトはSUMO無効と同じ挙動)
+- `SensorLoop._tick_sensor()`を修正。`self.ego_actor.apply_control(ego_action)`の直後に`sumo_sync`があれば`sync_sumo_to_carla()`を呼び、既存の`CarlaDataProvider.get_world().tick()`(**唯一のCARLA Tick呼び出し、変更なし**)の直後に`sumo_sync`があれば`sync_carla_to_sumo()`を呼ぶ。`sumo_sync is None`(デフォルト)の場合は追加コードパスに一切入らない
+- `InitializeInterface.run_bridge()`で`self.bridge_loop.sumo_sync = self.sumo_sync`を設定
+
+**実施した検証**(mockベースの単体テスト):
+
+1. `CarlaSimulation.update_actor_diff()`が`world.tick()`を呼ばないこと、`tick()`は`world.tick()`後に差分更新することを確認
+2. `SimulationSynchronization.sync_sumo_to_carla()`が`self.carla.tick()`/`update_actor_diff()`のどちらも呼ばないこと、`sync_carla_to_sumo()`は`update_actor_diff()`のみ呼び`world.tick()`は呼ばないことを確認
+3. `SimulationSynchronization.tick()`(後方互換ラッパー)が`sync_sumo_to_carla → carla.tick → update_actor_diff`の順で呼ばれることを確認
+4. **`SensorLoop._tick_sensor()`の回帰確認**: `sumo_sync=None`(デフォルト)時、Step 4適用前と同じ呼び出し(`sensor()` → `apply_control()` → `world.tick()`が正確に1回)になることを確認
+5. `sumo_sync`設定時、呼び出し順序が`sensor() → apply_control() → sync_sumo_to_carla() → world.tick()(1回) → sync_carla_to_sumo()`であることを確認(v0.5 3.1の確定順序と一致)
+6. タイムスタンプゲートが閉じている(未経過)ケースでも、`world.tick()`と(設定時は)`sync_carla_to_sumo()`は毎ループ実行され、`sensor()`/`apply_control()`/`sync_sumo_to_carla()`はスキップされることを確認(既存のゲート挙動を維持)
+
+**未実施(次回以降で実施推奨)**: 実際にCARLA・SUMO両サーバーを起動してのend-to-end動作確認(SUMO車両がCARLAに、CARLA車両(EGO含む)がSUMOに実際に反映されること)。優先度A項目「EGOのSUMO自動アダプト経路の動作検証(Autoware制御下)」は引き続き未実施。
+
 ---
 
 ## Step 5: NPC排他制御(v0.5 2.11)
@@ -212,7 +242,7 @@
 | 1 | CARLA接続の一元化 | なし(CARLA単体のまま) | 完了（コード・単体検証まで、2026-07-28。実機エンドツーエンド回帰確認は未実施） |
 | 2 | パラメータ追加・ステップ時間統一 | なし(CARLA単体のまま) | 完了(launch/README更新まで、2026-07-28。実機回帰確認は未実施) |
 | 3 | SUMO起動・TraCI接続 + 同期エンジン生成 | なし(接続確認のみ) | 完了(コード配線・単体検証まで、2026-07-28。実SUMOサーバーとのend-to-end接続確認は未実施) |
-| 4 | メインループへの同期処理組み込み | **あり(最重要ステップ)** | 未着手 |
+| 4 | メインループへの同期処理組み込み | **あり(最重要ステップ)** | 完了(コード配線・単体検証まで、2026-07-28。実SUMOサーバーとのend-to-end動作確認は未実施) |
 | 5 | NPC排他制御 | あり | 未着手 |
 | 6 | EGO登録・双方向同期の検証 | あり | 未着手 |
 | 7 | 終了処理の統合 | あり(終了時) | 未着手 |
