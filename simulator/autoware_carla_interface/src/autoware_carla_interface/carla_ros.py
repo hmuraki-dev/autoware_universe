@@ -73,6 +73,18 @@ class carla_ros2_interface(object):
             # Sensor configuration parameters
             "sensor_kit_name": (rclpy.Parameter.Type.STRING, ""),  # Empty = use YAML default
             "sensor_mapping_file": (rclpy.Parameter.Type.STRING, ""),
+            # SUMO co-simulation parameters (Step 3; not yet used in the main
+            # loop, see docs/SUMO_CARLA_Autoware_統合_実装ステップ計画_v1.1.md).
+            # Defaults keep SUMO integration disabled unless explicitly enabled.
+            "use_sumo": (rclpy.Parameter.Type.BOOL, False),
+            "sumo_cfg_file": (rclpy.Parameter.Type.STRING, ""),
+            "sumo_gui": (rclpy.Parameter.Type.BOOL, False),
+            "sumo_host": (rclpy.Parameter.Type.STRING, "None"),
+            "sumo_port": (rclpy.Parameter.Type.STRING, "None"),
+            "sumo_client_order": (rclpy.Parameter.Type.INTEGER, 1),
+            "sync_vehicle_lights": (rclpy.Parameter.Type.BOOL, False),
+            "sync_vehicle_color": (rclpy.Parameter.Type.BOOL, False),
+            "tls_manager": (rclpy.Parameter.Type.STRING, "none"),
         }
 
         self.param_values = {}

@@ -128,6 +128,30 @@
 
 **確認方法**: CARLA・SUMOの両方が起動し、正常に接続・切断(2.13相当のクリーンアップ)できることを確認
 
+### Step 3実施内容(2026-07-28)
+
+**`carla_ros.py`**: `_initialize_parameters()` に新規ROS 2パラメータを追加(`use_sumo`/`sumo_cfg_file`/`sumo_gui`/`sumo_host`/`sumo_port`/`sumo_client_order`/`sync_vehicle_lights`/`sync_vehicle_color`/`tls_manager`)。すべてPython側にデフォルト値を持たせ、launchファイルが未対応でも既存ノードが起動できるようにした。
+
+**`launch/autoware_carla_interface.launch.xml`**: Step 2で追加した`<arg>`をノードの`<param>`として配線。
+
+**`carla_autoware.py`(`InitializeInterface`)**:
+
+- `__init__`で上記パラメータを読み込み、`self.sumo_carla_sim`/`self.sumo_sim`/`self.sumo_sync`を`None`で初期化
+- 新規メソッド`_init_sumo_integration(client)`を追加。`use_sumo=False`(デフォルト)なら即return(既存動作に影響なし)。`True`の場合のみ、vendor化した`CarlaSimulation`(client/world注入版)・`SumoSimulation`・`SimulationSynchronization`を遅延import(`traci`/`sumolib`はSUMO_HOME未設定時に存在しないため、モジュールトップレベルではなく関数内でimportすることで`use_sumo=False`時の既存動作に影響しないようにしている)して構築。`sumo_host`/`sumo_port`の`"None"`センチネル文字列は実際の`None`に変換
+- `load_world()`内、`CarlaDataProvider.set_client(client)`の直後・EGOスポーンの直前に`self._init_sumo_integration(client)`を呼び出し(v0.5 2.0で確定した初期化順序と一致)
+- `_cleanup()`に`_cleanup_sumo()`を追加(EGOアクター破棄後・`CarlaDataProvider`破棄前)。**`SumoSimulation.close()`(`traci.close()`)のみ呼び出し**、`SimulationSynchronization.close()`(CARLA world設定のasyncモード復元・同期アクター破棄を含む)はStep 7で統合予定のため今回は呼ばない
+
+**実施した検証**(mockベースの単体テスト・ROS 2環境上で実施):
+
+1. `use_sumo=False`(デフォルト)で`_init_sumo_integration()`が完全なno-opであること(`sumo_carla_sim`/`sumo_sim`/`sumo_sync`が`None`のまま)を確認
+2. `use_sumo=True`で、vendor化した`CarlaSimulation`/`SumoSimulation`/`SimulationSynchronization`が期待した引数(注入された`client`/`world`、`sumo_cfg_file`、`tls_manager`等)で正しく1回だけ呼ばれることを確認(`traci`/`sumolib`/`lxml.etree`はテスト側でスタブモジュールを注入)
+3. `sumo_host`/`sumo_port`の`"None"`→実`None`変換、および非`"None"`文字列(`"127.0.0.1"`/`"8813"`)がそのまま渡る(`sumo_port`は`int`変換される)ことを確認
+4. `_cleanup_sumo()`が`SumoSimulation.close()`を呼ぶことを確認
+5. ROS 2環境(`/opt/ros/humble` + ワークスペースoverlay)を実際にsourceし、`carla_ros2_interface._initialize_parameters()`を実ノードで呼び出して新規パラメータが期待したデフォルト値で宣言されることを確認
+6. `ros2 launch autoware_carla_interface autoware_carla_interface.launch.xml --show-args` で、`fixed_delta_seconds`/`max_real_delta_seconds`が`0.1`、新規SUMO引数がすべて意図した説明文・デフォルト値で認識されることを確認(launchファイルの構文・変数参照が正しいことをROS 2自身の解析で検証)
+
+**未実施(次回以降で実施推奨)**: 実際にCARLAサーバー・SUMOサーバーを両方起動してのend-to-end接続確認(`use_sumo=True`でノードを実行し、TraCI接続が成立すること)。`use_sumo=False`時は新規コードパスに一切入らないため、既存のCARLA単体動作への影響は構造的にないが、実機での最終確認は未実施。
+
 ---
 
 ## Step 4: メインループへの同期処理組み込み + CARLA Tick一元化(v0.5 3.1〜3.7)
@@ -187,7 +211,7 @@
 | 0 | 設計決定の確定 | なし | 完了(2026-07-28) |
 | 1 | CARLA接続の一元化 | なし(CARLA単体のまま) | 完了（コード・単体検証まで、2026-07-28。実機エンドツーエンド回帰確認は未実施） |
 | 2 | パラメータ追加・ステップ時間統一 | なし(CARLA単体のまま) | 完了(launch/README更新まで、2026-07-28。実機回帰確認は未実施) |
-| 3 | SUMO起動・TraCI接続 + 同期エンジン生成 | なし(接続確認のみ) | 未着手 |
+| 3 | SUMO起動・TraCI接続 + 同期エンジン生成 | なし(接続確認のみ) | 完了(コード配線・単体検証まで、2026-07-28。実SUMOサーバーとのend-to-end接続確認は未実施) |
 | 4 | メインループへの同期処理組み込み | **あり(最重要ステップ)** | 未着手 |
 | 5 | NPC排他制御 | あり | 未着手 |
 | 6 | EGO登録・双方向同期の検証 | あり | 未着手 |
