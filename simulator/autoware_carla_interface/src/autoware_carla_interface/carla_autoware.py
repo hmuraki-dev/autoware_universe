@@ -92,8 +92,7 @@ class InitializeInterface(object):
         self.use_traffic_manager = self.param_["use_traffic_manager"]
         self.max_real_delta_seconds = self.param_["max_real_delta_seconds"]
 
-        # SUMO co-simulation parameters (Step 3: connection + sync engine only,
-        # not yet wired into the main loop; see docs/SUMO_CARLA_Autoware_統合_実装ステップ計画_v1.1.md)
+        # SUMO co-simulation parameters (see docs/SUMO_CARLA_Autoware_統合_実装ステップ計画_v1.1.md)
         self.use_sumo = self.param_["use_sumo"]
         self.sumo_cfg_file = self.param_["sumo_cfg_file"]
         self.sumo_gui = self.param_["sumo_gui"]
@@ -106,6 +105,31 @@ class InitializeInterface(object):
         self.sumo_carla_sim = None
         self.sumo_sim = None
         self.sumo_sync = None
+
+        self._check_sumo_traffic_manager_exclusivity()
+
+    def _check_sumo_traffic_manager_exclusivity(self):
+        """
+        Refuse to start if `use_sumo` and `use_traffic_manager` are both enabled.
+
+        Step 5 (v0.5 section 2.11): the CARLA<->SUMO auto-adapt mechanism
+        (v0.5 section 2.10) registers every `vehicle.*` CARLA actor into SUMO,
+        with no way to distinguish EGO from Traffic-Manager-driven NPCs. If
+        `use_traffic_manager` is also enabled, its randomly spawned NPCs would
+        get unintentionally duplicated into SUMO alongside SUMO's own NPCs.
+        This is a required precondition for the auto-adapt mechanism to work
+        correctly, not just a recommendation, so it is enforced as a hard
+        error rather than a warning.
+        """
+        if self.use_sumo and self.use_traffic_manager:
+            raise ValueError(
+                "use_sumo and use_traffic_manager cannot both be True. "
+                "CARLA's Traffic Manager would spawn random NPCs that the "
+                "SUMO auto-adapt mechanism (v0.5 section 2.10) would then "
+                "duplicate into SUMO, alongside SUMO's own NPCs. Disable "
+                "use_traffic_manager when use_sumo is enabled (see "
+                "docs/SUMO_CARLA_Autoware_統合修正項目_v0.5.md section 2.11)."
+            )
 
     def _parse_spawn_point(self):
         """Parse spawn point string and return transform with randomize flag."""
