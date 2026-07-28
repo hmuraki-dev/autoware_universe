@@ -101,6 +101,23 @@
 
 **確認方法**: CARLA単体で0.1秒ステップでも従来通り動作することを確認
 
+### Step 2実施内容(2026-07-28)
+
+**`launch/autoware_carla_interface.launch.xml`**
+
+- `fixed_delta_seconds` のデフォルトを `0.05` から `0.1` に変更
+- `max_real_delta_seconds` のデフォルトも `0.05` から `0.1` に変更(補足: `fixed_delta_seconds` だけを0.1に上げ`max_real_delta_seconds`を0.05のままにすると、速度倍率の上限が2倍になり実時間より速く進めなくなるという既存の1倍速上限が崩れてしまうため、揃えて更新した)
+- SUMO関連パラメータを`<arg>`として新規追加(まだどのノードの`<param>`にも渡していない。ノードへの配線・Python側`declare_parameter`はStep 3で実施): `use_sumo`(既定False)、`sumo_cfg_file`(既定空文字)、`sumo_gui`(既定False)、`sumo_host`/`sumo_port`(既定"None")、`sumo_client_order`(既定1)、`sync_vehicle_lights`/`sync_vehicle_color`(既定False)、`tls_manager`(既定"none")
+- `run_synchronization.py` の `--track-ego`/`--debug`/`--sync-vehicle-all` はコアの同期処理と直接関係しないため追加していない
+
+**`README.md`**
+
+- `fixed_delta_seconds`/`max_real_delta_seconds` のデフォルト値表記・Tips記載を `0.05` から `0.1` に更新
+
+**実施した検証**: `python3 -m xml.dom.minidom` でlaunch XMLの構文妥当性を確認
+
+**未実施(次回以降で実施推奨)**: 実際にCARLAサーバーを起動しての end-to-end 回帰確認(0.1秒ステップでCARLA単体シミュレーションが従来通り動作すること)。追加したSUMO関連`<arg>`はどの`<param>`にも渡していないため、既存ノードの動作には影響しない構造になっている。
+
 ---
 
 ## Step 3: SUMO起動・TraCI接続 + 同期エンジン生成(v0.5 2.3 / 2.4 / 2.7 / 2.8)
@@ -169,7 +186,7 @@
 |---|---|---|---|
 | 0 | 設計決定の確定 | なし | 完了(2026-07-28) |
 | 1 | CARLA接続の一元化 | なし(CARLA単体のまま) | 完了（コード・単体検証まで、2026-07-28。実機エンドツーエンド回帰確認は未実施） |
-| 2 | パラメータ追加・ステップ時間統一 | なし(CARLA単体のまま) | 未着手 |
+| 2 | パラメータ追加・ステップ時間統一 | なし(CARLA単体のまま) | 完了(launch/README更新まで、2026-07-28。実機回帰確認は未実施) |
 | 3 | SUMO起動・TraCI接続 + 同期エンジン生成 | なし(接続確認のみ) | 未着手 |
 | 4 | メインループへの同期処理組み込み | **あり(最重要ステップ)** | 未着手 |
 | 5 | NPC排他制御 | あり | 未着手 |
