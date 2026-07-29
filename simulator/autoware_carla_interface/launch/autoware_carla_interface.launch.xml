@@ -13,9 +13,9 @@
     <arg name="spawn_point" default="None" description="location of ego vehicle spawn (default is random), example = [0.2 , 4.1, 0.4, 0., 0., 0.]"/>
     <arg name="map_path" default="" description="Autoware map directory path (map name will be extracted for CARLA)"/>
     <arg name="sync_mode" default="True"/>
-    <arg name="fixed_delta_seconds" default="0.1" description="Time step for CARLA, FPS=1/value. Unified to 0.1s to match SUMO step_length (2026-07-27 decision, see docs/SUMO_CARLA_Autoware_統合修正項目_v0.5.md 2.2)"/>
+    <arg name="fixed_delta_seconds" default="0.05" description="Time step for CARLA, FPS=1/value. Unified to 0.1s to match SUMO step_length (2026-07-27 decision, see docs/SUMO_CARLA_Autoware_統合修正項目_v0.5.md 2.2)"/>
     <arg name="use_traffic_manager" default="False"/>
-    <arg name="max_real_delta_seconds" default="0.1" description="Kept equal to fixed_delta_seconds so the real-time pacing cap stays at 1x (see docs/SUMO_CARLA_Autoware_統合_実装ステップ計画_v1.1.md Step 2)"/>
+    <arg name="max_real_delta_seconds" default="0.05" description="Kept equal to fixed_delta_seconds so the real-time pacing cap stays at 1x (see docs/SUMO_CARLA_Autoware_統合_実装ステップ計画_v1.1.md Step 2)"/>
 
     <let name="carla_map" value="$(eval &quot;__import__('os').path.basename('$(var map_path)'.strip().rstrip('/')) or 'Town01'&quot;)"/>
 
@@ -164,7 +164,7 @@
     />
 
     <!-- Multi-camera combiner for RViz visualization -->
-    <node pkg="autoware_carla_interface" exec="multi_camera_combiner" output="screen" unless="$(var use_light_weight_sensor_mapping)"/>
+    <!-- <node pkg="autoware_carla_interface" exec="multi_camera_combiner" output="screen" unless="$(var use_light_weight_sensor_mapping)"/> -->
 
     <!-- E2E Planning Infrastructure -->
     <group if="$(var use_e2e_planning)">
