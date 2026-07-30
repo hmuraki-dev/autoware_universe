@@ -14,6 +14,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+import logging
 import random
 import signal
 import time
@@ -43,11 +44,62 @@ class SensorLoop(object):
         # around the single CARLA world.tick() below.
         self.sumo_sync = None
 
+        # Main-loop period measurement
+        self._main_loop_measure_wall_start = None
+        self._main_loop_measure_sim_start = None
+        self._main_loop_measure_count = 0
+        self._main_loop_measure_interval = 10
+
     def _stop_loop(self):
         self.running = False
 
+    def _measure_main_loop_period(self, current_sim_time):
+        """Measure and log the average main-loop period."""
+
+        current_wall_time = time.monotonic()
+
+        # First call: initialize the measurement origin.
+        if self._main_loop_measure_wall_start is None:
+            self._main_loop_measure_wall_start = current_wall_time
+            self._main_loop_measure_sim_start = current_sim_time
+            self._main_loop_measure_count = 0
+            return
+
+        self._main_loop_measure_count += 1
+
+        # Log only after the configured number of loops.
+        if self._main_loop_measure_count < self._main_loop_measure_interval:
+            return
+
+        wall_elapsed = current_wall_time - self._main_loop_measure_wall_start
+        sim_elapsed = current_sim_time - self._main_loop_measure_sim_start
+
+        wall_period = wall_elapsed / self._main_loop_measure_count
+        sim_period = sim_elapsed / self._main_loop_measure_count
+
+        wall_frequency = 1.0 / wall_period if wall_period > 0.0 else 0.0
+        sim_frequency = 1.0 / sim_period if sim_period > 0.0 else 0.0
+
+        print(
+            "[MAIN_LOOP_PERIOD] "
+            f"samples={self._main_loop_measure_count}, "
+            f"wall_period={wall_period:.6f} sec, "
+            f"wall_frequency={wall_frequency:.2f} Hz, "
+            f"sim_period={sim_period:.6f} sec, "
+            f"sim_frequency={sim_frequency:.2f} Hz",
+            flush=True,
+        )
+
+        # Reset the measurement window.
+        self._main_loop_measure_wall_start = current_wall_time
+        self._main_loop_measure_sim_start = current_sim_time
+        self._main_loop_measure_count = 0
+
     def _tick_sensor(self, timestamp):
         if self.timestamp_last_run < timestamp.elapsed_seconds and self.running:
+            # Measurement-only processing
+            self._measure_main_loop_period(timestamp.elapsed_seconds)
+        
             self.timestamp_last_run = timestamp.elapsed_seconds
             GameTime.on_carla_tick(timestamp)
             CarlaDataProvider.on_carla_tick()
