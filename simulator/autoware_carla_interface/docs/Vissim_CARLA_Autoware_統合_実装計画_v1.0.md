@@ -607,6 +607,52 @@ SUMO版Step7の「各ステップをtry/exceptで分離し、1箇所の失敗が
 - `SimulationSynchronization.__init__`内の重複した同期モード設定を削除
 - この時点ではVissimはまだ繋がない。既存のCARLA単体動作に影響がないことを確認する
 
+### Step 1実施内容(2026-08-31)
+
+**vendor化(Step 0 ③の選定対象)** を `src/autoware_carla_interface/vissim_integration/` 以下に作成した
+(`/home/divp/CARLA/Co-Simulation/PTV-Vissim/`から取得、MITライセンス表記は保持し、経緯は
+`vissim_integration/NOTICE.md`に記載)。
+
+- `constants.py` / `bridge_helper.py` / `data/vtypes.json` / `data/signal_mapping.json`:
+  **本体無修正でvendor化**(`constants.py`/`bridge_helper.py`はヘッダーに由来コメントのみ追加。
+  data系2ファイルはoriginalと`diff`でバイト単位の完全一致を確認済み)
+- `vissim_simulation.py`: vendor化。ただし**upstream側に存在した、モジュールレベルで
+  `/opt/vissim_kernel_2026.00-10/lib/libDrivingSimulatorProxy.so`を固定パスでロードし、
+  かつどこからも呼ばれていない未使用のデバッグコード(`dsi = ctypes.CDLL(...)` /
+  `print_vissim_last_error()`)を削除した**。これを残したままだと、そのパスが存在しない環境では
+  このモジュールを`import`しただけで無条件に失敗する(`PTVVissimSimulation.__init__`が本来
+  行っている、`args.vissim_lib_path`によるレイジー・可変パスでのライブラリロードとは別に、
+  import時点で即座に固定パスを読みに行ってしまうため)。この1点のみが差分であることを`diff`で
+  確認済み
+- `carla_simulation.py`: **修正してvendor化**。`CarlaSimulation.__init__`が自前で
+  `carla.Client`/`World`を生成しないようにし(`args.carla_host`/`args.carla_port`削除)、
+  外部から接続済みの`client`/`world`を注入する形に変更(2.5)。他のメソッドは無修正
+- `simulation_synchronization.py`: **新規ファイル**。`run_synchronization.py`から
+  `SimulationSynchronization`クラスのみを抽出(CLI/独立ループは非vendor化)。`__init__`内の
+  CARLA同期モード設定ブロック(`world.apply_settings()`)を削除(2.6)。`close()`内の
+  非同期モード復元処理は、Step1時点ではSUMO版の前例に倣いあえて手を付けず、そのまま残した
+  (実際の重複回避策はStep7でまとめて設計する)
+
+**実施した検証**(単体レベル、mock使用):
+
+1. `python3 -m py_compile` で全ベンダーファイルの構文エラーが無いことを確認
+2. `constants.py`/`bridge_helper.py`/`vissim_simulation.py`/`carla_simulation.py` をオリジナルと
+   `diff`し、意図した差分(由来コメントの追加、デバッグブロックの削除、`__init__`のクライアント
+   注入化)以外に差分がないことを確認
+3. `CarlaSimulation(mock_client, mock_world)` をmockで生成し、(a)コンストラクタが`client`/
+   `world`のみを受け取ること(host/port引数が存在しないこと、`self.args`を保持しないこと)、
+   (b)注入したclient/worldがそのまま保持され、`carla.Client(...)`自体は一切呼ばれないことを確認
+4. `SimulationSynchronization(mock_vissim, mock_carla, mock_args)` をmockで生成し、
+   `world.get_settings()`/`world.apply_settings()`が**一切呼ばれない**ことを確認(2.6の重複削除を
+   検証)
+5. `data/vtypes.json`/`data/signal_mapping.json`が原本とバイト単位で完全一致することを`diff`で
+   確認
+
+**未実施(次回以降で実施推奨)**: 実際にCARLAサーバーを起動しての end-to-end 回帰確認
+(colcon build → `ros2 launch` でCARLA単体シミュレーションが従来通り動作すること)。新規ファイルは
+既存コードから一切importされていない(`carla_autoware.py`/`carla_ros.py`は未変更、`__init__.py`は
+空のまま)ため、既存の実行パスに影響が無いことは構造的に保証されるが、実機確認は未実施。
+
 ### Step 2: パラメータ追加・ステップ時間統一(2.1 / 2.2)
 
 - launchファイルにVissim関連パラメータを追加(まだ未使用でOK)
@@ -664,10 +710,9 @@ SUMO版Step7の「各ステップをtry/exceptで分離し、1箇所の失敗が
 
 ## 7. 実装時に確認が必要な事項
 
-- `PTVVissimSimulation`に`close()`メソッドが実際に存在するか(2.13で言及した通り、
-  `run_synchronization.py`の`SimulationSynchronization.close()`は`self.vissim.close()`を
-  呼んでいるが、`vissim_simulation.py`の該当箇所は未読のため実装着手時に確認する。存在しない場合は
-  `VISSIM_Disconnect()`を直接呼ぶラッパーを追加する必要がある)
+- (解決済み)`PTVVissimSimulation`に`close()`メソッドが実際に存在するかは、vendor化時に原本
+  (`vissim_simulation.py`)を確認して**存在することを確認済み**(`VISSIM_Disconnect()`を呼ぶのみ)。
+  `SimulationSynchronization.close()`が`self.vissim.close()`を呼ぶ前提は成立している
 - `BridgeHelper`に座標オフセット補正(SUMO版の`self.offset`相当)が本当に存在しない/不要なのか、
   Autowareが使うマップで実測して確認する(2.8)
 - `--simulator-vehicles`の既定値1のまま運用して問題ないか(EGO 1台のみを想定する限り問題ないが、
