@@ -73,6 +73,15 @@ class carla_ros2_interface(object):
             # Sensor configuration parameters
             "sensor_kit_name": (rclpy.Parameter.Type.STRING, ""),  # Empty = use YAML default
             "sensor_mapping_file": (rclpy.Parameter.Type.STRING, ""),
+            # Vissim-CARLA co-simulation parameters (see docs/
+            # Vissim_CARLA_Autoware_統合_実装計画_v1.0.md). All have Python-side defaults so
+            # existing launch files that do not pass them keep working unchanged (use_vissim=False
+            # is a complete no-op, see InitializeInterface._init_vissim_integration()).
+            "use_vissim": (rclpy.Parameter.Type.BOOL, False),
+            "vissim_network": (rclpy.Parameter.Type.STRING, ""),
+            "vissim_lib_path": (rclpy.Parameter.Type.STRING, ""),
+            "vissim_simulator_vehicles": (rclpy.Parameter.Type.INTEGER, 1),
+            "sync_traffic_lights": (rclpy.Parameter.Type.BOOL, False),
         }
 
         self.param_values = {}

@@ -17,7 +17,7 @@
     <arg name="use_traffic_manager" default="False"/>
     <arg name="max_real_delta_seconds" default="0.1"/>
 
-    <!-- Vissim-CARLA co-simulation (not wired to the node yet; see docs/Vissim_CARLA_Autoware_統合_実装計画_v1.0.md Step 2/3) -->
+    <!-- Vissim-CARLA co-simulation (see docs/Vissim_CARLA_Autoware_統合_実装計画_v1.0.md) -->
     <arg name="use_vissim" default="False" description="Enable Vissim-CARLA co-simulation"/>
     <arg name="vissim_network" default="" description="Path to the Vissim network file (.inpx)"/>
     <arg name="vissim_lib_path" default="" description="Absolute path to libDrivingSimulatorProxy.so (empty: rely on LD_LIBRARY_PATH)"/>
@@ -54,6 +54,11 @@
       <param name="max_real_delta_seconds" value="$(var max_real_delta_seconds)"/>
       <param name="sensor_kit_name" value="$(var sensor_kit_name)"/>
       <param name="sensor_mapping_file" value="$(var sensor_mapping_file)"/>
+      <param name="use_vissim" value="$(var use_vissim)"/>
+      <param name="vissim_network" value="$(var vissim_network)"/>
+      <param name="vissim_lib_path" value="$(var vissim_lib_path)"/>
+      <param name="vissim_simulator_vehicles" value="$(var vissim_simulator_vehicles)"/>
+      <param name="sync_traffic_lights" value="$(var sync_traffic_lights)"/>
     </node>
 
     <arg name="input_control_cmd" default="/control/command/control_cmd"/>

@@ -717,6 +717,60 @@ SUMO版Step7の「各ステップをtry/exceptで分離し、1箇所の失敗が
   併せて3.2-1で述べた「`VISSIM_GetTrafficVehicles()`がVissimの1ステップ完了を待つ」という
   想定が実機で成立するかをこの段階で最初に確認する
 
+### Step 3実施内容(2026-08-31)
+
+**`carla_ros.py`**: `_initialize_parameters()`に新規ROS 2パラメータを追加(`use_vissim`/
+`vissim_network`/`vissim_lib_path`/`vissim_simulator_vehicles`/`sync_traffic_lights`)。すべて
+Python側にデフォルト値を持たせ(`use_vissim`は`False`)、launchファイルが未対応でも既存ノードが
+起動できるようにした。
+
+**`launch/autoware_carla_interface.launch.xml`**: Step2で追加した`<arg>`をノードの`<param>`として
+配線。
+
+**`carla_autoware.py`(`InitializeInterface`)**:
+
+- `__init__`で上記パラメータを読み込み、`self.vissim_carla_sim`/`self.vissim_sim`/
+  `self.vissim_sync`を`None`で初期化
+- 新規メソッド`_init_vissim_integration(client)`を追加。`use_vissim=False`(デフォルト)なら即
+  `return`(既存動作に影響なし)。`True`の場合のみ、vendor化した`CarlaSimulation`(client/world
+  注入版)・`PTVVissimSimulation`・`SimulationSynchronization`を遅延import(将来的な依存関係の
+  分離のため関数内import。現時点では`vissim_integration`側にimport時点で外部ライブラリを読みに
+  行くコードは無いためSUMO版の`traci`/`sumolib`ほど厳密な理由はないが、同じパターンを踏襲した)
+  して構築。`vissim_args`は`types.SimpleNamespace`で組み立て、`step_length`は独立パラメータに
+  せず**`self.fixed_delta_seconds`をそのまま流用**(2.2/0.3節の教訓を設計で担保するため)。
+  `vissim_lib_path`の空文字列は`None`に変換し、`PTVVissimSimulation`側の
+  `args.vissim_lib_path or 'libDrivingSimulatorProxy.so'`フォールバックが機能するようにした
+- `load_world()`内、`CarlaDataProvider.set_client(client)`の直後・EGOスポーンの直前に
+  `self._init_vissim_integration(client)`を呼び出し(v0.5 2.0で確定した初期化順序と一致)
+- `_cleanup()`に`_cleanup_vissim()`を追加(EGOアクター破棄後・`CarlaDataProvider`破棄前)。
+  **`PTVVissimSimulation.close()`(`VISSIM_Disconnect()`)のみ呼び出し**、
+  `SimulationSynchronization.close()`(信号解凍・同期アクター破棄・非同期モード復元を含む)は
+  Step7で統合予定のため今回は呼ばない
+
+**実施した検証**(mockベースの単体テスト・ROS 2環境上で実施):
+
+1. `use_vissim=False`(デフォルト)で`_init_vissim_integration()`が完全なno-opであること
+   (`vissim_carla_sim`/`vissim_sim`/`vissim_sync`が`None`のまま、`CarlaSimulation`/
+   `PTVVissimSimulation`/`SimulationSynchronization`が一切呼ばれないこと)を確認
+2. `use_vissim=True`で、vendor化した`CarlaSimulation`/`PTVVissimSimulation`/
+   `SimulationSynchronization`が期待した引数(注入された`client`/`world`、`vissim_network`、
+   `simulator_vehicles`、`sync_traffic_lights`)で正しく1回だけ呼ばれることを確認
+3. `vissim_lib_path=""` → `vissim_args.vissim_lib_path is None`への変換、
+   `vissim_args.step_length == self.fixed_delta_seconds`(0.1)であることを確認
+4. `_cleanup_vissim()`が`vissim_sim`が`None`のときno-op、設定されていれば`close()`を1回呼ぶこと、
+   `close()`が例外を送出しても`_cleanup_vissim()`自体は例外を伝播させないことを確認
+5. ROS 2環境(`/opt/ros/humble` + ワークスペースoverlay、symlink-installのため再ビルド不要)を
+   実際にsourceし、`carla_ros2_interface._initialize_parameters()`を実ノードで呼び出して新規
+   パラメータが期待したデフォルト値(`use_vissim=False`/`vissim_network=""`/
+   `vissim_lib_path=""`/`vissim_simulator_vehicles=1`/`sync_traffic_lights=False`)で宣言される
+   ことを確認
+
+**未実施(次回以降で実施推奨)**: 実際にCARLAサーバー・Vissim Kernelを両方起動してのend-to-end
+接続確認(`use_vissim=True`でノードを実行し、`VISSIM_ConnectToKernel()`が成立すること、および
+`VISSIM_GetTrafficVehicles()`がVissimの1ステップ完了を待つという3.2-1の想定が実機で成立するか)。
+`use_vissim=False`時は新規コードパスに一切入らないため、既存のCARLA単体動作への影響は構造的に
+無いが、実機での最終確認は未実施。
+
 ### Step 4: メインループへの同期処理組み込み + CARLA Tick一元化(3.1〜3.7)
 
 - `Vissim Tick → Vissim→CARLA同期 → CARLA Tick → CARLA→Vissim同期`を主ループに組み込む

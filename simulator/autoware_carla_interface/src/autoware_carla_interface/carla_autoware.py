@@ -17,6 +17,7 @@
 import random
 import signal
 import time
+from types import SimpleNamespace
 
 import carla
 
@@ -78,6 +79,18 @@ class InitializeInterface(object):
         self.use_traffic_manager = self.param_["use_traffic_manager"]
         self.max_real_delta_seconds = self.param_["max_real_delta_seconds"]
 
+        # Vissim-CARLA co-simulation parameters (see docs/
+        # Vissim_CARLA_Autoware_統合_実装計画_v1.0.md). use_vissim=False (default) keeps every
+        # code path below a complete no-op.
+        self.use_vissim = self.param_["use_vissim"]
+        self.vissim_network = self.param_["vissim_network"]
+        self.vissim_lib_path = self.param_["vissim_lib_path"]
+        self.vissim_simulator_vehicles = self.param_["vissim_simulator_vehicles"]
+        self.sync_traffic_lights = self.param_["sync_traffic_lights"]
+        self.vissim_carla_sim = None
+        self.vissim_sim = None
+        self.vissim_sync = None
+
     def _parse_spawn_point(self):
         """Parse spawn point string and return transform with randomize flag."""
         spawn_point = carla.Transform()
@@ -132,6 +145,39 @@ class InitializeInterface(object):
         for vehicle in vehicles:
             vehicle.set_autopilot(True)
 
+    def _init_vissim_integration(self, client):
+        """
+        Initializes Vissim-CARLA co-simulation if enabled (see docs/
+        Vissim_CARLA_Autoware_統合_実装計画_v1.0.md). Complete no-op when `use_vissim` is False
+        (the default), so existing CARLA-only behavior is unaffected.
+        """
+        if not self.use_vissim:
+            return
+
+        from .vissim_integration.carla_simulation import CarlaSimulation
+        from .vissim_integration.simulation_synchronization import SimulationSynchronization
+        from .vissim_integration.vissim_simulation import PTVVissimSimulation
+
+        # The vendored classes were written against an argparse.Namespace; a plain namespace with
+        # the same attribute names lets us reuse them unmodified. step_length is deliberately
+        # reused from fixed_delta_seconds (not a separate parameter) so the CARLA/Vissim step
+        # time cannot drift apart - see docs/Vissim_CARLA_Autoware_統合_実装計画_v1.0.md
+        # sections 0.3/2.2 (a step-time mismatch was the confirmed root cause of a CreateID
+        # handshake failure in the upstream bridge).
+        vissim_args = SimpleNamespace(
+            simulator_vehicles=self.vissim_simulator_vehicles,
+            vissim_lib_path=self.vissim_lib_path or None,
+            vissim_network=self.vissim_network,
+            step_length=self.fixed_delta_seconds,
+            sync_traffic_lights=self.sync_traffic_lights,
+        )
+
+        self.vissim_carla_sim = CarlaSimulation(client, self.world)
+        self.vissim_sim = PTVVissimSimulation(vissim_args)
+        self.vissim_sync = SimulationSynchronization(
+            self.vissim_sim, self.vissim_carla_sim, vissim_args
+        )
+
     def load_world(self):
         client = carla.Client(self.local_host, self.port)
         client.set_timeout(self.timeout)
@@ -158,6 +204,8 @@ class InitializeInterface(object):
         self.world.apply_settings(settings)
         CarlaDataProvider.set_world(self.world)
         CarlaDataProvider.set_client(client)
+
+        self._init_vissim_integration(client)
 
         spawn_point, randomize = self._parse_spawn_point()
         self.ego_actor = CarlaDataProvider.request_new_actor(
@@ -207,6 +255,7 @@ class InitializeInterface(object):
         self._cleanup_sensors()
         self._cleanup_ros_interface()
         self._cleanup_ego_actor()
+        self._cleanup_vissim()
         self._cleanup_carla_provider()
 
     def _cleanup_sensors(self):
@@ -237,6 +286,22 @@ class InitializeInterface(object):
             self.ego_actor = None
         except Exception as e:
             print(f"Warning: Ego actor destruction failed: {e}")
+
+    def _cleanup_vissim(self):
+        """
+        Disconnect from the Vissim Kernel, continuing on error.
+
+        Only closes the Vissim connection itself (VISSIM_Disconnect()). Unfreezing traffic
+        lights and destroying synchronized actors (`SimulationSynchronization.close()`) is
+        integrated separately (see docs/Vissim_CARLA_Autoware_統合_実装計画_v1.0.md Step 7) to
+        avoid a double-cleanup path.
+        """
+        if not self.vissim_sim:
+            return
+        try:
+            self.vissim_sim.close()
+        except Exception as e:
+            print(f"Warning: Vissim disconnect failed: {e}")
 
     def _cleanup_carla_provider(self):
         """Clean up CARLA data provider, continuing on error."""
