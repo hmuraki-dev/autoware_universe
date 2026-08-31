@@ -136,10 +136,24 @@ class SimulationSynchronization(object):
     def tick(self):
         """
         Tick to simulation synchronization
+
+        Kept for standalone/backward-compatibility use; the wired-in main loop calls
+        `sync_vissim_to_carla()`, then ticks CARLA exactly once itself, then calls
+        `sync_carla_to_vissim()` instead, so that CARLA tick stays centralized in exactly one
+        place. See docs/Vissim_CARLA_Autoware_統合_実装計画_v1.0.md Step 4 / section 3.2.
         """
-        # -------------------
-        # vissim-->carla sync
-        # -------------------
+        self.sync_vissim_to_carla()
+        self.carla.tick()
+        self.sync_carla_to_vissim()
+
+    def sync_vissim_to_carla(self):
+        """
+        Vissim -> CARLA sync: ticks vissim (push of the previous frame's CARLA-origin vehicle
+        state + pull of vissim's NPC/signal state, see section 3.2-1), then reflects vissim's NPC
+        state (spawn/destroy/position) and, if enabled, its traffic light state into CARLA.
+
+        Does NOT tick CARLA itself; must be called before the (single, external) CARLA tick.
+        """
         self.vissim.tick()
 
         # Spawning vissim controlled vehicles in carla.
@@ -201,10 +215,16 @@ class SimulationSynchronization(object):
                 for opendrive_id in opendrive_ids:
                     self.carla.synchronize_traffic_light(opendrive_id, carla_state)
 
-        # -------------------
-        # carla-->vissim sync
-        # -------------------
-        self.carla.tick()
+    def sync_carla_to_vissim(self):
+        """
+        CARLA -> Vissim sync: refreshes CARLA's spawned/destroyed actor diff (without ticking
+        CARLA, see `CarlaSimulation.update_actor_diff()`), then reflects CARLA's vehicle state
+        (spawn request/destroy request/position, EGO included via the auto-adopt mechanism) into
+        vissim.
+
+        Must be called after the (single, external) CARLA tick.
+        """
+        self.carla.update_actor_diff()
 
         # Spawning carla controlled vehicles in vissim. This also takes into account carla vehicles
         # that could not be spawned in vissim in previous time steps.

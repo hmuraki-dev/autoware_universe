@@ -38,6 +38,10 @@ class SensorLoop(object):
         self.running = False
         self.timestamp_last_run = 0.0
         self.timeout = 20.0
+        # Vissim-CARLA co-simulation synchronizer (see docs/
+        # Vissim_CARLA_Autoware_統合_実装計画_v1.0.md). None (default) keeps _tick_sensor()'s
+        # behavior identical to CARLA-only operation.
+        self.vissim_sync = None
 
     def _stop_loop(self):
         self.running = False
@@ -52,8 +56,12 @@ class SensorLoop(object):
             except SensorReceivedNoData as e:
                 raise RuntimeError(e)
             self.ego_actor.apply_control(ego_action)
+            if self.vissim_sync is not None:
+                self.vissim_sync.sync_vissim_to_carla()
         if self.running:
             CarlaDataProvider.get_world().tick()
+            if self.vissim_sync is not None:
+                self.vissim_sync.sync_carla_to_vissim()
 
 
 class InitializeInterface(object):
@@ -224,6 +232,7 @@ class InitializeInterface(object):
         self.bridge_loop = SensorLoop()
         self.bridge_loop.sensor = self.sensor_wrapper
         self.bridge_loop.ego_actor = self.ego_actor
+        self.bridge_loop.vissim_sync = self.vissim_sync
         self.bridge_loop.start_system_time = time.time()
         self.bridge_loop.start_game_time = GameTime.get_time()
         self.bridge_loop.running = True

@@ -198,10 +198,21 @@ class CarlaSimulation(object):
     def tick(self):
         """
         Tick to carla simulation.
+
+        Kept for standalone/backward-compatibility use (e.g. a future non-`autoware_carla_interface`
+        caller); the wired-in main loop calls `world.tick()` itself (exactly once per loop) and
+        then `update_actor_diff()` directly instead, so CARLA tick stays centralized in exactly one
+        place. See docs/Vissim_CARLA_Autoware_統合_実装計画_v1.0.md Step 4 / section 3.2.
         """
         self.world.tick()
+        self.update_actor_diff()
 
-        # Update data structures for the current frame.
+    def update_actor_diff(self):
+        """
+        Updates `spawned_actors`/`destroyed_actors`/the internal active-actor set for the current
+        frame, without ticking the world. Must be called once per frame, after `world.tick()` has
+        already advanced the simulation elsewhere.
+        """
         current_actors = set(
             [vehicle.id for vehicle in self.world.get_actors().filter('vehicle.*')])
         self.spawned_actors = current_actors.difference(self._active_actors)

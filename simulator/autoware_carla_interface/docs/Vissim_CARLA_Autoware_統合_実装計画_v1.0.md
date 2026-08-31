@@ -778,6 +778,60 @@ Python側にデフォルト値を持たせ(`use_vissim`は`False`)、launchフ�
 - **確認方法**: Vissim側で生成した車両がCARLAに、CARLA側(テスト用オートパイロット車両)の車両が
   Vissimに、それぞれ反映されることを確認。ログでtick回数が1ループ1回であることを検証
 
+### Step 4実施内容(2026-08-31)
+
+**`vissim_integration/carla_simulation.py`**: `tick()`を分割。
+
+- `update_actor_diff()`(新規): `world.tick()`を呼ばずに`spawned_actors`/`destroyed_actors`/
+  `_active_actors`のみ更新
+- `tick()`: `world.tick()` → `update_actor_diff()`。単体利用時の後方互換のために残すが、配線後の
+  メインループからは呼ばれない
+
+**`vissim_integration/simulation_synchronization.py`**: `tick()`を分割。
+
+- `sync_vissim_to_carla()`(新規、旧`tick()`前半 "vissim-->carla sync"+信号sync相当):
+  `self.vissim.tick()` → Vissim車両のCARLAへの生成/削除/位置反映 → (`sync_traffic_lights`なら)
+  信号反映。**CARLA側は一切tick・差分更新しない**
+- `sync_carla_to_vissim()`(新規、旧`tick()`後半 "carla-->vissim sync"相当): 冒頭で
+  `self.carla.update_actor_diff()`を呼んでから、CARLA車両(EGO含む、自動アダプト経由)のVissimへの
+  登録要求/削除要求/位置反映
+- `tick()`: `sync_vissim_to_carla()` → `self.carla.tick()` → `sync_carla_to_vissim()`。単体利用時の
+  後方互換のために残すが、配線後のメインループからは呼ばれない
+- 3.2-1で述べた通り、`PTVVissimSimulation.tick()`自体(push+pull一体型)は分割不要と判断し、
+  そのまま`sync_vissim_to_carla()`冒頭で呼び出している
+
+**`carla_autoware.py`**:
+
+- `SensorLoop.__init__`に`self.vissim_sync = None`を追加(デフォルトはVissim無効と同じ挙動)
+- `SensorLoop._tick_sensor()`を修正。`self.ego_actor.apply_control(ego_action)`の直後に
+  `vissim_sync`があれば`sync_vissim_to_carla()`を呼び、既存の`CarlaDataProvider.get_world().tick()`
+  (**唯一のCARLA Tick呼び出し、変更なし**)の直後に`vissim_sync`があれば`sync_carla_to_vissim()`を
+  呼ぶ。`vissim_sync is None`(デフォルト)の場合は追加コードパスに一切入らない
+- `InitializeInterface.run_bridge()`で`self.bridge_loop.vissim_sync = self.vissim_sync`を設定
+
+**`vissim_integration/NOTICE.md`**: 上記2ファイルのtick分割を「vendor化時の逸脱」として追記。
+
+**実施した検証**(mockベースの単体テスト):
+
+1. `CarlaSimulation.update_actor_diff()`が`world.tick()`を呼ばないこと、`tick()`は`world.tick()`後に
+   差分更新することを確認
+2. `SimulationSynchronization.sync_vissim_to_carla()`が`self.carla.tick()`/`update_actor_diff()`の
+   どちらも呼ばないこと、`sync_carla_to_vissim()`は`update_actor_diff()`のみ呼び`world.tick()`は
+   呼ばないことを確認
+3. `SimulationSynchronization.tick()`(後方互換ラッパー)が
+   `sync_vissim_to_carla → carla.tick → sync_carla_to_vissim`の順で呼ばれることを確認
+4. **`SensorLoop._tick_sensor()`の回帰確認**: `vissim_sync=None`(デフォルト)時、Step4適用前と
+   同じ呼び出し(`sensor()` → `apply_control()` → `world.tick()`が正確に1回)になることを確認
+5. `vissim_sync`設定時、呼び出し順序が`sensor() → apply_control() → sync_vissim_to_carla() →
+   world.tick()(1回) → sync_carla_to_vissim()`であることを確認(3.1の確定順序と一致)
+6. タイムスタンプゲートが閉じている(未経過)ケースでも、`world.tick()`と(設定時は)
+   `sync_carla_to_vissim()`は毎ループ実行され、`sensor()`/`apply_control()`/
+   `sync_vissim_to_carla()`はスキップされることを確認(既存のゲート挙動を維持)
+
+**未実施(次回以降で実施推奨)**: 実際にCARLA・Vissim Kernel両サーバーを起動してのend-to-end動作
+確認(Vissim車両がCARLAに、CARLA車両(EGO含む)がVissimに実際に反映されること)。優先度A項目
+「EGOのVissim自動登録経路の動作検証(Autoware制御下)」は引き続き未実施。
+
 ### Step 5: NPC排他制御(2.11)
 
 - `use_traffic_manager=True`とVissim使用が同時指定された場合にエラー停止する排他チェックを追加
