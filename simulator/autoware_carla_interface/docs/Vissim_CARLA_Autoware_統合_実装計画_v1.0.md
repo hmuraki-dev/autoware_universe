@@ -660,6 +660,54 @@ SUMO版Step7の「各ステップをtry/exceptで分離し、1箇所の失敗が
 - **対象の`.inpx`のシミュレーションステップ時間が0.1秒に設定されていることを確認する**(不一致だと
   Step6でCreateID確認失敗が再発することが判明済みのため、この段階で先に確認しておく)
 
+### Step 2実施内容(2026-08-31)
+
+**`launch/autoware_carla_interface.launch.xml`**
+
+- `fixed_delta_seconds`のデフォルトを`0.05`から`0.1`に変更
+- `max_real_delta_seconds`のデフォルトも`0.05`から`0.1`に変更(SUMO版と同じ理由:
+  `fixed_delta_seconds`だけを0.1に上げて`max_real_delta_seconds`を0.05のままにすると、実時間ペーシング
+  の速度倍率上限が崩れるため、揃えて更新した)
+- Vissim関連パラメータを`<arg>`として新規追加(まだどのノードの`<param>`にも渡していない。ノードへの
+  配線・Python側`declare_parameter`はStep3で実施): `use_vissim`(既定`False`)、`vissim_network`
+  (既定空文字、`.inpx`パス)、`vissim_lib_path`(既定空文字、`libDrivingSimulatorProxy.so`の絶対パス。
+  空文字は`PTVVissimSimulation.__init__`内の`args.vissim_lib_path or 'libDrivingSimulatorProxy.so'`が
+  そのままフォールバックとして機能するため、SUMO版の`"None"`センチネル文字列のような特別扱いは不要)、
+  `vissim_simulator_vehicles`(既定`1`)、`sync_traffic_lights`(既定`False`)
+- **意図的に追加していないもの**: Vissim側の`step_length`(=`VISSIM_ConnectToKernel`に渡す値)専用の
+  `<arg>`は追加しなかった。0.3節1.で判明した「`.inpx`側とco-simスクリプト側のステップ時間の不一致が
+  CreateID確認失敗の原因だった」という教訓を踏まえ、Step3の配線時に`fixed_delta_seconds`の値を
+  そのままVissim接続にも流用する設計とし、独立して設定できるパラメータを最初から作らないことで
+  ステップ時間の乖離が構造的に起こり得ないようにする方針とした
+- `run_synchronization.py`の`--carla-host`/`--carla-port`は、CARLA接続一元化(2.5、Step1で対応済み)
+  により不要なため追加していない
+
+**`.inpxのステップ時間確認`**
+
+- `examples/Town01/Town01.inpx`・`examples/Town03/*.inpx`の`<simulation>`要素を確認したところ、
+  いずれも`simRes="10"`(1秒あたり10ステップ = ステップ時間0.1秒)であり、**既に目標の0.1秒と
+  一致していることを確認した**(`.inpx`側の変更は不要)
+- 併せて`simPeriod`(0.3節2.のSimulation Period跨ぎ問題に関連)も確認: Town01は`simPeriod="300"`
+  (5分)、Town03は`simPeriod="3600"`(1時間)。Town01は短時間テストでも跨ぐ可能性があるため、
+  Step6での実機検証時にテスト時間と比較して要注意(この値の変更自体はStep2のスコープ外)
+
+**`README.md`**
+
+- `fixed_delta_seconds`/`max_real_delta_seconds`のデフォルト値表記・Tips記載を`0.05`から`0.1`に更新
+
+**実施した検証**:
+
+1. `python3 -m xml.dom.minidom`でlaunch XMLの構文妥当性を確認
+2. `ros2 launch autoware_carla_interface autoware_carla_interface.launch.xml --show-args`
+   (`install/`がsymlink-installのため再ビルド不要で編集内容がそのまま反映される)で、
+   `fixed_delta_seconds`/`max_real_delta_seconds`が`0.1`、新規Vissim引数がすべて意図した
+   説明文・デフォルト値で認識されることを確認
+3. `grep`で`.inpx`の`<simulation>`要素の`simRes`/`simPeriod`を確認(上記の通り)
+
+**未実施(次回以降で実施推奨)**: 実際にCARLAサーバーを起動しての end-to-end 回帰確認(0.1秒
+ステップでCARLA単体シミュレーションが従来通り動作すること)。追加したVissim関連`<arg>`はどの
+`<param>`にも渡していないため、既存ノードの動作には影響しない構造になっている。
+
 ### Step 3: Vissim Kernel接続 + 同期エンジン生成(2.3 / 2.4 / 2.7 / 2.8)
 
 - `PTVVissimSimulation`のインポート・接続を`InitializeInterface`に組み込む

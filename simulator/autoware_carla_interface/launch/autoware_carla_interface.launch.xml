@@ -13,9 +13,16 @@
     <arg name="spawn_point" default="None" description="location of ego vehicle spawn (default is random), example = [0.2 , 4.1, 0.4, 0., 0., 0.]"/>
     <arg name="map_path" default="" description="Autoware map directory path (map name will be extracted for CARLA)"/>
     <arg name="sync_mode" default="True"/>
-    <arg name="fixed_delta_seconds" default="0.05" description="Time step for CARLA, FPS=1/value"/>
+    <arg name="fixed_delta_seconds" default="0.1" description="Time step for CARLA, FPS=1/value"/>
     <arg name="use_traffic_manager" default="False"/>
-    <arg name="max_real_delta_seconds" default="0.05"/>
+    <arg name="max_real_delta_seconds" default="0.1"/>
+
+    <!-- Vissim-CARLA co-simulation (not wired to the node yet; see docs/Vissim_CARLA_Autoware_統合_実装計画_v1.0.md Step 2/3) -->
+    <arg name="use_vissim" default="False" description="Enable Vissim-CARLA co-simulation"/>
+    <arg name="vissim_network" default="" description="Path to the Vissim network file (.inpx)"/>
+    <arg name="vissim_lib_path" default="" description="Absolute path to libDrivingSimulatorProxy.so (empty: rely on LD_LIBRARY_PATH)"/>
+    <arg name="vissim_simulator_vehicles" default="1" description="Max number of Driving-Simulator (CARLA-origin) vehicles tracked by Vissim at the same time"/>
+    <arg name="sync_traffic_lights" default="False" description="Synchronize traffic light state from Vissim to CARLA (Vissim -> CARLA direction only)"/>
 
     <let name="carla_map" value="$(eval &quot;__import__('os').path.basename('$(var map_path)'.strip().rstrip('/')) or 'Town01'&quot;)"/>
 
