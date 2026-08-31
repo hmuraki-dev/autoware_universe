@@ -865,6 +865,60 @@ Python側にデフォルト値を持たせ(`use_vissim`は`False`)、launchフ�
 - Simulation Periodを十分に長く設定した`.inpx`で、想定するテスト時間内にrun境界を跨がないことを
   確認する(0.3節2.、現時点で未解決)
 
+### Step 6実施内容(2026-08-31、実機end-to-end検証済み)
+
+ユーザーの環境でCARLA 0.9.15サーバー(`-RenderOffScreen`、Quadro RTX 6000、Vulkan正常)と
+PTV Vissim Kernel for Linux(`/opt/vissim_kernel_2026.00-10`)が利用可能だったため、mockではなく
+実サーバーに対するend-to-endテストを実施した。
+
+**テスト方針**: SUMO版Step6と同じ理由で、Autoware実機を起動する代わりに「Traffic Managerではなく
+外部から`apply_control()`される車両」をEGOの代理として使用した(自動アダプト機構は`type_id`と
+transformのみを見ており、誰が`apply_control()`しているかは区別しないため、この代理は技術的に妥当)。
+
+**テスト内容**(使い捨てスクリプト、リポジトリには含めない):
+
+1. CARLAサーバーを起動し(`nvidia-smi`/`vulkaninfo`でGPU/Vulkanが正常であることを事前確認)、
+   `config.py --map Town01`でTown01を読み込み(信号機36基、OpenDRIVE ID 360〜395、
+   `signal_mapping.json`と一致することを確認)
+2. `world.get_settings()`で`synchronous_mode=True`/`fixed_delta_seconds=0.1`を設定した**直後に
+   即座に`world.tick()`を呼び**(`/memories/debugging.md`記載の既知のハング回避策を適用)、
+   ハングが発生しないことを確認
+3. `vehicle.toyota.prius`を`world.spawn_actor()`で直接スポーン(Traffic Manager不使用)し、EGO代理
+   とした
+4. vendor化済みの`CarlaSimulation(client, world)`/`PTVVissimSimulation(vissim_args)`/
+   `SimulationSynchronization(vissim_sim, carla_sim, vissim_args)`を実際に構築
+   (`vissim_network=examples/Town01/Town01.inpx`、`vissim_lib_path=/opt/vissim_kernel_.../
+   libDrivingSimulatorProxy.so`、`step_length=0.1`、`sync_traffic_lights=True`)
+5. Step4で配線した順序(`apply_control() → sync_vissim_to_carla() → world.tick() →
+   sync_carla_to_vissim()`)を60回実行
+
+**結果**:
+
+- **EGO代理は1回目のループ(iteration 0)で即座に`carla2vissim_ids`へ登録要求され
+  (`pending`)、次のiteration(1)で早くも実VehicleIDが確定して`active`化した**。
+  0.3節1.で確認済みの「ステップ時間を一致させれば通常通り成功する」という前提が実機で
+  実証された(以前観測されていた低確率失敗は再現せず)
+- CARLA側でEGO代理が実際に移動(60ステップで約20.8m)しており、制御が効いていることを確認
+- CARLAのフレームが60ステップ分ちょうど進行(`frame_after - frame_before == 60`)しており、
+  **1ループにつきCARLA Tickが正確に1回であることを実機で確認**(3.2の最重要事項)
+- **Vissim側のバックグラウンド交通(Town01.inpxの`.rou`相当の背景車両)1台が
+  `sync_vissim_to_carla()`によって正しくCARLA側へミラーリングされた**ことを確認(3.4の記載通り)
+- `--sync-traffic-lights`相当の信号同期も動作: 起動時に`signal_mapping`から36基すべてが
+  マッピング対象として認識され(`Vissim signal group(s) mapped: [(1, 1), (1, 2)]`)、freeze/
+  unfreezeも例外なく完了した
+- **後片付け**: `vissim2carla_ids`に登録されたVissim由来アクター・EGO代理をすべて`destroy()`し、
+  `PTVVissimSimulation.close()`(`VISSIM_Disconnect()`)を呼び、CARLAワールド設定を元の
+  非同期モードに復元。直後の`world.get_actors()`は破棄RPCの反映遅延で一時的に2台と表示されたが、
+  数秒後の再確認で車両数0・`synchronous_mode=False`・`client.get_server_version()`が正常応答する
+  ことを確認し、サーバーが正常な状態に復帰していることを確認した
+
+**既知の制約**: 実際のAutowareスタック(認識・計画・制御)は起動しておらず、「Autoware制御下の
+EGO」は`apply_control()`による直接制御で代替した。自動アダプト機構はアクターの`type_id`と
+transformのみを見て制御主体を区別しないため、この代替は技術的に妥当と考えるが、Autoware実機での
+最終確認は別途推奨。また、Simulation Period跨ぎの検証(0.3節2.)は60ステップ(6秒)の短時間テスト
+のため未実施のまま(Town01.inpxの`simPeriod=300`秒に対し、想定するAutowareテストの最大時間との
+比較は引き続き要検討)。
+
 ### Step 7: 終了処理の統合(2.13 / 3.9 / 3.10)
 
 - `InitializeInterface._cleanup()`に`SimulationSynchronization.close()`相当の処理を統合
