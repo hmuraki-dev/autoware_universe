@@ -13,9 +13,9 @@
     <arg name="spawn_point" default="None" description="location of ego vehicle spawn (default is random), example = [0.2 , 4.1, 0.4, 0., 0., 0.]"/>
     <arg name="map_path" default="" description="Autoware map directory path (map name will be extracted for CARLA)"/>
     <arg name="sync_mode" default="True"/>
-    <arg name="fixed_delta_seconds" default="0.1" description="Time step for CARLA, FPS=1/value"/>
+    <arg name="fixed_delta_seconds" default="0.05" description="Time step for CARLA, FPS=1/value"/>
     <arg name="use_traffic_manager" default="False"/>
-    <arg name="max_real_delta_seconds" default="0.1"/>
+    <arg name="max_real_delta_seconds" default="0.05"/>
 
     <!-- Vissim-CARLA co-simulation (see docs/Vissim_CARLA_Autoware_統合_実装計画_v1.0.md) -->
     <arg name="use_vissim" default="False" description="Enable Vissim-CARLA co-simulation"/>
