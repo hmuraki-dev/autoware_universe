@@ -99,6 +99,30 @@ class InitializeInterface(object):
         self.vissim_sim = None
         self.vissim_sync = None
 
+        self._check_vissim_traffic_manager_exclusivity()
+
+    def _check_vissim_traffic_manager_exclusivity(self):
+        """
+        Rejects `use_vissim=True` combined with `use_traffic_manager=True` at startup.
+
+        The Vissim auto-adopt mechanism (see docs/Vissim_CARLA_Autoware_統合_実装計画_v1.0.md
+        section 2.11) registers *every* `vehicle.*` CARLA actor into Vissim, up to the
+        `vissim_simulator_vehicles` cap - with no distinction between the ego vehicle and Traffic
+        Manager NPCs. Unlike a plain "everything gets registered and breaks" failure mode, this
+        cap makes the failure silent: some NPCs get registered (competing with the ego for the
+        same limited slot pool) while the rest are dropped with a warning log only, which is
+        harder to notice than an outright error. Reject the combination outright instead.
+
+            :raises ValueError: if both `use_vissim` and `use_traffic_manager` are True.
+        """
+        if self.use_vissim and self.use_traffic_manager:
+            raise ValueError(
+                "use_vissim=True and use_traffic_manager=True cannot be combined: the Vissim "
+                "auto-adopt mechanism would register Traffic Manager NPCs into Vissim "
+                "indiscriminately alongside the ego vehicle, silently competing for the limited "
+                "vissim_simulator_vehicles slot pool. Disable one of the two."
+            )
+
     def _parse_spawn_point(self):
         """Parse spawn point string and return transform with randomize flag."""
         spawn_point = carla.Transform()

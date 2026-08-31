@@ -836,6 +836,25 @@ Python側にデフォルト値を持たせ(`use_vissim`は`False`)、launchフ�
 
 - `use_traffic_manager=True`とVissim使用が同時指定された場合にエラー停止する排他チェックを追加
 
+### Step 5実施内容(2026-08-31)
+
+**`carla_autoware.py`(`InitializeInterface`)**:
+
+- 新規メソッド`_check_vissim_traffic_manager_exclusivity()`を追加し、`__init__`の最後
+  (パラメータ読み込み直後、CARLA/Vissimへの接続処理より前)で呼び出す
+- `use_vissim`と`use_traffic_manager`が両方`True`の場合、`ValueError`を送出して起動を停止する。
+  それ以外の組み合わせ(片方のみ`True`、両方`False`)ではエラーにならない
+
+**実施した検証**(mockベースの単体テスト):
+
+1. `use_vissim=True`かつ`use_traffic_manager=True` → `ValueError`が送出されることを確認
+2. `use_vissim=True`かつ`use_traffic_manager=False` → エラーにならないことを確認
+3. `use_vissim=False`かつ`use_traffic_manager=True` → エラーにならないことを確認
+4. 両方`False`(デフォルト) → エラーにならないことを確認
+
+チェックは`__init__`の最後に配置しているため、CARLAへの接続やVissim Kernelへの接続が試みられる前に、
+不正な組み合わせを検出して即座に停止する。SUMO版Step5と同一パターン。
+
 ### Step 6: EGO登録・双方向同期の検証(2.9 / 2.10 / 3.5)
 
 - Step0で決めた方針でEGOをVissimへ登録
