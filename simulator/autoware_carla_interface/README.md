@@ -104,7 +104,23 @@ The combined view shows all 6 cameras with labels: FL (Front-Left), F (Front), F
 
 ### Following the Ego Vehicle with the CARLA Spectator Camera
 
-The `spectator_follow` script locks the CARLA spectator (free) camera to the ego vehicle, so the in-simulator view chases the car automatically instead of having to pan manually. It connects to the running CARLA server, looks up the ego actor by its `role_name`, and updates the spectator transform at a fixed rate.
+The `spectator_follow` script locks the CARLA spectator (free) camera to the ego vehicle, so the in-simulator view chases the car automatically instead of having to pan manually. It connects to the running CARLA server, looks up the ego actor by its `role_name`, and updates the spectator transform at a fixed rate. It re-acquires the actor if it is (re)spawned, so it works regardless of when/how the ego vehicle appears (e.g. spawned by `autoware_carla_interface` at startup, or (re)spawned later after an RViz-initiated initial pose).
+
+#### Automatic launch (recommended)
+
+Pass `spectator_follow:=true` to `autoware_carla_interface.launch.xml` (or the top-level `e2e_simulator.launch.xml`) to have it start automatically alongside the CARLA interface, using the same `host`/`port`/`ego_vehicle_role_name` values as the main node:
+
+```bash
+ros2 launch autoware_launch e2e_simulator.launch.xml \
+  simulator_type:=carla \
+  map_path:=$HOME/autoware_map/Town01 \
+  spectator_follow:=true \
+  ...
+```
+
+Camera framing (`--distance`/`--height`/`--pitch`/`--rate`) is not exposed as launch args; run the script manually (below) if you need to tune it.
+
+#### Manual launch
 
 Run it in a separate terminal while CARLA and the Autoware bridge are running:
 

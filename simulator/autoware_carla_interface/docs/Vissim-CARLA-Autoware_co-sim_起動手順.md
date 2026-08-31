@@ -131,7 +131,8 @@ ros2 launch autoware_launch e2e_simulator.launch.xml \
   use_vissim:=true \
   vissim_network:=/home/divp/CARLA/Co-Simulation/PTV-Vissim/examples/Town01/Town01.inpx \
   vissim_lib_path:=/opt/vissim_kernel_2026.00-10/lib/libDrivingSimulatorProxy.so \
-  sync_traffic_lights:=true
+  sync_traffic_lights:=true \
+  spectator_follow:=true
 ```
 
 #### オプション一覧
@@ -147,6 +148,7 @@ ros2 launch autoware_launch e2e_simulator.launch.xml \
 | `vissim_lib_path` | `libDrivingSimulatorProxy.so`の絶対パス | `/opt/vissim_kernel_.../libDrivingSimulatorProxy.so` | 空(`LD_LIBRARY_PATH`任せ) |
 | `vissim_simulator_vehicles` | VissimにDriving Simulator車両として同時登録できる最大台数(既定1=EGOのみ) | `1` | `1` |
 | `sync_traffic_lights` | 信号同期(Vissim→CARLA一方向のみ) | `true` | `false` |
+| `spectator_follow` | EGO車両(role_name=`ego_vehicle_role_name`)にCARLAスペクテーターを自動追従させる | `true` | `false` |
 
 **注意**:
 
@@ -157,10 +159,17 @@ ros2 launch autoware_launch e2e_simulator.launch.xml \
   (`libDrivingSimulatorProxy.so`は`autoware_carla_interface`プロセス自身が`ctypes`経由で
   ロード・接続する)。
 - `fixed_delta_seconds`(CARLA)と`vissim_network`(`.inpx`)側のシミュレーションステップ時間
-  (`simRes`)は**必ず一致させること**(既定はいずれも0.1秒)。一致していないと、EGO等の
+  (`simRes`)は**必ず一致させること**(既定はいずれも0.05秒。SUMO-CARLA-Autoware連携の実績値。
+  `.inpx`側は`simRes=20`に設定すること)。一致していないと、EGO等の
   Driving Simulator車両がVissim側に登録される際の確認(CreateIDハンドシェイク)が失敗し続ける
   現象が起こることが判明している(詳細は
   `autoware_carla_interface/docs/Vissim_CARLA_Autoware_統合_実装計画_v1.0.md` 0.3節参照)。
+- `spectator_follow:=true`はCARLAスペクテーター(自由視点カメラ)をEGO車両に自動追従させる
+  (`ego_vehicle_role_name`と同じ`role_name`を持つアクターを検出)。RVizで初期位置・目的地を
+  設定してEGOがスポーン(または再スポーン)された後も自動的に追従先を検出し直すため、
+  起動タイミングを気にする必要はない。カメラの距離・高さ・俯角を調整したい場合は、
+  この引数は使わず`ros2 run autoware_carla_interface spectator_follow --distance ... --height ...`
+  を別ターミナルで手動実行すること(詳細は`autoware_carla_interface/README.md`参照)。
 
 
 ### 2.5 [appendix] 処理時間計測

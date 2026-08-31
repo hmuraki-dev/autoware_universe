@@ -24,6 +24,9 @@
     <arg name="vissim_simulator_vehicles" default="1" description="Max number of Driving-Simulator (CARLA-origin) vehicles tracked by Vissim at the same time"/>
     <arg name="sync_traffic_lights" default="False" description="Synchronize traffic light state from Vissim to CARLA (Vissim -> CARLA direction only)"/>
 
+    <!-- CARLA spectator camera auto-follow (see scripts/spectator_follow) -->
+    <arg name="spectator_follow" default="False" description="Automatically lock the CARLA spectator camera onto the ego vehicle as soon as it spawns"/>
+
     <let name="carla_map" value="$(eval &quot;__import__('os').path.basename('$(var map_path)'.strip().rstrip('/')) or 'Town01'&quot;)"/>
 
     <log message="[CARLA Interface] Map Path: '$(var map_path)' -> Loading CARLA Map: '$(var carla_map)'"/>
@@ -60,6 +63,20 @@
       <param name="vissim_simulator_vehicles" value="$(var vissim_simulator_vehicles)"/>
       <param name="sync_traffic_lights" value="$(var sync_traffic_lights)"/>
     </node>
+
+    <!-- Keeps the CARLA spectator (free) camera locked onto the ego vehicle (role_name=
+         ego_vehicle_role_name) as soon as it appears, whether spawned by autoware_carla_interface
+         itself or via RViz-initiated pose/goal (which does not change how/where the ego actor is
+         spawned in CARLA; that still happens inside autoware_carla_interface as usual). Polls for
+         the actor and re-acquires it if it is (re)spawned, so launch order does not matter.
+         Uses executable (not node), because scripts/spectator_follow is a plain argparse
+         script (not an rclpy node) and would reject the ros-args that a node action always
+         appends. -->
+    <executable
+      cmd="ros2 run autoware_carla_interface spectator_follow --host $(var host) --port $(var port) --role $(var ego_vehicle_role_name)"
+      output="screen"
+      if="$(var spectator_follow)"
+    />
 
     <arg name="input_control_cmd" default="/control/command/control_cmd"/>
     <arg name="input_odometry" default="/localization/kinematic_state"/>
