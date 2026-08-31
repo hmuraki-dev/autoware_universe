@@ -925,6 +925,53 @@ transformのみを見て制御主体を区別しないため、この代替は�
 - 各クリーンアップステップをtry/exceptで分離し、1箇所の失敗が他をブロックしないようにする
   (SUMO版Step7と同一方針)
 
+### Step 7実施内容(2026-08-31、実機end-to-end検証済み)
+
+**`carla_autoware.py`(`InitializeInterface._cleanup_vissim()`)を全面改修**:
+
+- `SimulationSynchronization.close()`を直接呼ぶのではなく、その処理内容(同期アクター破棄・
+  信号解凍・Vissim切断)を`_cleanup_vissim()`内で**各ステップごとにtry/exceptで分離**して
+  再実装した。理由: 元の`close()`はステップ間でエラー処理が無く、途中のアクター破棄で例外が
+  出ると後続の`self.vissim_sim.close()`(`VISSIM_Disconnect()`)まで飛ばされてしまい、
+  Vissim接続がリークする恐れがあったため(SUMO版Step7と同一の設計理由)
+- 具体的な処理順序:
+  1. `vissim2carla_ids`(Vissim由来→CARLAにミラーされた背景交通)の各CARLAアクターを
+     `vissim_carla_sim.destroy_actor()`で破棄(1件ずつtry/except)
+  2. `carla2vissim_ids`(CARLA由来→Vissimにミラーされた車両。EGO含む)の各Vissimアクターを
+     `vissim_sim.destroy_actor()`で破棄(1件ずつtry/except)。**実CARLA上のEGOアクター自体は
+     ここでは触らない**(`_cleanup_ego_actor()`が別途担当)
+  3. freeze済み信号機の解凍(`vissim_carla_sim.unfreeze_traffic_lights(_frozen_opendrive_ids)`)。
+     SUMO版には無かった、Vissim固有の追加ステップ
+  4. `vissim_sim.close()`(`VISSIM_Disconnect()`)— **上記のどれが失敗してもここは必ず実行される**
+- **設計判断**: `SimulationSynchronization.close()`が行うCARLAワールド設定の非同期モードへの
+  復元は、**あえて行わない**(SUMO版Step7と同一理由: 既存の(Vissim未使用時の)
+  `autoware_carla_interface`の終了処理も従来からCARLA設定を復元していないため、`use_vissim`の
+  有無で終了時の挙動に差異を生まないようにした)
+- 呼び出し順序(`_cleanup()`内)は変更なし: センサー→ROSインターフェース→EGOアクター→
+  **Vissim**→CarlaDataProvider
+
+**実施した検証**(mockベースの単体テスト + 実機end-to-end):
+
+1. `vissim_sync=None`(Vissim未使用) → 完全no-opであることを確認
+2. 正常系: `vissim2carla_ids`/`carla2vissim_ids`双方の全アクターが正しく破棄され、
+   `unfreeze_traffic_lights()`/`vissim_sim.close()`がそれぞれ1回ずつ呼ばれ、かつ
+   **CARLAワールド設定(`get_settings`/`apply_settings`)には一切触れていない**ことを確認
+3. **異常系(重要)**: `vissim2carla_ids`側の1アクターの`destroy_actor()`が例外を送出しても、
+   残りのアクター破棄・信号解凍・`vissim_sim.close()`が**必ず実行される**ことを確認(1箇所の
+   失敗が他のクリーンアップをブロックしないことの検証)
+4. `vissim_sim.close()`(`VISSIM_Disconnect()`)自体が例外を送出しても、`_cleanup_vissim()`全体が
+   例外を伝播させず正常終了することを確認
+5. **実機end-to-end確認**: Step6と同様に実CARLAサーバー(まだ起動中だったものを再利用)+実
+   Vissim Kernelに対して、EGO代理をスポーンし15ティック走行させた状態から、`InitializeInterface`
+   の**実際の`_cleanup_vissim()`メソッドをそのまま呼び出し**、(a)例外が発生しないこと、
+   (b)クリーンアップ後に車両アクターが0件になること(destroy RPCの反映を待つため少し間隔を
+   空けて確認)、(c)信号機が実際に`is_frozen()==False`(自律プログラムへ復帰)になっていること、
+   (d)サーバーが最後まで応答可能(`get_server_version()`が正常応答)であることを確認した
+
+**未実施(次回以降で実施推奨)**: 実際にCtrl+C・例外発生などの異常終了パターンを`main()`経由の
+シグナルハンドラ込みで発生させ、プロセス・アクターのリークがないことを目視確認する実機テスト
+(今回はメソッド単体を直接呼び出す形で検証した)。
+
 ### Step 8: 動作安定化(優先度B)
 
 - ID対応表の整合性チェック、車両生成/削除の例外処理、Vissim/CARLAの時刻ずれ検出、

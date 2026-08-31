@@ -322,15 +322,53 @@ class InitializeInterface(object):
 
     def _cleanup_vissim(self):
         """
-        Disconnect from the Vissim Kernel, continuing on error.
+        Tear down the Vissim-CARLA co-simulation, continuing past individual failures.
 
-        Only closes the Vissim connection itself (VISSIM_Disconnect()). Unfreezing traffic
-        lights and destroying synchronized actors (`SimulationSynchronization.close()`) is
-        integrated separately (see docs/Vissim_CARLA_Autoware_統合_実装計画_v1.0.md Step 7) to
-        avoid a double-cleanup path.
+        Reimplements what `SimulationSynchronization.close()` does, but with each step isolated
+        in its own try/except so that one failing step (e.g. destroying a single synchronized
+        actor) cannot prevent the later steps - in particular `PTVVissimSimulation.close()`
+        (`VISSIM_Disconnect()`) - from running. See docs/Vissim_CARLA_Autoware_統合_実装計画_v1.0.md
+        Step 7.
+
+        Order:
+          1. Destroy CARLA actors mirrored from vissim (`vissim2carla_ids`), one at a time.
+          2. Destroy vissim-side vehicles mirrored from CARLA (`carla2vissim_ids`, EGO included).
+             The real CARLA EGO actor itself is left untouched here (`_cleanup_ego_actor()`
+             handles it separately).
+          3. Unfreeze traffic lights that were frozen for signal sync.
+          4. Disconnect from the Vissim Kernel (`VISSIM_Disconnect()`) - always attempted last,
+             regardless of whether the steps above succeeded.
+
+        Deliberately does NOT restore CARLA's world settings to asynchronous mode (unlike
+        `SimulationSynchronization.close()`), so that `use_vissim`'s value does not change
+        shutdown behavior compared to CARLA-only operation (which has never restored settings
+        either).
         """
-        if not self.vissim_sim:
+        if not self.vissim_sync:
             return
+
+        for carla_actor_id in list(self.vissim_sync.vissim2carla_ids.values()):
+            try:
+                self.vissim_carla_sim.destroy_actor(carla_actor_id)
+            except Exception as e:
+                print(f"Warning: Failed to destroy vissim-mirrored CARLA actor "
+                      f"{carla_actor_id}: {e}")
+
+        for vissim_actor_id in list(self.vissim_sync.carla2vissim_ids.values()):
+            try:
+                self.vissim_sim.destroy_actor(vissim_actor_id)
+            except Exception as e:
+                print(f"Warning: Failed to destroy CARLA-mirrored vissim actor "
+                      f"{vissim_actor_id}: {e}")
+
+        try:
+            if self.vissim_sync._frozen_opendrive_ids:
+                self.vissim_carla_sim.unfreeze_traffic_lights(
+                    self.vissim_sync._frozen_opendrive_ids
+                )
+        except Exception as e:
+            print(f"Warning: Failed to unfreeze traffic lights: {e}")
+
         try:
             self.vissim_sim.close()
         except Exception as e:
