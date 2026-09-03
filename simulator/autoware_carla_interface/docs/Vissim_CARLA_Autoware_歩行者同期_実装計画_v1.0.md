@@ -290,6 +290,7 @@ self.carla.world.set_weather(carla.WeatherParameters.ClearNoon)
 - **Step P1**: `data/ptypes.json` vendor化 + `vissim_simulation.py` 歩行者取得ロジック追加(タスクP1・P2)
   — **完了(2026-09-03、`feature/vissim_co-sim`ブランチ)**
 - **Step P2**: `carla_simulation.py` / `bridge_helper.py` への歩行者変換・walker管理追加(タスクP3・P4)
+  — **完了(2026-09-03、`feature/vissim_co-sim`ブランチ)**
 - **Step P3**: `simulation_synchronization.py` への同期組み込み(タスクP5)— ここでvissim→carla方向の
   歩行者同期が一通り動作するようになる想定
 - **Step P4**: `carla_autoware.py` `_cleanup_vissim()` への歩行者cleanup追加(タスクP6)
@@ -315,6 +316,27 @@ self.carla.world.set_weather(carla.WeatherParameters.ClearNoon)
   `vissim_simulation.py` の歩行者追加が無変更vendorであることを明記)。
 - 検証: `python3 -m py_compile vissim_simulation.py` で構文確認、`get_errors` でlint確認、
   いずれも問題なし。CARLA/Vissim Kernel未接続のため実行時動作確認は次StepまたはStep P6で実施。
+
+### Step P2実施内容(2026-09-03)
+
+- `carla_simulation.py` に以下を追加(アップストリームと同一内容。唯一の差分は、walkerのactor diff
+  計算をアップストリームの `tick()` ではなく本リポジトリの `update_actor_diff()` 側に配置した点
+  — Step 4で確立済みの `tick()`/`update_actor_diff()` 分割方針に合わせるための意図的な逸脱):
+  - `__init__` に `self._active_walkers`/`self.spawned_walkers`/`self.destroyed_walkers` を追加。
+  - 新規メソッド `synchronize_pedestrian(walker_id, transform, velocity=None)` を追加
+    (`synchronize_vehicle()` と同じ `set_transform()`/`set_target_velocity()` 方式)。
+  - `update_actor_diff()` に `walker.pedestrian.*` フィルタによるwalker diff計算を追加。
+- `bridge_helper.py` に以下を追加(アップストリームと同一内容):
+  - クラス変数 `ptypes = {}`。
+  - 新規メソッド `get_carla_pedestrian_transform(vissim_pedestrian)`(walkerのバウンディングボックス
+    中心原点補正、`extent[2] / 2.0` のZ加算)。
+  - 新規メソッド `get_carla_pedestrian_blueprint(vissim_pedestrian)`(`ptypes` からのblueprint選択、
+    `role_name` 設定)。
+- `NOTICE.md` を更新: `carla_simulation.py` の逸脱に walker diff 配置の説明を追記、`bridge_helper.py`
+  を「無変更vendor」グループから分離し、追加されたメソッドを明記。
+- 検証: `python3 -m py_compile carla_simulation.py bridge_helper.py` で構文確認、`get_errors` で
+  lint確認、いずれも問題なし。両ファイルをアップストリームと `diff` し、既知の逸脱(client/world注入、
+  tick()/update_actor_diff()分割、provenanceヘッダ)以外の差分が無いことを確認済み。
 
 ---
 

@@ -48,6 +48,14 @@ class CarlaSimulation(object):
         self.spawned_actors = set()
         self.destroyed_actors = set()
 
+        # Same as above, but for walkers (vissim pedestrians mirrored into carla). Kept separate
+        # from the vehicle sets above since walker ids share the same carla actor id space as
+        # vehicles but are never controlled/tracked as vehicles (vissim->carla direction only, see
+        # PEDESTRIAN_TODO.md - there is no carla->vissim equivalent to mix in here).
+        self._active_walkers = set()
+        self.spawned_walkers = set()
+        self.destroyed_walkers = set()
+
         # Set traffic lights. {opendrive_id (str): traffic_light actor}. Note this is keyed by the
         # OpenDRIVE signal id (as returned by carla.TrafficLight.get_opendrive_id()), matching the
         # id space used in data/signal_mapping.json - not the carla actor id.
@@ -195,6 +203,30 @@ class CarlaSimulation(object):
             vehicle.set_light_state(carla.VehicleLightState(lights))
         return True
 
+    def synchronize_pedestrian(self, walker_id, transform, velocity=None):
+        """
+        Updates pedestrian (walker) state.
+
+        vissim -> carla direction only (see PEDESTRIAN_TODO.md): the walker is driven purely
+        kinematically via set_transform(), the same approach used by synchronize_vehicle() above,
+        rather than via carla.WalkerControl - chosen for consistency/simplicity with the existing
+        vehicle sync, at the cost of the walker's own walking animation not necessarily matching
+        its actual speed.
+
+            :param walker_id: id of the actor to be updated.
+            :param transform: new pedestrian transform (i.e., position and rotation).
+            :param velocity: new pedestrian velocity.
+            :return: True if successfully updated. Otherwise, False.
+        """
+        walker = self.world.get_actor(walker_id)
+        if walker is None:
+            return False
+
+        walker.set_transform(transform)
+        if velocity is not None:
+            walker.set_target_velocity(velocity)
+        return True
+
     def tick(self):
         """
         Tick to carla simulation.
@@ -218,3 +250,10 @@ class CarlaSimulation(object):
         self.spawned_actors = current_actors.difference(self._active_actors)
         self.destroyed_actors = self._active_actors.difference(current_actors)
         self._active_actors = current_actors
+
+        # Same as above, but for walkers (vissim pedestrians mirrored into carla).
+        current_walkers = set(
+            [walker.id for walker in self.world.get_actors().filter('walker.pedestrian.*')])
+        self.spawned_walkers = current_walkers.difference(self._active_walkers)
+        self.destroyed_walkers = self._active_walkers.difference(current_walkers)
+        self._active_walkers = current_walkers

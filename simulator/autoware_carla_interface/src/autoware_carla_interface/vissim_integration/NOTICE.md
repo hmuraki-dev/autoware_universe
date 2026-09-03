@@ -24,7 +24,11 @@ vendoring these files instead of referencing them via an external path.
   performs the actor-diff bookkeeping *without* calling `world.tick()`, so that CARLA tick stays
   centralized in exactly one place (`autoware_carla_interface`'s own main loop calls `world.tick()`
   once, then `update_actor_diff()` directly; see plan doc Step 4). All other methods are
-  unmodified.
+  unmodified. The pedestrian (walker) additions - `_active_walkers`/`spawned_walkers`/
+  `destroyed_walkers` tracking and `synchronize_pedestrian()` - were vendored with the same
+  content as upstream, except that the walker actor-diff computation (upstream: inside `tick()`)
+  was placed inside `update_actor_diff()` instead, consistent with the tick()/update_actor_diff()
+  split above - see docs/Vissim_CARLA_Autoware_歩行者同期_実装計画_v1.0.md Step P2.
 - `vissim_simulation.py`: the upstream file contained a module-level debug block (`dsi =
   ctypes.CDLL("/opt/vissim_kernel_2026.00-10/lib/libDrivingSimulatorProxy.so")` and
   `print_vissim_last_error()`) that eagerly loads the DS Interface library from a hardcoded
@@ -50,12 +54,15 @@ vendoring these files instead of referencing them via an external path.
   thin `sync_vissim_to_carla() -> self.carla.tick() -> sync_carla_to_vissim()` wrapper for
   standalone/backward-compatible use, but the wired-in main loop calls the two halves directly
   around its own single `world.tick()` call (see plan doc Step 4).
-- `constants.py`, `bridge_helper.py`, `data/vtypes.json`, `data/signal_mapping.json`,
-  `data/ptypes.json`: vendored without modification (only this provenance header was added to
-  `constants.py`/`bridge_helper.py`). `data/ptypes.json` maps vissim pedestrianType (100=Man,
-  200=Woman, 300=Wheelchair User) to CARLA `walker.pedestrian.*` blueprint ids; type 300 has an
-  empty candidate list (no CARLA wheelchair walker exists), mirroring `vtypes.json`'s
-  unsupported-type convention.
+- `bridge_helper.py`: vendored with the `ptypes = {}` class attribute and the
+  `get_carla_pedestrian_blueprint()`/`get_carla_pedestrian_transform()` methods added, both
+  byte-for-byte identical to upstream. All pre-existing methods (`get_carla_transform()`,
+  `get_carla_velocity()`, `get_carla_blueprint()`, etc.) are unmodified.
+- `constants.py`, `data/vtypes.json`, `data/signal_mapping.json`, `data/ptypes.json`: vendored
+  without modification (only this provenance header was added to `constants.py`). `data/
+  ptypes.json` maps vissim pedestrianType (100=Man, 200=Woman, 300=Wheelchair User) to CARLA
+  `walker.pedestrian.*` blueprint ids; type 300 has an empty candidate list (no CARLA wheelchair
+  walker exists), mirroring `vtypes.json`'s unsupported-type convention.
 
 Not vendored (see plan doc Step 0 ④):
 

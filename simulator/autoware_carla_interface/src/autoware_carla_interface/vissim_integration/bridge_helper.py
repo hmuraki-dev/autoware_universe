@@ -55,6 +55,11 @@ class BridgeHelper(object):
     blueprint_library = []
     vtypes = {}
 
+    # vissim pedestrianType number (str) -> [carla walker blueprint id, ...]. Loaded from
+    # data/ptypes.json, mirroring vtypes above. vissim -> carla direction only (see
+    # PEDESTRIAN_TODO.md).
+    ptypes = {}
+
     @staticmethod
     def get_carla_traffic_light_state(vissim_signal_state):
         """
@@ -90,6 +95,31 @@ class BridgeHelper(object):
             carla.Rotation(out_rotation[0], -out_rotation[1], out_rotation[2]))
 
         return out_transform
+
+    @staticmethod
+    def get_carla_pedestrian_transform(vissim_pedestrian):
+        """
+        Returns the carla transform for the given vissim pedestrian, corrected for CARLA's walker
+        actor origin convention.
+
+        Unlike vehicle actors (origin at ground level, corrected for via the `extent` argument of
+        get_carla_transform() above), a carla Walker's actor transform origin sits at the
+        vertical *center* of its bounding box - confirmed empirically on a live carla server:
+        spawning a walker.pedestrian.* blueprint reports `bounding_box.location == (0, 0, 0)` and
+        `bounding_box.extent.z ~= 0.93` (about half of an average adult's height), i.e. the box
+        spans symmetrically above and below the actor's own transform. VISSIM_Ped_Data.Position_Z
+        (vissim_pedestrian's transform.location.z), on the other hand, is ground level (the
+        pedestrian's feet). Without correction, walkers therefore appear to sink into the ground
+        by roughly half their height.
+
+        Raising the transform by half of vissim's own reported pedestrian height
+        (VISSIM_Ped_Data.Height, i.e. vissim_pedestrian.extent[2]) lines the feet back up with
+        the ground, using only data already provided by vissim (no extra carla actor lookup
+        needed, and it automatically adapts to e.g. shorter child/wheelchair pedestrian types).
+        """
+        carla_transform = BridgeHelper.get_carla_transform(vissim_pedestrian.get_transform())
+        carla_transform.location.z += vissim_pedestrian.extent[2] / 2.0
+        return carla_transform
 
     @staticmethod
     def get_vissim_transform(in_carla_transform, extent=None):
@@ -185,4 +215,41 @@ class BridgeHelper(object):
         else:
             logging.error(
                 'vissim type %s unknown. No vehicle will be spawned in carla', type_id)
+            return None
+
+    @staticmethod
+    def get_carla_pedestrian_blueprint(vissim_pedestrian):
+        """
+        Returns an appropriate walker blueprint based on the received vissim pedestrian.
+
+        vissim -> carla direction only (see PEDESTRIAN_TODO.md). Unlike get_carla_blueprint()
+        above, walker blueprints have no 'color'/'driver_id' attributes to randomize.
+        """
+        type_id = str(vissim_pedestrian.type)
+
+        if type_id in BridgeHelper.ptypes:
+            candidates = BridgeHelper.ptypes[type_id]
+            if candidates:
+                blueprint_id = random.choice(candidates)
+            else:
+                logging.error(
+                    'vissim pedestrian type %s not supported. No pedestrian will be spawned in '
+                    'carla', type_id)
+                return None
+
+            blueprint = BridgeHelper.blueprint_library.filter(blueprint_id)
+            if not blueprint:
+                logging.error(
+                    'carla blueprint %s unknown. No pedestrian will be spawned', blueprint_id)
+                return None
+            blueprint = blueprint[0]
+
+            if blueprint.has_attribute('role_name'):
+                blueprint.set_attribute('role_name', 'vissim_pedestrian')
+            return blueprint
+
+        else:
+            logging.error(
+                'vissim pedestrian type %s unknown. No pedestrian will be spawned in carla',
+                type_id)
             return None
