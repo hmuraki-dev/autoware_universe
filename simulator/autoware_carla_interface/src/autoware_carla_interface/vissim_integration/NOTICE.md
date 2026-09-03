@@ -53,7 +53,12 @@ vendoring these files instead of referencing them via an external path.
   `CarlaSimulation.update_actor_diff()` instead of ticking CARLA); `tick()` itself is kept as a
   thin `sync_vissim_to_carla() -> self.carla.tick() -> sync_carla_to_vissim()` wrapper for
   standalone/backward-compatible use, but the wired-in main loop calls the two halves directly
-  around its own single `world.tick()` call (see plan doc Step 4).
+  around its own single `world.tick()` call (see plan doc Step 4). Pedestrian synchronization
+  (`vissim2carla_ped_ids` mapping, `_load_ptypes()`, and the "vissim-->carla pedestrian sync"
+  spawn/destroy/update block) was ported byte-for-byte identical to upstream, placed in
+  `sync_vissim_to_carla()` (former `tick()`'s single "vissim-->carla" half) since pedestrian sync
+  is vissim->carla only - see docs/Vissim_CARLA_Autoware_歩行者同期_実装計画_v1.0.md Step P3. The
+  pedestrian actor cleanup loop in `close()` was ported identically as well.
 - `bridge_helper.py`: vendored with the `ptypes = {}` class attribute and the
   `get_carla_pedestrian_blueprint()`/`get_carla_pedestrian_transform()` methods added, both
   byte-for-byte identical to upstream. All pre-existing methods (`get_carla_transform()`,

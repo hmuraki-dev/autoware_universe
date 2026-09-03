@@ -56,6 +56,23 @@ class SimulationSynchronization(object):
         with open(os.path.join(dir_path, 'data', 'vtypes.json')) as f:
             BridgeHelper.vtypes = json.load(f)
 
+        # Pedestrian synchronization is vissim -> carla only: Simulator_Ped_Data has no
+        # id/create/delete fields to push a carla-controlled pedestrian back into vissim (see
+        # PEDESTRIAN_TODO.md). Unlike traffic light sync, this is always enabled - same as vehicle
+        # synchronization above, there is no CLI flag to opt out of it.
+
+        # Mapped pedestrian ids. vissim PedestrianID -> carla walker actor id. Kept separate from
+        # vissim2carla_ids (vehicles above) since the two use unrelated id spaces/lifecycles, and
+        # there is no carla2vissim equivalent for pedestrians.
+        self.vissim2carla_ped_ids = {}
+
+        BridgeHelper.ptypes = self._load_ptypes(os.path.join(dir_path, 'data', 'ptypes.json'))
+        if BridgeHelper.ptypes:
+            logging.info('Vissim pedestrian type(s) mapped : %s', sorted(BridgeHelper.ptypes.keys()))
+        else:
+            logging.warning(
+                'No usable ptypes.json was found - no pedestrians will be synchronized.')
+
         # Signal (traffic light) synchronization is vissim -> carla only: the DS Interface has no
         # function to push a state back into vissim (see TRAFFIC_SIGNAL_TODO.md task 1), so there
         # is no direction to choose, only whether it is enabled at all.
@@ -138,6 +155,20 @@ class SimulationSynchronization(object):
                 mapping[key] = [str(opendrive_id) for opendrive_id in opendrive_ids]
         return mapping
 
+    @staticmethod
+    def _load_ptypes(path):
+        """
+        Loads data/ptypes.json and returns {pedestrianType (str): [carla walker blueprint id,
+        ...]}, or {} if the file is missing/invalid (logged as a warning, not a fatal error, so
+        that vehicle-only co-simulation keeps working without this file).
+        """
+        try:
+            with open(path) as f:
+                return json.load(f)
+        except (IOError, OSError, ValueError) as e:
+            logging.warning('Could not load pedestrian type mapping file %s: %s', path, e)
+            return {}
+
     def tick(self):
         """
         Tick to simulation synchronization
@@ -190,6 +221,63 @@ class SimulationSynchronization(object):
                                                                carla_actor.bounding_box.extent)
             carla_velocity = BridgeHelper.get_carla_velocity(vissim_actor.get_velocity())
             self.carla.synchronize_vehicle(carla_actor_id, carla_transform, carla_velocity)
+
+        # -------------------------
+        # vissim-->carla pedestrian sync
+        # -------------------------
+        # Spawning vissim pedestrians in carla. Unlike vehicles, no subtraction against a
+        # carla->vissim mapping is needed here: VISSIM_GetTrafficPedestrians already excludes
+        # any simulator pedestrian(s), and there are none anyway since carla -> vissim
+        # pedestrian sync is out of scope (see PEDESTRIAN_TODO.md).
+        for vissim_pedestrian_id in self.vissim.spawned_pedestrians:
+            vissim_pedestrian = self.vissim.get_pedestrian(vissim_pedestrian_id)
+
+            carla_blueprint = BridgeHelper.get_carla_pedestrian_blueprint(vissim_pedestrian)
+            if carla_blueprint is not None:
+                carla_transform = BridgeHelper.get_carla_pedestrian_transform(vissim_pedestrian)
+                carla_walker_id = self.carla.spawn_actor(carla_blueprint, carla_transform)
+
+                if carla_walker_id != INVALID_ACTOR_ID:
+                    self.vissim2carla_ped_ids[vissim_pedestrian_id] = carla_walker_id
+                    logging.debug(
+                        '[sync] pedestrian %s: spawned carla walker %s (blueprint=%s) at '
+                        'pos=(%.2f, %.2f, %.2f)', vissim_pedestrian_id, carla_walker_id,
+                        carla_blueprint.id, carla_transform.location.x,
+                        carla_transform.location.y, carla_transform.location.z)
+                else:
+                    logging.debug(
+                        '[sync] pedestrian %s: carla.spawn_actor() failed (blueprint=%s), '
+                        'see the "Spawn carla actor failed" error above', vissim_pedestrian_id,
+                        carla_blueprint.id)
+            else:
+                logging.debug(
+                    '[sync] pedestrian %s: no carla blueprint resolved (pedestrianType=%s), '
+                    'see the error above - not spawned', vissim_pedestrian_id,
+                    vissim_pedestrian.type)
+
+        # Destroying vissim pedestrians in carla.
+        for vissim_pedestrian_id in self.vissim.destroyed_pedestrians:
+            if vissim_pedestrian_id in self.vissim2carla_ped_ids:
+                self.carla.destroy_actor(self.vissim2carla_ped_ids.pop(vissim_pedestrian_id))
+
+        # Updating vissim pedestrians in carla.
+        for vissim_pedestrian_id in self.vissim2carla_ped_ids:
+            carla_walker_id = self.vissim2carla_ped_ids[vissim_pedestrian_id]
+
+            vissim_pedestrian = self.vissim.get_pedestrian(vissim_pedestrian_id)
+
+            carla_transform = BridgeHelper.get_carla_pedestrian_transform(vissim_pedestrian)
+            carla_velocity = BridgeHelper.get_carla_velocity(vissim_pedestrian.get_velocity())
+            self.carla.synchronize_pedestrian(carla_walker_id, carla_transform, carla_velocity)
+
+        # Periodic sample log (same cadence/style as vissim_simulation.py's '[vissim] sample
+        # ...' logs), so that --debug alone is enough to tell whether any carla walker is
+        # currently mirroring a vissim pedestrian.
+        if self.vissim.tick_count % 20 == 0:
+            logging.debug(
+                '[sync] pedestrian sync: %d carla walker(s) currently mapped (vissim '
+                'pedestrian id -> carla actor id): %s', len(self.vissim2carla_ped_ids),
+                self.vissim2carla_ped_ids)
 
         # -------------------------
         # vissim-->carla signal sync
@@ -282,6 +370,10 @@ class SimulationSynchronization(object):
         # Destroying synchronized actors.
         for carla_actor_id in self.vissim2carla_ids.values():
             self.carla.destroy_actor(carla_actor_id)
+
+        # Destroying synchronized pedestrians (walkers).
+        for carla_walker_id in self.vissim2carla_ped_ids.values():
+            self.carla.destroy_actor(carla_walker_id)
 
         # Closing PTV-Vissim connection. Note: signal state is read via VISSIM_GetSignalStates,
         # which is a plain poll (unlike SUMO's traci subscriptions) - there is no signal-related
