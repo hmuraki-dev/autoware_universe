@@ -295,7 +295,7 @@ self.carla.world.set_weather(carla.WeatherParameters.ClearNoon)
   歩行者同期が一通り動作するようになる想定 — **完了(2026-09-03、`feature/vissim_co-sim`ブランチ)**
 - **Step P4**: `carla_autoware.py` `_cleanup_vissim()` への歩行者cleanup追加(タスクP6)
   — **完了(2026-09-03、`feature/vissim_co-sim`ブランチ)**
-- **Step P5**: NOTICE.md更新 + スタブテスト移植(タスクP7・P8前半)
+- **Step P5**: NOTICE.md更新 + スタブテスト移植(タスクP7・P8前半) — **完了(2026-09-03、`feature/vissim_co-sim`ブランチ)**
 - **Step P6**: 実機検証 + ドキュメント更新(タスクP8後半・P9)
 
 ### Step P1実施内容(2026-09-03)
@@ -370,6 +370,27 @@ self.carla.world.set_weather(carla.WeatherParameters.ClearNoon)
   明記。
 - 検証: `python3 -m py_compile carla_autoware.py` で構文確認、`get_errors` でlint確認、
   いずれも問題なし。
+
+### Step P5実施内容(2026-09-03)
+
+- `NOTICE.md` はStep P1〜P4の進行中に都度更新済みであり、本 Stepでの追加変更はなし
+  (内容確認のみ)。
+- アップストリーム `util/pedestrian_sync_stub_test.py` を `test/vissim_pedestrian_sync_stub_test.py`
+  として移植(本リポジトリには `vissim_integration` 用の既存テストが無く、これが最初)。
+  主な適応変更:
+  - import先を `autoware_carla_interface.vissim_integration.*`(`simulation_synchronization`
+    モジュール経由)に変更。
+  - `FakeCarlaSimulation` に `update_actor_diff()`(no-op)を追加。本リポジトリの
+    `SimulationSynchronization.tick()` は `self.carla.tick()` 後に
+    `sync_carla_to_vissim()` 内で別途 `self.carla.update_actor_diff()` を呼ぶため
+    (アップストリームは両者が `tick()` に一体化されている)。
+  - `data/ptypes.json` の読み込み先をベンダー先パスに変更。
+  - Python環境へのpath挿入を `sys.path.insert(0, .../src)` に変更し、
+    `autoware_carla_interface` パッケージを直接import可能に。
+- 実行確認: `python3 test/vissim_pedestrian_sync_stub_test.py` で実行し、
+  `All pedestrian synchronization stub checks passed.` を確認(実 CARLA/Vissim Kernel
+  には一切接続せず)。type 300(非対応)のjsonデータチェックも含め全アサーション成功。
+  `get_errors` でlint確認も問題なし。
 
 ---
 
