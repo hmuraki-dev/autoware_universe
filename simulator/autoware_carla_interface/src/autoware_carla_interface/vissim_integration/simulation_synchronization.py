@@ -23,6 +23,8 @@ import json
 import logging
 import os
 
+import carla
+
 from .bridge_helper import BridgeHelper
 from .constants import INVALID_ACTOR_ID
 
@@ -41,6 +43,9 @@ class SimulationSynchronization(object):
 
         self.vissim = vissim_simulation
         self.carla = carla_simulation
+
+        # weather setting
+        self.carla.world.set_weather(carla.WeatherParameters.ClearNoon)
 
         # Mapped actor ids.
         self.vissim2carla_ids = {}  # Contains only actors controlled by vissim.
