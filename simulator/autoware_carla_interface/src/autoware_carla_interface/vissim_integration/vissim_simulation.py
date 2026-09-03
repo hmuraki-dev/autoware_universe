@@ -92,6 +92,87 @@ class VISSIM_Veh_Data(Structure):
     ]
 
 
+class VissimPedestrianMotionState(enum.Enum):
+    """
+    VissimPedestrianMotionState contains the different vissim pedestrian motion states.
+
+    Values match enum Pedestrian_Motion_State_Type in DrivingSimulatorProxy.h (PTV Vissim Kernel
+    for Linux 2026.00-10).
+    """
+    APPROACHING_PT_VEHICLE = 1
+    ALIGHTING_FROM_PT_VEHICLE = 2
+    WAITING_FOR_PT_VEHICLE = 3
+    WALKING_UP_ON_ESCALATOR = 4
+    WALKING_DOWN_ON_ESCALATOR = 5
+    STANDING_ON_ESCALATOR = 6
+    WALKING_ON_MOVING_WALKWAY = 7
+    STANDING_ON_MOVING_WALKWAY = 8
+    WAITING_AT_QUEUE_HEAD = 9
+    WAITING_IN_QUEUE = 10
+    WALKING_UPSTAIRS = 11
+    WALKING_DOWNSTAIRS = 12
+    APPROACHING_ELEVATOR = 13
+    ALIGHTING_FROM_ELEVATOR = 14
+    WAITING_FOR_ELEVATOR = 15
+    RIDING_ELEVATOR = 16
+    WAITING = 17
+    WALKING_ON_LEVEL = 18
+    END = 19
+
+
+class VissimPedestrianConstructionElementType(enum.Enum):
+    """
+    VissimPedestrianConstructionElementType contains the different types of construction element a
+    vissim pedestrian can currently be on.
+
+    Values match enum Pedestrian_Construction_Element_Type in DrivingSimulatorProxy.h (PTV Vissim
+    Kernel for Linux 2026.00-10).
+    """
+    NONE = 0
+    AREA = 1
+    RAMP = 2
+    ELEVATOR_GROUP = 3
+    PED_LINK = 4
+
+
+class VISSIM_Ped_Data(Structure):
+    """
+    Structure to hold the data received from vissim about traffic pedestrians (i.e., vissim
+    pedestrians).
+
+    Field layout matches struct VISSIM_Ped_Data in DrivingSimulatorProxy.h (PTV Vissim Kernel for
+    Linux 2026.00-10). As with VISSIM_Veh_Data, all integer fields are C `int` (always 32-bit) -
+    NOT `long`, which is 64-bit on Linux/LP64 and would silently corrupt this struct's memory
+    layout.
+
+    Note: unlike VISSIM_Veh_Data, there is no `ControlledByVissim` field here - per
+    DrivingSimulatorProxy.h, VISSIM_GetTrafficPedestrians() already excludes our own simulator
+    pedestrian(s) from the result, so every row returned is genuine vissim-controlled traffic (see
+    PEDESTRIAN_TODO.md task 1). This co-simulation only implements the vissim -> carla direction
+    for pedestrians (carla -> vissim / Simulator_Ped_Data is out of scope, see PEDESTRIAN_TODO.md).
+    """
+    _fields_ = [
+        ('PedestrianID', c_int),
+        ('PedestrianType', c_int),  # pedestrian type number from Vissim
+        ('ModelFileName', c_char * constants.NAME_MAX_LENGTH),  # .v3d (utf-8)
+        ('Length', c_double),  # in m
+        ('Width', c_double),  # in m
+        ('Height', c_double),  # in m
+        ('Position_X', c_double),  # in m
+        ('Position_Y', c_double),  # in m
+        ('Position_Z', c_double),  # in m
+        ('Orient_Heading', c_double),  # in radians
+        ('Orient_Pitch', c_double),  # in radians
+        ('DistanceSinceBirth', c_double),  # in m
+        ('Speed', c_double),  # in m/s
+        ('MotionState', c_int),  # Pedestrian_Motion_State_Type enum, see VissimPedestrianMotionState above
+        ('ConstructionElementType', c_int),  # Pedestrian_Construction_Element_Type enum, see VissimPedestrianConstructionElementType above
+        ('ConstructionElementID', c_int),  # the construction element the pedestrian is currently on
+        ('ConstructionElementName', c_char * constants.NAME_MAX_LENGTH),  # empty if not set in Vissim (utf-8)
+        ('PreviousIndex', c_int),  # index in the previous Vissim time step, < 0 = new in visibility area
+    ]
+
+
 class VissimLightState(enum.Enum):
     """
     VissimLightState contains the different vissim indicator states.
@@ -183,6 +264,52 @@ class VissimVehicle(object):
         return self._transform
 
 
+class VissimPedestrian(object):
+    """
+    VissimPedestrian holds the data relative to traffic pedestrians in vissim.
+
+    vissim -> carla direction only (see PEDESTRIAN_TODO.md): there is no carla -> vissim
+    equivalent for pedestrians, so unlike VissimVehicle, no 'own actor' bookkeeping is needed.
+    """
+    def __init__(self,
+                 pedestrian_id,
+                 type_id,
+                 model_filename,
+                 extent,
+                 location,
+                 rotation,
+                 velocity,
+                 motion_state=None):
+        # Static parameters.
+        self.id = pedestrian_id
+        self.type = type_id
+        self.model_filename = model_filename
+        self.extent = extent  # (length, width, height) in m, as reported by vissim.
+
+        # Dynamic attributes.
+        loc = carla.Location(location[0], location[1], location[2])
+        rot = carla.Rotation(math.degrees(rotation[0]), math.degrees(rotation[1]),
+                             math.degrees(rotation[2]))
+        self._transform = carla.Transform(loc, rot)
+        self._velocity = carla.Vector3D(
+            velocity * math.cos(math.radians(rot.yaw)) * math.cos(math.radians(rot.pitch)),
+            velocity * math.sin(math.radians(rot.yaw)) * math.cos(math.radians(rot.pitch)),
+            velocity * math.sin(math.radians(rot.pitch)))
+        self.motion_state = motion_state
+
+    def get_velocity(self):
+        """
+        Returns the pedestrian's velocity.
+        """
+        return self._velocity
+
+    def get_transform(self):
+        """
+        Returns carla transform.
+        """
+        return self._transform
+
+
 # ==================================================================================================
 # -- vissim simulation -----------------------------------------------------------------------------
 # ==================================================================================================
@@ -227,6 +354,11 @@ class PTVVissimSimulation(object):
         # ControlledByVissim == True). Excludes our own simulator vehicles echoed back by vissim.
         self._vissim_vehicles = {}
 
+        # Real vissim PedestrianID -> VissimPedestrian. vissim -> carla direction only (see
+        # PEDESTRIAN_TODO.md): VISSIM_GetTrafficPedestrians() already excludes any simulator
+        # pedestrian(s), so no ControlledByVissim-style filtering is needed here, unlike vehicles.
+        self._vissim_pedestrians = {}
+
         # (ControllerID, SignalGroupID) -> VissimSignalState, refreshed every tick. Empty until
         # the first tick() (and remains empty if the network has no signal controllers).
         self._signal_states = {}
@@ -237,6 +369,8 @@ class PTVVissimSimulation(object):
 
         self.spawned_vehicles = set()
         self.destroyed_vehicles = set()
+        self.spawned_pedestrians = set()
+        self.destroyed_pedestrians = set()
         self._tick_count = 0
 
         # Unique, monotonically increasing CreateID generator (not reused across retries).
@@ -272,6 +406,11 @@ class PTVVissimSimulation(object):
         ]
         self.ds_proxy.VISSIM_GetTrafficVehicles.restype = None
 
+        self.ds_proxy.VISSIM_GetTrafficPedestrians.argtypes = [
+            POINTER(c_int), POINTER(POINTER(VISSIM_Ped_Data))
+        ]
+        self.ds_proxy.VISSIM_GetTrafficPedestrians.restype = None
+
         self.ds_proxy.VISSIM_GetSignalStates.argtypes = [
             POINTER(c_int), POINTER(POINTER(VISSIM_Sig_Data))
         ]
@@ -305,6 +444,12 @@ class PTVVissimSimulation(object):
         Accessor for vissim actor.
         """
         return self._vissim_vehicles[actor_id]
+
+    def get_pedestrian(self, pedestrian_id):
+        """
+        Accessor for vissim pedestrian.
+        """
+        return self._vissim_pedestrians[pedestrian_id]
 
     @property
     def signal_ids(self):
@@ -560,6 +705,40 @@ class PTVVissimSimulation(object):
 
         self._vissim_vehicles = vehicles
 
+        # Retrieving vissim traffic pedestrian data (read-only: vissim -> carla direction only,
+        # see PEDESTRIAN_TODO.md - carla -> vissim / Simulator_Ped_Data is out of scope). Unlike
+        # VISSIM_GetTrafficVehicles, VISSIM_GetTrafficPedestrians already excludes any simulator
+        # pedestrian(s), so every row here is genuine vissim-controlled traffic.
+        num_pedestrians = c_int(0)
+        pedestrian_data = POINTER(VISSIM_Ped_Data)()
+        self.ds_proxy.VISSIM_GetTrafficPedestrians(byref(num_pedestrians), byref(pedestrian_data))
+
+        pedestrians = {}
+        for i in range(num_pedestrians.value):
+            ped_data = pedestrian_data[i]
+            try:
+                motion_state = VissimPedestrianMotionState(ped_data.MotionState)
+            except ValueError:
+                logging.warning(
+                    '[vissim] unknown MotionState value %d for PedestrianID=%d',
+                    ped_data.MotionState, ped_data.PedestrianID)
+                motion_state = None
+
+            pedestrians[ped_data.PedestrianID] = VissimPedestrian(
+                ped_data.PedestrianID, ped_data.PedestrianType, ped_data.ModelFileName,
+                [ped_data.Length, ped_data.Width, ped_data.Height],
+                [ped_data.Position_X, ped_data.Position_Y, ped_data.Position_Z],
+                [ped_data.Orient_Pitch, ped_data.Orient_Heading, 0.0], ped_data.Speed, motion_state)
+
+        # Update data structures for the current time step.
+        active_pedestrians = set(self._vissim_pedestrians.keys())
+        current_pedestrians = set(pedestrians.keys())
+
+        self.spawned_pedestrians = current_pedestrians.difference(active_pedestrians)
+        self.destroyed_pedestrians = active_pedestrians.difference(current_pedestrians)
+
+        self._vissim_pedestrians = pedestrians
+
         # Retrieving vissim signal group states (read-only: vissim -> carla direction only, the
         # DS Interface has no equivalent "set signal state" function).
         num_signals = c_int(0)
@@ -581,6 +760,15 @@ class PTVVissimSimulation(object):
         self._signal_states = signal_states
 
         self._tick_count += 1
+        if self._tick_count % 20 == 0 and pedestrians:
+            sample_id, sample_pedestrian = next(iter(pedestrians.items()))
+            sample_transform = sample_pedestrian.get_transform()
+            logging.debug(
+                '[vissim] sample pedestrian PedestrianID=%s pos=(%.2f, %.2f, %.2f) motion_state=%s '
+                '(%d pedestrian(s) total)', sample_id, sample_transform.location.x,
+                sample_transform.location.y, sample_transform.location.z,
+                sample_pedestrian.motion_state.name if sample_pedestrian.motion_state else None,
+                len(pedestrians))
         if self._tick_count % 20 == 0 and vehicles:
             sample_id, sample_vehicle = next(iter(vehicles.items()))
             sample_transform = sample_vehicle.get_transform()

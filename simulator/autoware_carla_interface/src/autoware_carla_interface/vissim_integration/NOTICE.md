@@ -2,7 +2,8 @@
 
 The files in this directory (`constants.py`, `vissim_simulation.py`, `bridge_helper.py`,
 `carla_simulation.py`, `simulation_synchronization.py`, `data/vtypes.json`,
-`data/signal_mapping.json`) are vendored from CARLA's official Vissim-CARLA co-simulation bridge:
+`data/signal_mapping.json`, `data/ptypes.json`) are vendored from CARLA's official Vissim-CARLA
+co-simulation bridge:
 
 - Upstream location (this workspace's reference checkout):
   `/home/divp/CARLA/Co-Simulation/PTV-Vissim/vissim_integration/` and
@@ -31,7 +32,11 @@ vendoring these files instead of referencing them via an external path.
   removed when vendoring: left in place, it would make importing this module fail unconditionally
   in any environment where that exact path does not exist, independently of the (correct, already
   lazy/configurable) library loading that `PTVVissimSimulation.__init__` performs via
-  `args.vissim_lib_path`. Everything else in the file is unmodified.
+  `args.vissim_lib_path`. Everything else in the file is unmodified, including the pedestrian
+  synchronization additions (`VissimPedestrianMotionState`, `VissimPedestrianConstructionElementType`,
+  `VISSIM_Ped_Data`, `VissimPedestrian`, `get_pedestrian()`, and the `VISSIM_GetTrafficPedestrians`
+  fetching logic in `tick()`), which were vendored byte-for-byte identical to upstream - see docs/
+  Vissim_CARLA_Autoware_歩行者同期_実装計画_v1.0.md Step P1.
 - `simulation_synchronization.py`: extracted from the upstream `run_synchronization.py`, keeping
   only the `SimulationSynchronization` class definition (the CLI entry point / standalone
   `while True:` loop / pacing logic in `run_synchronization.py` are intentionally not vendored,
@@ -45,8 +50,12 @@ vendoring these files instead of referencing them via an external path.
   thin `sync_vissim_to_carla() -> self.carla.tick() -> sync_carla_to_vissim()` wrapper for
   standalone/backward-compatible use, but the wired-in main loop calls the two halves directly
   around its own single `world.tick()` call (see plan doc Step 4).
-- `constants.py`, `bridge_helper.py`, `data/vtypes.json`, `data/signal_mapping.json`: vendored
-  without modification (only this provenance header was added to `constants.py`/`bridge_helper.py`).
+- `constants.py`, `bridge_helper.py`, `data/vtypes.json`, `data/signal_mapping.json`,
+  `data/ptypes.json`: vendored without modification (only this provenance header was added to
+  `constants.py`/`bridge_helper.py`). `data/ptypes.json` maps vissim pedestrianType (100=Man,
+  200=Woman, 300=Wheelchair User) to CARLA `walker.pedestrian.*` blueprint ids; type 300 has an
+  empty candidate list (no CARLA wheelchair walker exists), mirroring `vtypes.json`'s
+  unsupported-type convention.
 
 Not vendored (see plan doc Step 0 ④):
 

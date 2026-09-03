@@ -288,12 +288,33 @@ self.carla.world.set_weather(carla.WeatherParameters.ClearNoon)
 (実装着手はユーザーの個別指示を待つ)。
 
 - **Step P1**: `data/ptypes.json` vendor化 + `vissim_simulation.py` 歩行者取得ロジック追加(タスクP1・P2)
+  — **完了(2026-09-03、`feature/vissim_co-sim`ブランチ)**
 - **Step P2**: `carla_simulation.py` / `bridge_helper.py` への歩行者変換・walker管理追加(タスクP3・P4)
 - **Step P3**: `simulation_synchronization.py` への同期組み込み(タスクP5)— ここでvissim→carla方向の
   歩行者同期が一通り動作するようになる想定
 - **Step P4**: `carla_autoware.py` `_cleanup_vissim()` への歩行者cleanup追加(タスクP6)
 - **Step P5**: NOTICE.md更新 + スタブテスト移植(タスクP7・P8前半)
 - **Step P6**: 実機検証 + ドキュメント更新(タスクP8後半・P9)
+
+### Step P1実施内容(2026-09-03)
+
+- `data/ptypes.json` をアップストリームからバイト同一でvendor化(`diff` で無差異を確認済み)。
+- `vissim_simulation.py` に以下を追加(いずれもアップストリームと同一内容。差分は既存の逸脱
+  「module-levelデバッグブロック削除」のみで、歩行者関連コードそのものに新規の逸脱は無い):
+  - `VissimPedestrianMotionState`(19値)/`VissimPedestrianConstructionElementType`(5値)enum。
+  - `VISSIM_Ped_Data` ctypes構造体(18フィールド)。
+  - `VissimPedestrian` クラス(`get_velocity()`/`get_transform()`)。
+  - `PTVVissimSimulation.__init__` に `self._vissim_pedestrians = {}` /
+    `self.spawned_pedestrians = set()` / `self.destroyed_pedestrians = set()` を追加。
+  - `_declare_prototypes()` に `VISSIM_GetTrafficPedestrians` のargtypes/restype宣言を追加。
+  - `get_pedestrian(pedestrian_id)` アクセサを追加。
+  - `tick()` に、車両の spawned/destroyed 計算の直後・signal取得の直前として、
+    `VISSIM_GetTrafficPedestrians` 呼び出し・`VissimPedestrian` 構築・IDセット差分による
+    `spawned_pedestrians`/`destroyed_pedestrians` 計算・20 tick毎のサンプルログを追加。
+- `NOTICE.md` のファイル一覧・deviations節を更新(`data/ptypes.json` を対象ファイルに追加、
+  `vissim_simulation.py` の歩行者追加が無変更vendorであることを明記)。
+- 検証: `python3 -m py_compile vissim_simulation.py` で構文確認、`get_errors` でlint確認、
+  いずれも問題なし。CARLA/Vissim Kernel未接続のため実行時動作確認は次StepまたはStep P6で実施。
 
 ---
 
