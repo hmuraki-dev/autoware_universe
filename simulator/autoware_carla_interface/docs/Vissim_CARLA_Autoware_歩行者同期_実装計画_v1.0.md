@@ -294,6 +294,7 @@ self.carla.world.set_weather(carla.WeatherParameters.ClearNoon)
 - **Step P3**: `simulation_synchronization.py` への同期組み込み(タスクP5)— ここでvissim→carla方向の
   歩行者同期が一通り動作するようになる想定 — **完了(2026-09-03、`feature/vissim_co-sim`ブランチ)**
 - **Step P4**: `carla_autoware.py` `_cleanup_vissim()` への歩行者cleanup追加(タスクP6)
+  — **完了(2026-09-03、`feature/vissim_co-sim`ブランチ)**
 - **Step P5**: NOTICE.md更新 + スタブテスト移植(タスクP7・P8前半)
 - **Step P6**: 実機検証 + ドキュメント更新(タスクP8後半・P9)
 
@@ -357,6 +358,18 @@ self.carla.world.set_weather(carla.WeatherParameters.ClearNoon)
   いずれも問題なし。アップストリーム `run_synchronization.py` と `diff` し、既知の逸脱(CLI抽出、
   同期モード設定除去、tick()分割)以外に差分が無いことを確認済み。これにより、vissim→carla方向の
   歩行者同期ロジック自体は一通り実装完了(実機検証はStep P6で実施)。
+
+### Step P4実施内容(2026-09-03)
+
+- `carla_autoware.py` の `_cleanup_vissim()` に、「Destroy CARLA actors mirrored from vissim
+  (`vissim2carla_ids`)」ループの直後に、`vissim2carla_ped_ids` に対する同型の
+  try/exceptループを追加(1体ずつ独立させ、一部の破棄失敗が他のクリーンアップを止めない
+  方針を踏襲)。
+- 関数docstringの「Order:」一覧にも歩行者destroyのステップを追加(2番目として挿入し、
+  以降の番号を繰り下げ)。vissim→carla方向のみのためcarla2vissim側の対応は不要である旨も
+  明記。
+- 検証: `python3 -m py_compile carla_autoware.py` で構文確認、`get_errors` でlint確認、
+  いずれも問題なし。
 
 ---
 

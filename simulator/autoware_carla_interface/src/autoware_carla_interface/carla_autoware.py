@@ -332,11 +332,15 @@ class InitializeInterface(object):
 
         Order:
           1. Destroy CARLA actors mirrored from vissim (`vissim2carla_ids`), one at a time.
-          2. Destroy vissim-side vehicles mirrored from CARLA (`carla2vissim_ids`, EGO included).
+          2. Destroy CARLA walkers mirrored from vissim pedestrians (`vissim2carla_ped_ids`), one
+             at a time. Pedestrian synchronization is vissim -> carla only (see docs/
+             Vissim_CARLA_Autoware_歩行者同期_実装計画_v1.0.md), so there is no vissim-side
+             pedestrian counterpart to destroy here, unlike vehicles below.
+          3. Destroy vissim-side vehicles mirrored from CARLA (`carla2vissim_ids`, EGO included).
              The real CARLA EGO actor itself is left untouched here (`_cleanup_ego_actor()`
              handles it separately).
-          3. Unfreeze traffic lights that were frozen for signal sync.
-          4. Disconnect from the Vissim Kernel (`VISSIM_Disconnect()`) - always attempted last,
+          4. Unfreeze traffic lights that were frozen for signal sync.
+          5. Disconnect from the Vissim Kernel (`VISSIM_Disconnect()`) - always attempted last,
              regardless of whether the steps above succeeded.
 
         Deliberately does NOT restore CARLA's world settings to asynchronous mode (unlike
@@ -353,6 +357,13 @@ class InitializeInterface(object):
             except Exception as e:
                 print(f"Warning: Failed to destroy vissim-mirrored CARLA actor "
                       f"{carla_actor_id}: {e}")
+
+        for carla_walker_id in list(self.vissim_sync.vissim2carla_ped_ids.values()):
+            try:
+                self.vissim_carla_sim.destroy_actor(carla_walker_id)
+            except Exception as e:
+                print(f"Warning: Failed to destroy vissim-mirrored CARLA walker "
+                      f"{carla_walker_id}: {e}")
 
         for vissim_actor_id in list(self.vissim_sync.carla2vissim_ids.values()):
             try:
