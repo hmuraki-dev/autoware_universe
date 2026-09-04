@@ -43,6 +43,58 @@ class SensorLoop(object):
         # behavior identical to CARLA-only operation.
         self.vissim_sync = None
 
+        # Main-loop period measurement
+        self._main_loop_measure_wall_start = None
+        self._main_loop_measure_sim_start = None
+        self._main_loop_measure_count = 0
+        self._main_loop_measure_interval = 10
+
+    def _stop_loop(self):
+        self.running = False
+
+        self._main_loop_measure_interval = 10
+
+    # ↓↓↓ ここに追加 ↓↓↓
+    def _measure_main_loop_period(self, current_sim_time):
+        """Measure and log the average main-loop period."""
+
+        current_wall_time = time.monotonic()
+
+        # First call: initialize the measurement origin.
+        if self._main_loop_measure_wall_start is None:
+            self._main_loop_measure_wall_start = current_wall_time
+            self._main_loop_measure_sim_start = current_sim_time
+            self._main_loop_measure_count = 0
+            return
+
+        self._main_loop_measure_count += 1
+
+        if self._main_loop_measure_count < self._main_loop_measure_interval:
+            return
+
+        wall_elapsed = current_wall_time - self._main_loop_measure_wall_start
+        sim_elapsed = current_sim_time - self._main_loop_measure_sim_start
+
+        wall_period = wall_elapsed / self._main_loop_measure_count
+        sim_period = sim_elapsed / self._main_loop_measure_count
+
+        wall_frequency = 1.0 / wall_period if wall_period > 0.0 else 0.0
+        sim_frequency = 1.0 / sim_period if sim_period > 0.0 else 0.0
+
+        print(
+            "[MAIN_LOOP_PERIOD] "
+            f"samples={self._main_loop_measure_count}, "
+            f"wall_period={wall_period:.6f} sec, "
+            f"wall_frequency={wall_frequency:.2f} Hz, "
+            f"sim_period={sim_period:.6f} sec, "
+            f"sim_frequency={sim_frequency:.2f} Hz",
+            flush=True,
+        )
+
+        self._main_loop_measure_wall_start = current_wall_time
+        self._main_loop_measure_sim_start = current_sim_time
+        self._main_loop_measure_count = 0
+
     def _stop_loop(self):
         self.running = False
 
@@ -63,7 +115,9 @@ class SensorLoop(object):
             if self.vissim_sync is not None:
                 self.vissim_sync.sync_carla_to_vissim()
 
-
+            # Main-loop period measurement
+            current_sim_time = GameTime.get_time()
+            self._measure_main_loop_period(current_sim_time)
 class InitializeInterface(object):
 
     def __init__(self):
