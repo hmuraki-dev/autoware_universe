@@ -328,6 +328,7 @@ class carla_ros2_interface(object):
         self._perf_last = {
             "sensor": 0.0,
             "light": 0.0,
+            "light_cpu": 0.0,
             "ego_status": 0.0,
         }
 
@@ -916,8 +917,12 @@ class carla_ros2_interface(object):
         # 2. Turn indicator / hazard lights -> EGO
         # ------------------------------------------------------------------
         t_light = time.monotonic()
+        t_light_cpu = time.thread_time()
+
         self.apply_light_state()
+
         self._perf_last["light"] = time.monotonic() - t_light
+        self._perf_last["light_cpu"] = time.thread_time() - t_light_cpu
 
         # ------------------------------------------------------------------
         # 3. EGO status update / publish
