@@ -81,9 +81,16 @@ class SensorLoop(object):
         wall_frequency = 1.0 / wall_period if wall_period > 0.0 else 0.0
         sim_frequency = 1.0 / sim_period if sim_period > 0.0 else 0.0
 
+        # Number of Vissim-controlled vehicles currently synchronized to CARLA.
+        if self.vissim_sync is not None:
+            vissim_vehicle_count = len(self.vissim_sync.vissim2carla_ids)
+        else:
+            vissim_vehicle_count = 0
+            
         print(
             "[MAIN_LOOP_PERIOD] "
             f"sim_time={current_sim_time:.3f} sec, "
+            f"vissim_vehicle_count={vissim_vehicle_count}, "
             f"samples={self._main_loop_measure_count}, "
             f"wall_period={wall_period:.6f} sec, "
             f"wall_frequency={wall_frequency:.2f} Hz, "
