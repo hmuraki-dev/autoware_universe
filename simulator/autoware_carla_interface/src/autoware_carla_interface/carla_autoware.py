@@ -87,7 +87,16 @@ class SensorLoop(object):
             for key, value in self._block_time_sum.items()
         }
 
-        total_ms = sum(avg_ms.values())
+        total_ms = (
+            avg_ms["sensor"]
+            + avg_ms["light"]
+            + avg_ms["ego_status"]
+            + avg_ms["control"]
+            + avg_ms["vissim_tick"]
+            + avg_ms["vissim_to_carla"]
+            + avg_ms["carla_tick"]
+            + avg_ms["carla_to_vissim"]
+        )
 
         if self.vissim_sync is not None:
             vissim_vehicle_count = len(self.vissim_sync.vissim2carla_ids)
