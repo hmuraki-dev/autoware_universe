@@ -14,6 +14,7 @@
 
 import math
 import threading
+import time
 
 from autoware_vehicle_msgs.msg import ControlModeReport
 from autoware_vehicle_msgs.msg import GearReport
@@ -323,8 +324,22 @@ class carla_ros2_interface(object):
         self.spin_thread = None
         self.cv_bridge = CvBridge()
 
+        # Performance measurement for the latest run_step().
+        self._perf_last = {
+            "sensor": 0.0,
+            "light": 0.0,
+            "ego_status": 0.0,
+        }
+
+        # SensorInterface.get_data() time is measured in __call__()
+        # and added to the sensor block time measured in run_step().
+        self._perf_sensor_get_data = 0.0
+
     def __call__(self):
+        t0 = time.monotonic()
         input_data = self.sensor_interface.get_data()
+        self._perf_sensor_get_data = time.monotonic() - t0
+
         timestamp = GameTime.get_time()
         control = self.run_step(input_data, timestamp)
         return control
@@ -834,23 +849,17 @@ class carla_ros2_interface(object):
         """
         Execute main simulation step for publishing sensor data and getting control commands.
 
-        Thread-safe: Acquires state lock when writing timestamp and reading current_control.
-        The timestamp must be protected because control_callback reads it (via
-        first_order_steering) to calculate dt. Without protection, the ROS callback could
-        see a partially-updated or future timestamp, yielding negative/zero dt and unstable
-        steering.
-
-        Args
-        ----
-            input_data: Dictionary of sensor data from CARLA
-            timestamp: Current simulation timestamp
-
-        Returns
-        -------
-            carla.VehicleControl: Current control command for the vehicle
-
-
+        Performance blocks:
+          1. sensor      : sensor data acquire/dispatch/publish
+          2. light       : apply turn indicator / hazard lights
+          3. ego_status  : publish ego vehicle status
         """
+
+        # ------------------------------------------------------------------
+        # 1. Sensor data acquire / publish
+        # ------------------------------------------------------------------
+        t_sensor = time.monotonic()
+
         # Update timestamp under lock to prevent race with control_callback
         with self._state_lock:
             self.timestamp = timestamp
@@ -861,9 +870,8 @@ class carla_ros2_interface(object):
         obj_clock.clock = Time(sec=seconds, nanosec=nanoseconds)
         self.clock_publisher.publish(obj_clock)
 
-        # publish data of all sensors
+        # Publish data of all sensors
         for key, data in input_data.items():
-            # Safely get sensor type with fallback
             sensor_type = self.id_to_sensor_type_map.get(key)
             if not sensor_type:
                 self.logger.warning(
@@ -872,32 +880,51 @@ class carla_ros2_interface(object):
                 )
                 continue
 
-            # Camera and lidar conversion/publishing run on per-sensor worker
-            # threads: publishing multi-megabyte messages inline (reliable-QoS
-            # camera images in particular block on DDS flow control) would
-            # stall this loop and slow simulation time itself. Frequency
-            # gating and registry bookkeeping stay on this thread so the
-            # registry is never accessed concurrently.
             if sensor_type == "sensor.camera.rgb":
                 if not self.checkFrequency(key):
                     self.sensor_registry.update_sensor_timestamp(key, self.timestamp)
-                    self._submit_to_publish_worker(key, self.camera, data[1], key, self.timestamp)
+                    self._submit_to_publish_worker(
+                        key, self.camera, data[1], key, self.timestamp
+                    )
+
             elif sensor_type == "sensor.other.gnss":
                 self.pose()
+
             elif sensor_type == "sensor.lidar.ray_cast":
                 if not self.checkFrequency(key):
                     self.sensor_registry.update_sensor_timestamp(key, self.timestamp)
-                    self._submit_to_publish_worker(key, self.lidar, data[1], key, self.timestamp)
+                    self._submit_to_publish_worker(
+                        key, self.lidar, data[1], key, self.timestamp
+                    )
+
             elif sensor_type == "sensor.other.imu":
                 self.imu(data[1])
+
             else:
-                self.logger.debug(f"No publisher for sensor '{key}' (type={sensor_type})")
+                self.logger.debug(
+                    f"No publisher for sensor '{key}' (type={sensor_type})"
+                )
 
-        # Push turn indicator / hazard lights to CARLA before reading status back.
+        sensor_run_step_time = time.monotonic() - t_sensor
+
+        # get_data() + run_step() sensor processing
+        self._perf_last["sensor"] = (
+            self._perf_sensor_get_data + sensor_run_step_time
+        )
+
+        # ------------------------------------------------------------------
+        # 2. Turn indicator / hazard lights -> EGO
+        # ------------------------------------------------------------------
+        t_light = time.monotonic()
         self.apply_light_state()
+        self._perf_last["light"] = time.monotonic() - t_light
 
-        # Publish ego vehicle status
+        # ------------------------------------------------------------------
+        # 3. EGO status update / publish
+        # ------------------------------------------------------------------
+        t_ego_status = time.monotonic()
         self.ego_status()
+        self._perf_last["ego_status"] = time.monotonic() - t_ego_status
 
         # Thread-safe read of current control command
         with self._state_lock:

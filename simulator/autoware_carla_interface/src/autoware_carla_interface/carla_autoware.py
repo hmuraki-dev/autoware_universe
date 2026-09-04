@@ -49,12 +49,77 @@ class SensorLoop(object):
         self._main_loop_measure_count = 0
         self._main_loop_measure_interval = 10
 
+        # ROS interface for reading block timing measured inside carla_ros.py
+        self.ros_interface = None
+
+        # Block processing time measurement
+        self._block_time_interval = 10
+        self._block_time_count = 0
+
+        self._block_time_sum = {
+            "sensor": 0.0,
+            "light": 0.0,
+            "ego_status": 0.0,
+            "control": 0.0,
+            "vissim_tick": 0.0,
+            "vissim_to_carla": 0.0,
+            "carla_tick": 0.0,
+            "carla_to_vissim": 0.0,
+        }
+
+    def _record_block_times(self, block_times, current_sim_time):
+        """Accumulate block processing times and print averages every N steps."""
+
+        for key in self._block_time_sum:
+            self._block_time_sum[key] += block_times.get(key, 0.0)
+
+        self._block_time_count += 1
+
+        if self._block_time_count < self._block_time_interval:
+            return
+
+        count = self._block_time_count
+
+        avg_ms = {
+            key: (value / count) * 1000.0
+            for key, value in self._block_time_sum.items()
+        }
+
+        total_ms = sum(avg_ms.values())
+
+        if self.vissim_sync is not None:
+            vissim_vehicle_count = len(self.vissim_sync.vissim2carla_ids)
+        else:
+            vissim_vehicle_count = 0
+
+        print(
+            "[BLOCK_TIME] "
+            f"sim_time={current_sim_time:.3f} sec, "
+            f"vissim_vehicle_count={vissim_vehicle_count}, "
+            f"samples={count}, "
+            f"sensor={avg_ms['sensor']:.3f} ms, "
+            f"light={avg_ms['light']:.3f} ms, "
+            f"ego_status={avg_ms['ego_status']:.3f} ms, "
+            f"control={avg_ms['control']:.3f} ms, "
+            f"vissim_tick={avg_ms['vissim_tick']:.3f} ms, "
+            f"vissim_to_carla={avg_ms['vissim_to_carla']:.3f} ms, "
+            f"carla_tick={avg_ms['carla_tick']:.3f} ms, "
+            f"carla_to_vissim={avg_ms['carla_to_vissim']:.3f} ms, "
+            f"total={total_ms:.3f} ms",
+            flush=True,
+        )
+
+        # Reset accumulation window
+        for key in self._block_time_sum:
+            self._block_time_sum[key] = 0.0
+
+        self._block_time_count = 0
+
     def _stop_loop(self):
         self.running = False
 
         self._main_loop_measure_interval = 10
 
-    # ↓↓↓ ここに追加 ↓↓↓
     def _measure_main_loop_period(self, current_sim_time):
         """Measure and log the average main-loop period."""
 
@@ -107,21 +172,90 @@ class SensorLoop(object):
         self.running = False
 
     def _tick_sensor(self, timestamp):
+        block_times = {
+            "sensor": 0.0,
+            "light": 0.0,
+            "ego_status": 0.0,
+            "control": 0.0,
+            "vissim_tick": 0.0,
+            "vissim_to_carla": 0.0,
+            "carla_tick": 0.0,
+            "carla_to_vissim": 0.0,
+        }
+
         if self.timestamp_last_run < timestamp.elapsed_seconds and self.running:
             self.timestamp_last_run = timestamp.elapsed_seconds
+
             GameTime.on_carla_tick(timestamp)
             CarlaDataProvider.on_carla_tick()
+
+            # --------------------------------------------------------------
+            # 1-3. Sensor / light / EGO status
+            # Measured inside carla_ros.py
+            # --------------------------------------------------------------
             try:
                 ego_action = self.sensor()
             except SensorReceivedNoData as e:
                 raise RuntimeError(e)
+
+            if self.ros_interface is not None:
+                block_times["sensor"] = self.ros_interface._perf_last["sensor"]
+                block_times["light"] = self.ros_interface._perf_last["light"]
+                block_times["ego_status"] = self.ros_interface._perf_last["ego_status"]
+
+            # --------------------------------------------------------------
+            # 4. Control command -> EGO
+            # --------------------------------------------------------------
+            t0 = time.monotonic()
             self.ego_actor.apply_control(ego_action)
+            block_times["control"] = time.monotonic() - t0
+
             if self.vissim_sync is not None:
-                self.vissim_sync.sync_vissim_to_carla()
+
+                # ----------------------------------------------------------
+                # 5. Vissim Tick
+                # ----------------------------------------------------------
+                t0 = time.monotonic()
+                self.vissim_sync.vissim.tick()
+                block_times["vissim_tick"] = time.monotonic() - t0
+
+                # ----------------------------------------------------------
+                # 6. Vissim -> CARLA synchronization
+                # tick_vissim=False because it was already executed above.
+                # ----------------------------------------------------------
+                t0 = time.monotonic()
+                self.vissim_sync.sync_vissim_to_carla(
+                    tick_vissim=False
+                )
+                block_times["vissim_to_carla"] = time.monotonic() - t0
+
         if self.running:
+
+            # --------------------------------------------------------------
+            # 7. CARLA Tick
+            # --------------------------------------------------------------
+            t0 = time.monotonic()
             CarlaDataProvider.get_world().tick()
+            block_times["carla_tick"] = time.monotonic() - t0
+
             if self.vissim_sync is not None:
+
+                # ----------------------------------------------------------
+                # 8. CARLA -> Vissim synchronization
+                # ----------------------------------------------------------
+                t0 = time.monotonic()
                 self.vissim_sync.sync_carla_to_vissim()
+                block_times["carla_to_vissim"] = time.monotonic() - t0
+
+            self._record_block_times(
+                block_times,
+                timestamp.elapsed_seconds,
+            )
+
+            # Existing main-loop-period measurement
+            self._measure_main_loop_period(
+                timestamp.elapsed_seconds
+            )
 
             # Main-loop period measurement
             self._measure_main_loop_period(timestamp.elapsed_seconds)
@@ -318,6 +452,7 @@ class InitializeInterface(object):
         self.bridge_loop.sensor = self.sensor_wrapper
         self.bridge_loop.ego_actor = self.ego_actor
         self.bridge_loop.vissim_sync = self.vissim_sync
+        self.bridge_loop.ros_interface = self.interface
         self.bridge_loop.start_system_time = time.time()
         self.bridge_loop.start_game_time = GameTime.get_time()
         self.bridge_loop.running = True

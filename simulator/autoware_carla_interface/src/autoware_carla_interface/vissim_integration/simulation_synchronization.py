@@ -182,7 +182,7 @@ class SimulationSynchronization(object):
         self.carla.tick()
         self.sync_carla_to_vissim()
 
-    def sync_vissim_to_carla(self):
+    def sync_vissim_to_carla(self, tick_vissim=True):
         """
         Vissim -> CARLA sync: ticks vissim (push of the previous frame's CARLA-origin vehicle
         state + pull of vissim's NPC/signal state, see section 3.2-1), then reflects vissim's NPC
@@ -190,7 +190,8 @@ class SimulationSynchronization(object):
 
         Does NOT tick CARLA itself; must be called before the (single, external) CARLA tick.
         """
-        self.vissim.tick()
+        if tick_vissim:
+            self.vissim.tick()
 
         # Spawning vissim controlled vehicles in carla.
         vissim_spawned_actors = self.vissim.spawned_vehicles - set(self.carla2vissim_ids.values())
