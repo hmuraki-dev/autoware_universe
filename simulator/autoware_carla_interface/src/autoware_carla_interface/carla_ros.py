@@ -329,6 +329,7 @@ class carla_ros2_interface(object):
             "sensor": 0.0,
             "light": 0.0,
             "light_cpu": 0.0,
+            "light_lock_wait": 0.0,
             "ego_status": 0.0,
         }
 
@@ -732,15 +733,18 @@ class carla_ros2_interface(object):
     def apply_light_state(self):
         """
         Apply turn indicator and hazard lights commands to CARLA ego vehicle.
-
-        Hazard takes priority over turn indicator. Other light bits (brake,
-        reverse, headlights, etc.) are preserved so we do not interfere with
-        anything CARLA or another module manages.
-
         """
-        with self._state_lock:
+
+        t_lock = time.monotonic()
+        self._state_lock.acquire()
+        lock_wait = time.monotonic() - t_lock
+
+        try:
+            self._perf_last["light_lock_wait"] = lock_wait
+
             if not self.ego_actor:
                 return
+
             turn_cmd = self.current_turn_indicator
             hazard_cmd = self.current_hazard_lights
             current_state = int(self.ego_actor.get_light_state())
@@ -749,6 +753,7 @@ class carla_ros2_interface(object):
             right_bit = int(carla.VehicleLightState.RightBlinker)
 
             new_state = current_state & ~left_bit & ~right_bit
+
             if hazard_cmd == HazardLightsCommand.ENABLE:
                 new_state |= left_bit | right_bit
             elif turn_cmd == TurnIndicatorsCommand.ENABLE_LEFT:
@@ -756,7 +761,12 @@ class carla_ros2_interface(object):
             elif turn_cmd == TurnIndicatorsCommand.ENABLE_RIGHT:
                 new_state |= right_bit
 
-            self.ego_actor.set_light_state(carla.VehicleLightState(new_state))
+            self.ego_actor.set_light_state(
+                carla.VehicleLightState(new_state)
+            )
+
+        finally:
+            self._state_lock.release()
 
     def ego_status(self):
         """
