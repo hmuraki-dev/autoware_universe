@@ -116,8 +116,7 @@ class SensorLoop(object):
                 self.vissim_sync.sync_carla_to_vissim()
 
             # Main-loop period measurement
-            current_sim_time = GameTime.get_time()
-            self._measure_main_loop_period(current_sim_time)
+            self._measure_main_loop_period(timestamp.elapsed_seconds)
 class InitializeInterface(object):
 
     def __init__(self):
