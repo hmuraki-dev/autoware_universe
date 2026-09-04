@@ -83,6 +83,7 @@ class SensorLoop(object):
 
         print(
             "[MAIN_LOOP_PERIOD] "
+            f"sim_time={current_sim_time:.3f} sec, "
             f"samples={self._main_loop_measure_count}, "
             f"wall_period={wall_period:.6f} sec, "
             f"wall_frequency={wall_frequency:.2f} Hz, "
