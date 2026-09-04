@@ -59,6 +59,7 @@ class SensorLoop(object):
         self._block_time_sum = {
             "sensor": 0.0,
             "light": 0.0,
+            "light_cpu": 0.0,
             "ego_status": 0.0,
             "control": 0.0,
             "vissim_tick": 0.0,
@@ -99,6 +100,7 @@ class SensorLoop(object):
             f"samples={count}, "
             f"sensor={avg_ms['sensor']:.3f} ms, "
             f"light={avg_ms['light']:.3f} ms, "
+            f"light_cpu={avg_ms['light_cpu']:.3f} ms, "
             f"ego_status={avg_ms['ego_status']:.3f} ms, "
             f"control={avg_ms['control']:.3f} ms, "
             f"vissim_tick={avg_ms['vissim_tick']:.3f} ms, "
@@ -175,6 +177,7 @@ class SensorLoop(object):
         block_times = {
             "sensor": 0.0,
             "light": 0.0,
+            "light_cpu": 0.0,
             "ego_status": 0.0,
             "control": 0.0,
             "vissim_tick": 0.0,
@@ -201,6 +204,7 @@ class SensorLoop(object):
             if self.ros_interface is not None:
                 block_times["sensor"] = self.ros_interface._perf_last["sensor"]
                 block_times["light"] = self.ros_interface._perf_last["light"]
+                block_times["light_cpu"] = self.ros_interface._perf_last["light_cpu"]
                 block_times["ego_status"] = self.ros_interface._perf_last["ego_status"]
 
             # --------------------------------------------------------------
@@ -257,8 +261,6 @@ class SensorLoop(object):
                 timestamp.elapsed_seconds
             )
 
-            # Main-loop period measurement
-            self._measure_main_loop_period(timestamp.elapsed_seconds)
 class InitializeInterface(object):
 
     def __init__(self):
