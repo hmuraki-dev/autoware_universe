@@ -169,7 +169,7 @@
     />
 
     <!-- Multi-camera combiner for RViz visualization -->
-    <node pkg="autoware_carla_interface" exec="multi_camera_combiner" output="screen" unless="$(var use_light_weight_sensor_mapping)"/>
+    <!-- <node pkg="autoware_carla_interface" exec="multi_camera_combiner" output="screen" unless="$(var use_light_weight_sensor_mapping)"/> -->
 
     <!-- E2E Planning Infrastructure -->
     <group if="$(var use_e2e_planning)">
