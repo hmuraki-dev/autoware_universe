@@ -58,12 +58,21 @@ class SensorLoop(object):
 
         self._block_time_sum = {
             "sensor": 0.0,
+
             "light": 0.0,
             "light_cpu": 0.0,
             "light_lock_wait": 0.0,
             "light_get_state": 0.0,
             "light_set_state": 0.0,
+
             "ego_status": 0.0,
+            "ego_get_transform": 0.0,
+            "ego_get_velocity": 0.0,
+            "ego_get_angular_velocity": 0.0,
+            "ego_get_wheel_steer_angle": 0.0,
+            "ego_get_control": 0.0,
+            "ego_get_light_state": 0.0,
+
             "control": 0.0,
             "vissim_tick": 0.0,
             "vissim_to_carla": 0.0,
@@ -117,6 +126,12 @@ class SensorLoop(object):
             f"light_get_state={avg_ms['light_get_state']:.3f} ms, "
             f"light_set_state={avg_ms['light_set_state']:.3f} ms, "
             f"ego_status={avg_ms['ego_status']:.3f} ms, "
+            f"ego_get_transform={avg_ms['ego_get_transform']:.3f} ms, "
+            f"ego_get_velocity={avg_ms['ego_get_velocity']:.3f} ms, "
+            f"ego_get_angular_velocity={avg_ms['ego_get_angular_velocity']:.3f} ms, "
+            f"ego_get_wheel_steer_angle={avg_ms['ego_get_wheel_steer_angle']:.3f} ms, "
+            f"ego_get_control={avg_ms['ego_get_control']:.3f} ms, "
+            f"ego_get_light_state={avg_ms['ego_get_light_state']:.3f} ms, "
             f"control={avg_ms['control']:.3f} ms, "
             f"vissim_tick={avg_ms['vissim_tick']:.3f} ms, "
             f"vissim_to_carla={avg_ms['vissim_to_carla']:.3f} ms, "
@@ -200,6 +215,12 @@ class SensorLoop(object):
             "vissim_to_carla": 0.0,
             "carla_tick": 0.0,
             "carla_to_vissim": 0.0,
+            "ego_get_transform": 0.0,
+            "ego_get_velocity": 0.0,
+            "ego_get_angular_velocity": 0.0,
+            "ego_get_wheel_steer_angle": 0.0,
+            "ego_get_control": 0.0,
+            "ego_get_light_state": 0.0,
         }
 
         if self.timestamp_last_run < timestamp.elapsed_seconds and self.running:
@@ -226,6 +247,24 @@ class SensorLoop(object):
                 block_times["light_set_state"] = self.ros_interface._perf_last["light_set_state"]
                 block_times["ego_status"] = self.ros_interface._perf_last["ego_status"]
 
+                block_times["ego_get_transform"] = (
+                    self.ros_interface._perf_last["ego_get_transform"]
+                )
+                block_times["ego_get_velocity"] = (
+                    self.ros_interface._perf_last["ego_get_velocity"]
+                )
+                block_times["ego_get_angular_velocity"] = (
+                    self.ros_interface._perf_last["ego_get_angular_velocity"]
+                )
+                block_times["ego_get_wheel_steer_angle"] = (
+                    self.ros_interface._perf_last["ego_get_wheel_steer_angle"]
+                )
+                block_times["ego_get_control"] = (
+                    self.ros_interface._perf_last["ego_get_control"]
+                )
+                block_times["ego_get_light_state"] = (
+                    self.ros_interface._perf_last["ego_get_light_state"]
+                )
             # --------------------------------------------------------------
             # 4. Control command -> EGO
             # --------------------------------------------------------------

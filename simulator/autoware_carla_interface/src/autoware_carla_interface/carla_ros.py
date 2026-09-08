@@ -327,12 +327,20 @@ class carla_ros2_interface(object):
         # Performance measurement for the latest run_step().
         self._perf_last = {
             "sensor": 0.0,
+
             "light": 0.0,
             "light_cpu": 0.0,
             "light_lock_wait": 0.0,
             "light_get_state": 0.0,
             "light_set_state": 0.0,
+
             "ego_status": 0.0,
+            "ego_get_transform": 0.0,
+            "ego_get_velocity": 0.0,
+            "ego_get_angular_velocity": 0.0,
+            "ego_get_wheel_steer_angle": 0.0,
+            "ego_get_control": 0.0,
+            "ego_get_light_state": 0.0,
         }
 
         # SensorInterface.get_data() time is measured in __call__()
@@ -786,22 +794,48 @@ class carla_ros2_interface(object):
         Publish ego vehicle status.
 
         Thread-safe: Acquires state lock when accessing ego_actor.
-
         """
+
         if self.checkFrequency("status"):
             return
 
-        # Thread-safe access to ego_actor - get all needed data in one lock section
+        # Reset detailed timing for this call
+        self._perf_last["ego_get_transform"] = 0.0
+        self._perf_last["ego_get_velocity"] = 0.0
+        self._perf_last["ego_get_angular_velocity"] = 0.0
+        self._perf_last["ego_get_wheel_steer_angle"] = 0.0
+        self._perf_last["ego_get_control"] = 0.0
+        self._perf_last["ego_get_light_state"] = 0.0
+
         with self._state_lock:
             if not self.ego_actor:
                 return
 
+            t0 = time.monotonic()
             ego_transform = self.ego_actor.get_transform()
+            self._perf_last["ego_get_transform"] = time.monotonic() - t0
+
+            t0 = time.monotonic()
             ego_velocity_carla = self.ego_actor.get_velocity()
+            self._perf_last["ego_get_velocity"] = time.monotonic() - t0
+
+            t0 = time.monotonic()
             ego_angular_velocity = self.ego_actor.get_angular_velocity()
-            steer_angle = self.ego_actor.get_wheel_steer_angle(carla.VehicleWheelLocation.FL_Wheel)
+            self._perf_last["ego_get_angular_velocity"] = time.monotonic() - t0
+
+            t0 = time.monotonic()
+            steer_angle = self.ego_actor.get_wheel_steer_angle(
+                carla.VehicleWheelLocation.FL_Wheel
+            )
+            self._perf_last["ego_get_wheel_steer_angle"] = time.monotonic() - t0
+
+            t0 = time.monotonic()
             control = self.ego_actor.get_control()
+            self._perf_last["ego_get_control"] = time.monotonic() - t0
+
+            t0 = time.monotonic()
             light_state = int(self.ego_actor.get_light_state())
+            self._perf_last["ego_get_light_state"] = time.monotonic() - t0
 
         # convert velocity from cartesian to ego frame
         trans_mat = numpy.array(ego_transform.get_matrix()).reshape(4, 4)
