@@ -327,6 +327,7 @@ class carla_ros2_interface(object):
         # Performance measurement for the latest run_step().
         self._perf_last = {
             "sensor": 0.0,
+            "sensor_cpu": 0.0,
 
             "light": 0.0,
             "light_cpu": 0.0,
@@ -335,6 +336,8 @@ class carla_ros2_interface(object):
             "light_set_state": 0.0,
 
             "ego_status": 0.0,
+            "ego_status_cpu": 0.0,
+
             "ego_get_transform": 0.0,
             "ego_get_velocity": 0.0,
             "ego_get_angular_velocity": 0.0,
@@ -346,11 +349,16 @@ class carla_ros2_interface(object):
         # SensorInterface.get_data() time is measured in __call__()
         # and added to the sensor block time measured in run_step().
         self._perf_sensor_get_data = 0.0
+        self._perf_sensor_get_data_cpu = 0.0
 
     def __call__(self):
         t0 = time.monotonic()
+        t0_cpu = time.thread_time()
+
         input_data = self.sensor_interface.get_data()
+
         self._perf_sensor_get_data = time.monotonic() - t0
+        self._perf_sensor_get_data_cpu = time.thread_time() - t0_cpu
 
         timestamp = GameTime.get_time()
         control = self.run_step(input_data, timestamp)
@@ -921,6 +929,7 @@ class carla_ros2_interface(object):
         # 1. Sensor data acquire / publish
         # ------------------------------------------------------------------
         t_sensor = time.monotonic()
+        t_sensor_cpu = time.thread_time()
 
         # Update timestamp under lock to prevent race with control_callback
         with self._state_lock:
@@ -968,12 +977,15 @@ class carla_ros2_interface(object):
                 )
 
         sensor_run_step_time = time.monotonic() - t_sensor
+        sensor_run_step_cpu = time.thread_time() - t_sensor_cpu
 
-        # get_data() + run_step() sensor processing
         self._perf_last["sensor"] = (
             self._perf_sensor_get_data + sensor_run_step_time
         )
 
+        self._perf_last["sensor_cpu"] = (
+            self._perf_sensor_get_data_cpu + sensor_run_step_cpu
+        )
         # ------------------------------------------------------------------
         # 2. Turn indicator / hazard lights -> EGO
         # ------------------------------------------------------------------
@@ -989,9 +1001,14 @@ class carla_ros2_interface(object):
         # 3. EGO status update / publish
         # ------------------------------------------------------------------
         t_ego_status = time.monotonic()
-        self.ego_status()
-        self._perf_last["ego_status"] = time.monotonic() - t_ego_status
+        t_ego_status_cpu = time.thread_time()
 
+        self.ego_status()
+
+        self._perf_last["ego_status"] = time.monotonic() - t_ego_status
+        self._perf_last["ego_status_cpu"] = (
+            time.thread_time() - t_ego_status_cpu
+        )
         # Thread-safe read of current control command
         with self._state_lock:
             return self.current_control

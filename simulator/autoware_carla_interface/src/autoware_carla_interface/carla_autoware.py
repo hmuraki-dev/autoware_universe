@@ -58,6 +58,7 @@ class SensorLoop(object):
 
         self._block_time_sum = {
             "sensor": 0.0,
+            "sensor_cpu": 0.0,
 
             "light": 0.0,
             "light_cpu": 0.0,
@@ -66,6 +67,8 @@ class SensorLoop(object):
             "light_set_state": 0.0,
 
             "ego_status": 0.0,
+            "ego_status_cpu": 0.0,
+
             "ego_get_transform": 0.0,
             "ego_get_velocity": 0.0,
             "ego_get_angular_velocity": 0.0,
@@ -74,10 +77,19 @@ class SensorLoop(object):
             "ego_get_light_state": 0.0,
 
             "control": 0.0,
+            "control_cpu": 0.0,
+
             "vissim_tick": 0.0,
+            "vissim_tick_cpu": 0.0,
+
             "vissim_to_carla": 0.0,
+            "vissim_to_carla_cpu": 0.0,
+
             "carla_tick": 0.0,
+            "carla_tick_cpu": 0.0,
+
             "carla_to_vissim": 0.0,
+            "carla_to_vissim_cpu": 0.0,
         }
 
     def _record_block_times(self, block_times, current_sim_time):
@@ -119,28 +131,51 @@ class SensorLoop(object):
             f"sim_time={current_sim_time:.3f} sec, "
             f"vissim_vehicle_count={vissim_vehicle_count}, "
             f"samples={count}, "
+
+            # 1. Sensor
             f"sensor={avg_ms['sensor']:.3f} ms, "
+            f"sensor_cpu={avg_ms['sensor_cpu']:.3f} ms, "
+
+            # 2. Light
             f"light={avg_ms['light']:.3f} ms, "
             f"light_cpu={avg_ms['light_cpu']:.3f} ms, "
             f"light_lock_wait={avg_ms['light_lock_wait']:.3f} ms, "
             f"light_get_state={avg_ms['light_get_state']:.3f} ms, "
             f"light_set_state={avg_ms['light_set_state']:.3f} ms, "
+
+            # 3. EGO status
             f"ego_status={avg_ms['ego_status']:.3f} ms, "
+            f"ego_status_cpu={avg_ms['ego_status_cpu']:.3f} ms, "
             f"ego_get_transform={avg_ms['ego_get_transform']:.3f} ms, "
             f"ego_get_velocity={avg_ms['ego_get_velocity']:.3f} ms, "
             f"ego_get_angular_velocity={avg_ms['ego_get_angular_velocity']:.3f} ms, "
             f"ego_get_wheel_steer_angle={avg_ms['ego_get_wheel_steer_angle']:.3f} ms, "
             f"ego_get_control={avg_ms['ego_get_control']:.3f} ms, "
             f"ego_get_light_state={avg_ms['ego_get_light_state']:.3f} ms, "
+
+            # 4. Control
             f"control={avg_ms['control']:.3f} ms, "
+            f"control_cpu={avg_ms['control_cpu']:.3f} ms, "
+
+            # 5. Vissim Tick
             f"vissim_tick={avg_ms['vissim_tick']:.3f} ms, "
+            f"vissim_tick_cpu={avg_ms['vissim_tick_cpu']:.3f} ms, "
+
+            # 6. Vissim -> CARLA
             f"vissim_to_carla={avg_ms['vissim_to_carla']:.3f} ms, "
+            f"vissim_to_carla_cpu={avg_ms['vissim_to_carla_cpu']:.3f} ms, "
+
+            # 7. CARLA Tick
             f"carla_tick={avg_ms['carla_tick']:.3f} ms, "
+            f"carla_tick_cpu={avg_ms['carla_tick_cpu']:.3f} ms, "
+
+            # 8. CARLA -> Vissim
             f"carla_to_vissim={avg_ms['carla_to_vissim']:.3f} ms, "
+            f"carla_to_vissim_cpu={avg_ms['carla_to_vissim_cpu']:.3f} ms, "
+
             f"total={total_ms:.3f} ms",
             flush=True,
         )
-
         # Reset accumulation window
         for key in self._block_time_sum:
             self._block_time_sum[key] = 0.0
@@ -206,17 +241,24 @@ class SensorLoop(object):
     def _tick_sensor(self, timestamp):
         block_times = {
             "sensor": 0.0,
+            "sensor_cpu": 0.0,
             "light": 0.0,
             "light_cpu": 0.0,
             "light_lock_wait": 0.0,
             "light_get_state": 0.0,
             "light_set_state": 0.0,
             "ego_status": 0.0,
+            "ego_status_cpu": 0.0,
             "control": 0.0,
+            "control_cpu": 0.0,
             "vissim_tick": 0.0,
+            "vissim_tick_cpu": 0.0,
             "vissim_to_carla": 0.0,
+            "vissim_to_carla_cpu": 0.0,
             "carla_tick": 0.0,
+            "carla_tick_cpu": 0.0,
             "carla_to_vissim": 0.0,
+            "carla_to_vissim_cpu": 0.0,
             "ego_get_transform": 0.0,
             "ego_get_velocity": 0.0,
             "ego_get_angular_velocity": 0.0,
@@ -242,12 +284,23 @@ class SensorLoop(object):
 
             if self.ros_interface is not None:
                 block_times["sensor"] = self.ros_interface._perf_last["sensor"]
+                block_times["sensor_cpu"] = (
+                    self.ros_interface._perf_last["sensor_cpu"]
+                )
+
                 block_times["light"] = self.ros_interface._perf_last["light"]
-                block_times["light_cpu"] = self.ros_interface._perf_last["light_cpu"]
+                block_times["light_cpu"] = (
+                    self.ros_interface._perf_last["light_cpu"]
+                )
+                
                 block_times["light_lock_wait"] = self.ros_interface._perf_last["light_lock_wait"]
                 block_times["light_get_state"] = self.ros_interface._perf_last["light_get_state"]
                 block_times["light_set_state"] = self.ros_interface._perf_last["light_set_state"]
+
                 block_times["ego_status"] = self.ros_interface._perf_last["ego_status"]
+                block_times["ego_status_cpu"] = (
+                    self.ros_interface._perf_last["ego_status_cpu"]
+                )
 
                 block_times["ego_get_transform"] = (
                     self.ros_interface._perf_last["ego_get_transform"]
@@ -271,8 +324,12 @@ class SensorLoop(object):
             # 4. Control command -> EGO
             # --------------------------------------------------------------
             t0 = time.monotonic()
+            t0_cpu = time.thread_time()
+
             self.ego_actor.apply_control(ego_action)
+
             block_times["control"] = time.monotonic() - t0
+            block_times["control_cpu"] = time.thread_time() - t0_cpu
 
             if self.vissim_sync is not None:
 
@@ -280,18 +337,28 @@ class SensorLoop(object):
                 # 5. Vissim Tick
                 # ----------------------------------------------------------
                 t0 = time.monotonic()
+                t0_cpu = time.thread_time()
+
                 self.vissim_sync.vissim.tick()
+
                 block_times["vissim_tick"] = time.monotonic() - t0
+                block_times["vissim_tick_cpu"] = time.thread_time() - t0_cpu
 
                 # ----------------------------------------------------------
                 # 6. Vissim -> CARLA synchronization
                 # tick_vissim=False because it was already executed above.
                 # ----------------------------------------------------------
                 t0 = time.monotonic()
+                t0_cpu = time.thread_time()
+
                 self.vissim_sync.sync_vissim_to_carla(
                     tick_vissim=False
                 )
+
                 block_times["vissim_to_carla"] = time.monotonic() - t0
+                block_times["vissim_to_carla_cpu"] = (
+                    time.thread_time() - t0_cpu
+                )
 
         if self.running:
 
@@ -299,8 +366,12 @@ class SensorLoop(object):
             # 7. CARLA Tick
             # --------------------------------------------------------------
             t0 = time.monotonic()
+            t0_cpu = time.thread_time()
+
             CarlaDataProvider.get_world().tick()
+
             block_times["carla_tick"] = time.monotonic() - t0
+            block_times["carla_tick_cpu"] = time.thread_time() - t0_cpu
 
             if self.vissim_sync is not None:
 
@@ -308,8 +379,14 @@ class SensorLoop(object):
                 # 8. CARLA -> Vissim synchronization
                 # ----------------------------------------------------------
                 t0 = time.monotonic()
+                t0_cpu = time.thread_time()
+
                 self.vissim_sync.sync_carla_to_vissim()
+
                 block_times["carla_to_vissim"] = time.monotonic() - t0
+                block_times["carla_to_vissim_cpu"] = (
+                    time.thread_time() - t0_cpu
+                )
 
             self._record_block_times(
                 block_times,
