@@ -823,19 +823,23 @@ class carla_ros2_interface(object):
             ego_angular_velocity = self.ego_actor.get_angular_velocity()
             self._perf_last["ego_get_angular_velocity"] = time.monotonic() - t0
 
-            t0 = time.monotonic()
-            steer_angle = self.ego_actor.get_wheel_steer_angle(
-                carla.VehicleWheelLocation.FL_Wheel
-            )
-            self._perf_last["ego_get_wheel_steer_angle"] = time.monotonic() - t0
+            # t0 = time.monotonic()
+            # steer_angle = self.ego_actor.get_wheel_steer_angle(
+            #     carla.VehicleWheelLocation.FL_Wheel
+            # )
+            # self._perf_last["ego_get_wheel_steer_angle"] = time.monotonic() - t0
+            steer_angle = 0.0
+            self._perf_last["ego_get_wheel_steer_angle"] = 0.0
 
             t0 = time.monotonic()
             control = self.ego_actor.get_control()
             self._perf_last["ego_get_control"] = time.monotonic() - t0
 
-            t0 = time.monotonic()
-            light_state = int(self.ego_actor.get_light_state())
-            self._perf_last["ego_get_light_state"] = time.monotonic() - t0
+            # t0 = time.monotonic()
+            # light_state = int(self.ego_actor.get_light_state())
+            # self._perf_last["ego_get_light_state"] = time.monotonic() - t0
+            light_state = 0
+            self._perf_last["ego_get_light_state"] = 0.0
 
         # convert velocity from cartesian to ego frame
         trans_mat = numpy.array(ego_transform.get_matrix()).reshape(4, 4)
@@ -976,7 +980,7 @@ class carla_ros2_interface(object):
         t_light = time.monotonic()
         t_light_cpu = time.thread_time()
 
-        self.apply_light_state()
+        # self.apply_light_state()
 
         self._perf_last["light"] = time.monotonic() - t_light
         self._perf_last["light_cpu"] = time.thread_time() - t_light_cpu
