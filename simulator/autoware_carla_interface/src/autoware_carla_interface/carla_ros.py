@@ -330,6 +330,8 @@ class carla_ros2_interface(object):
             "light": 0.0,
             "light_cpu": 0.0,
             "light_lock_wait": 0.0,
+            "light_get_state": 0.0,
+            "light_set_state": 0.0,
             "ego_status": 0.0,
         }
 
@@ -742,12 +744,20 @@ class carla_ros2_interface(object):
         try:
             self._perf_last["light_lock_wait"] = lock_wait
 
+            # 毎回リセット
+            self._perf_last["light_get_state"] = 0.0
+            self._perf_last["light_set_state"] = 0.0
+
             if not self.ego_actor:
                 return
 
             turn_cmd = self.current_turn_indicator
             hazard_cmd = self.current_hazard_lights
+
+            # get_light_state() Wall time
+            t_get = time.monotonic()
             current_state = int(self.ego_actor.get_light_state())
+            self._perf_last["light_get_state"] = time.monotonic() - t_get
 
             left_bit = int(carla.VehicleLightState.LeftBlinker)
             right_bit = int(carla.VehicleLightState.RightBlinker)
@@ -761,9 +771,12 @@ class carla_ros2_interface(object):
             elif turn_cmd == TurnIndicatorsCommand.ENABLE_RIGHT:
                 new_state |= right_bit
 
+            # set_light_state() Wall time
+            t_set = time.monotonic()
             self.ego_actor.set_light_state(
                 carla.VehicleLightState(new_state)
             )
+            self._perf_last["light_set_state"] = time.monotonic() - t_set
 
         finally:
             self._state_lock.release()

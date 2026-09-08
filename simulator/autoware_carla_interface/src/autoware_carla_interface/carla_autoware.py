@@ -61,6 +61,8 @@ class SensorLoop(object):
             "light": 0.0,
             "light_cpu": 0.0,
             "light_lock_wait": 0.0,
+            "light_get_state": 0.0,
+            "light_set_state": 0.0,
             "ego_status": 0.0,
             "control": 0.0,
             "vissim_tick": 0.0,
@@ -112,6 +114,8 @@ class SensorLoop(object):
             f"light={avg_ms['light']:.3f} ms, "
             f"light_cpu={avg_ms['light_cpu']:.3f} ms, "
             f"light_lock_wait={avg_ms['light_lock_wait']:.3f} ms, "
+            f"light_get_state={avg_ms['light_get_state']:.3f} ms, "
+            f"light_set_state={avg_ms['light_set_state']:.3f} ms, "
             f"ego_status={avg_ms['ego_status']:.3f} ms, "
             f"control={avg_ms['control']:.3f} ms, "
             f"vissim_tick={avg_ms['vissim_tick']:.3f} ms, "
@@ -218,6 +222,8 @@ class SensorLoop(object):
                 block_times["light"] = self.ros_interface._perf_last["light"]
                 block_times["light_cpu"] = self.ros_interface._perf_last["light_cpu"]
                 block_times["light_lock_wait"] = self.ros_interface._perf_last["light_lock_wait"]
+                block_times["light_get_state"] = self.ros_interface._perf_last["light_get_state"]
+                block_times["light_set_state"] = self.ros_interface._perf_last["light_set_state"]
                 block_times["ego_status"] = self.ros_interface._perf_last["ego_status"]
 
             # --------------------------------------------------------------
