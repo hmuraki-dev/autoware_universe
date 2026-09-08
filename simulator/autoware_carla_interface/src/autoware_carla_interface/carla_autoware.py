@@ -209,6 +209,8 @@ class SensorLoop(object):
             "light": 0.0,
             "light_cpu": 0.0,
             "light_lock_wait": 0.0,
+            "light_get_state": 0.0,
+            "light_set_state": 0.0,
             "ego_status": 0.0,
             "control": 0.0,
             "vissim_tick": 0.0,
