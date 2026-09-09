@@ -360,6 +360,11 @@ class SumoSimulation(object):
         self.spawned_actors = set()
         self.destroyed_actors = set()
 
+        # Structures to keep track of the spawned and destroyed pedestrians (sumo persons) at
+        # each time step.
+        self.spawned_persons = set()
+        self.destroyed_persons = set()
+
         # Traffic light manager.
         self.traffic_light_manager = SumoTLManager()
 
@@ -396,6 +401,36 @@ class SumoSimulation(object):
         """
         traci.vehicle.unsubscribe(actor_id)
 
+    @staticmethod
+    def subscribe_person(person_id):
+        """
+        Subscribe the given person (pedestrian) to the following variables:
+
+            * Type.
+            * Vehicle class.
+            * Color.
+            * Length, Width, Height.
+            * Position3D (i.e., x, y, z).
+            * Angle, Slope.
+            * Speed.
+
+        Note: unlike vehicles, persons have no signals (VAR_SIGNALS) and lateral speed
+        (VAR_SPEED_LAT) equivalent, so those are not subscribed here.
+        """
+        traci.person.subscribe(person_id, [
+            traci.constants.VAR_TYPE, traci.constants.VAR_VEHICLECLASS, traci.constants.VAR_COLOR,
+            traci.constants.VAR_LENGTH, traci.constants.VAR_WIDTH, traci.constants.VAR_HEIGHT,
+            traci.constants.VAR_POSITION3D, traci.constants.VAR_ANGLE, traci.constants.VAR_SLOPE,
+            traci.constants.VAR_SPEED
+        ])
+
+    @staticmethod
+    def unsubscribe_person(person_id):
+        """
+        Unsubscribe the given person from receiving updated information each step.
+        """
+        traci.person.unsubscribe(person_id)
+
     def get_net_offset(self):
         """
         Accessor for sumo net offset.
@@ -428,6 +463,33 @@ class SumoSimulation(object):
         extent = carla.Vector3D(length / 2.0, width / 2.0, height / 2.0)
 
         return SumoActor(type_id, vclass, transform, signals, extent, color)
+
+    @staticmethod
+    def get_person(person_id):
+        """
+        Accessor for sumo person (pedestrian).
+
+        Reuses the SumoActor namedtuple (signals is always None, since persons have no
+        signals concept).
+        """
+        results = traci.person.getSubscriptionResults(person_id)
+
+        type_id = results[traci.constants.VAR_TYPE]
+        vclass = SumoActorClass(results[traci.constants.VAR_VEHICLECLASS])
+        color = results[traci.constants.VAR_COLOR]
+
+        length = results[traci.constants.VAR_LENGTH]
+        width = results[traci.constants.VAR_WIDTH]
+        height = results[traci.constants.VAR_HEIGHT]
+
+        location = list(results[traci.constants.VAR_POSITION3D])
+        rotation = [results[traci.constants.VAR_SLOPE], results[traci.constants.VAR_ANGLE], 0.0]
+        transform = carla.Transform(carla.Location(location[0], location[1], location[2]),
+                                    carla.Rotation(rotation[0], rotation[1], rotation[2]))
+
+        extent = carla.Vector3D(length / 2.0, width / 2.0, height / 2.0)
+
+        return SumoActor(type_id, vclass, transform, None, extent, color)
 
     def spawn_actor(self, type_id, color=None):
         """
@@ -523,6 +585,9 @@ class SumoSimulation(object):
         # Update data structures for the current frame.
         self.spawned_actors = set(traci.simulation.getDepartedIDList())
         self.destroyed_actors = set(traci.simulation.getArrivedIDList())
+
+        self.spawned_persons = set(traci.simulation.getDepartedPersonIDList())
+        self.destroyed_persons = set(traci.simulation.getArrivedPersonIDList())
 
     @staticmethod
     def close():
