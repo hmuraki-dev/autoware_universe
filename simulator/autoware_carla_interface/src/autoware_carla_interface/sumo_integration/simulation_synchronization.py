@@ -73,6 +73,13 @@ class SimulationSynchronization(object):
         self.sumo2carla_ids = {}  # Contains only actors controlled by sumo.
         self.carla2sumo_ids = {}  # Contains only actors controlled by carla.
 
+        # Mapped pedestrian ids (sumo person -> carla walker). sumo-->carla direction only,
+        # always enabled (no CLI flag), mirroring the vehicle sync design.
+        self.sumo2carla_ped_ids = {}
+
+        # Tick counter used to throttle periodic pedestrian sample debug logging.
+        self._ped_tick_count = 0
+
         BridgeHelper.blueprint_library = self.carla.world.get_blueprint_library()
         BridgeHelper.offset = self.sumo.get_net_offset()
 
@@ -155,6 +162,57 @@ class SimulationSynchronization(object):
                 carla_lights = None
 
             self.carla.synchronize_vehicle(carla_actor_id, carla_transform, carla_lights)
+
+        # -----------------------------
+        # sumo-->carla pedestrian sync
+        # -----------------------------
+        # One-directional only (no carla-->sumo pedestrian block), always enabled.
+        self._ped_tick_count += 1
+
+        # Spawning new sumo persons (pedestrians) in carla.
+        for sumo_person_id in self.sumo.spawned_persons:
+            self.sumo.subscribe_person(sumo_person_id)
+            sumo_person = self.sumo.get_person(sumo_person_id)
+
+            carla_blueprint = BridgeHelper.get_carla_blueprint(sumo_person)
+            if carla_blueprint is not None:
+                carla_transform = BridgeHelper.get_carla_pedestrian_transform(sumo_person)
+
+                carla_walker_id = self.carla.spawn_actor(carla_blueprint, carla_transform)
+                if carla_walker_id != INVALID_ACTOR_ID:
+                    self.sumo2carla_ped_ids[sumo_person_id] = carla_walker_id
+                    logging.debug(
+                        '[sync] spawned pedestrian sumo=%s carla=%s blueprint=%s pos=%s',
+                        sumo_person_id, carla_walker_id, carla_blueprint.id,
+                        carla_transform.location)
+                else:
+                    logging.error(
+                        '[sync] failed to spawn carla walker for sumo pedestrian %s',
+                        sumo_person_id)
+                    self.sumo.unsubscribe_person(sumo_person_id)
+            else:
+                self.sumo.unsubscribe_person(sumo_person_id)
+
+        # Destroying sumo arrived persons in carla.
+        for sumo_person_id in self.sumo.destroyed_persons:
+            if sumo_person_id in self.sumo2carla_ped_ids:
+                carla_walker_id = self.sumo2carla_ped_ids.pop(sumo_person_id)
+                self.carla.destroy_actor(carla_walker_id)
+                logging.debug('[sync] destroyed pedestrian sumo=%s carla=%s', sumo_person_id,
+                             carla_walker_id)
+
+        # Updating sumo persons in carla.
+        for sumo_person_id in self.sumo2carla_ped_ids:
+            carla_walker_id = self.sumo2carla_ped_ids[sumo_person_id]
+
+            sumo_person = self.sumo.get_person(sumo_person_id)
+            carla_transform = BridgeHelper.get_carla_pedestrian_transform(sumo_person)
+
+            self.carla.synchronize_pedestrian(carla_walker_id, carla_transform)
+
+        if self._ped_tick_count % 20 == 0:
+            logging.debug('[sync] pedestrian sample: %d active (%s)',
+                         len(self.sumo2carla_ped_ids), self.sumo2carla_ped_ids)
 
         # Updates traffic lights in carla based on sumo information.
         if self.tls_manager == 'sumo':
@@ -246,6 +304,9 @@ class SimulationSynchronization(object):
         # Destroying synchronized actors.
         for carla_actor_id in self.sumo2carla_ids.values():
             self.carla.destroy_actor(carla_actor_id)
+
+        for carla_walker_id in self.sumo2carla_ped_ids.values():
+            self.carla.destroy_actor(carla_walker_id)
 
         for sumo_actor_id in self.carla2sumo_ids.values():
             self.sumo.destroy_actor(sumo_actor_id)

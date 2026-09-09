@@ -437,6 +437,15 @@ class InitializeInterface(object):
             except Exception as e:
                 print(f"Warning: failed to destroy SUMO-origin CARLA actor {carla_actor_id}: {e}")
 
+        # Destroy SUMO-origin pedestrians mirrored into CARLA (walkers spawned via
+        # sync_sumo_to_carla()'s pedestrian block). One-directional (sumo->carla)
+        # sync only, so there is no equivalent carla2sumo pedestrian map to clean up.
+        for carla_walker_id in list(self.sumo_sync.sumo2carla_ped_ids.values()):
+            try:
+                self.sumo_carla_sim.destroy_actor(carla_walker_id)
+            except Exception as e:
+                print(f"Warning: failed to destroy SUMO-origin CARLA walker {carla_walker_id}: {e}")
+
         # Destroy CARLA-origin actors mirrored into SUMO (this only removes
         # the SUMO-side shadow vehicle; the real CARLA actor - e.g. EGO - is
         # untouched here and is destroyed separately by _cleanup_ego_actor()).

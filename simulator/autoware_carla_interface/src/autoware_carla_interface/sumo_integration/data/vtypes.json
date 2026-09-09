@@ -89,6 +89,159 @@
         },
         "vehicle.bh.crossbike": {
             "vClass": "bicycle"
+        },
+        "walker.pedestrian.0001": {
+            "vClass": "pedestrian"
+        },
+        "walker.pedestrian.0002": {
+            "vClass": "pedestrian"
+        },
+        "walker.pedestrian.0003": {
+            "vClass": "pedestrian"
+        },
+        "walker.pedestrian.0004": {
+            "vClass": "pedestrian"
+        },
+        "walker.pedestrian.0005": {
+            "vClass": "pedestrian"
+        },
+        "walker.pedestrian.0006": {
+            "vClass": "pedestrian"
+        },
+        "walker.pedestrian.0007": {
+            "vClass": "pedestrian"
+        },
+        "walker.pedestrian.0008": {
+            "vClass": "pedestrian"
+        },
+        "walker.pedestrian.0009": {
+            "vClass": "pedestrian"
+        },
+        "walker.pedestrian.0010": {
+            "vClass": "pedestrian"
+        },
+        "walker.pedestrian.0011": {
+            "vClass": "pedestrian"
+        },
+        "walker.pedestrian.0012": {
+            "vClass": "pedestrian"
+        },
+        "walker.pedestrian.0013": {
+            "vClass": "pedestrian"
+        },
+        "walker.pedestrian.0014": {
+            "vClass": "pedestrian"
+        },
+        "walker.pedestrian.0015": {
+            "vClass": "pedestrian"
+        },
+        "walker.pedestrian.0016": {
+            "vClass": "pedestrian"
+        },
+        "walker.pedestrian.0017": {
+            "vClass": "pedestrian"
+        },
+        "walker.pedestrian.0018": {
+            "vClass": "pedestrian"
+        },
+        "walker.pedestrian.0019": {
+            "vClass": "pedestrian"
+        },
+        "walker.pedestrian.0020": {
+            "vClass": "pedestrian"
+        },
+        "walker.pedestrian.0021": {
+            "vClass": "pedestrian"
+        },
+        "walker.pedestrian.0022": {
+            "vClass": "pedestrian"
+        },
+        "walker.pedestrian.0023": {
+            "vClass": "pedestrian"
+        },
+        "walker.pedestrian.0024": {
+            "vClass": "pedestrian"
+        },
+        "walker.pedestrian.0025": {
+            "vClass": "pedestrian"
+        },
+        "walker.pedestrian.0026": {
+            "vClass": "pedestrian"
+        },
+        "walker.pedestrian.0027": {
+            "vClass": "pedestrian"
+        },
+        "walker.pedestrian.0028": {
+            "vClass": "pedestrian"
+        },
+        "walker.pedestrian.0029": {
+            "vClass": "pedestrian"
+        },
+        "walker.pedestrian.0030": {
+            "vClass": "pedestrian"
+        },
+        "walker.pedestrian.0031": {
+            "vClass": "pedestrian"
+        },
+        "walker.pedestrian.0032": {
+            "vClass": "pedestrian"
+        },
+        "walker.pedestrian.0033": {
+            "vClass": "pedestrian"
+        },
+        "walker.pedestrian.0034": {
+            "vClass": "pedestrian"
+        },
+        "walker.pedestrian.0035": {
+            "vClass": "pedestrian"
+        },
+        "walker.pedestrian.0036": {
+            "vClass": "pedestrian"
+        },
+        "walker.pedestrian.0037": {
+            "vClass": "pedestrian"
+        },
+        "walker.pedestrian.0038": {
+            "vClass": "pedestrian"
+        },
+        "walker.pedestrian.0039": {
+            "vClass": "pedestrian"
+        },
+        "walker.pedestrian.0040": {
+            "vClass": "pedestrian"
+        },
+        "walker.pedestrian.0041": {
+            "vClass": "pedestrian"
+        },
+        "walker.pedestrian.0042": {
+            "vClass": "pedestrian"
+        },
+        "walker.pedestrian.0043": {
+            "vClass": "pedestrian"
+        },
+        "walker.pedestrian.0044": {
+            "vClass": "pedestrian"
+        },
+        "walker.pedestrian.0045": {
+            "vClass": "pedestrian"
+        },
+        "walker.pedestrian.0046": {
+            "vClass": "pedestrian"
+        },
+        "walker.pedestrian.0047": {
+            "vClass": "pedestrian"
+        },
+        "walker.pedestrian.0048": {
+            "vClass": "pedestrian"
+        },
+        "walker.pedestrian.0049": {
+            "vClass": "pedestrian"
+        },
+        "walker.pedestrian.0050": {
+            "vClass": "pedestrian"
+        },
+        "walker.pedestrian.0051": {
+            "vClass": "pedestrian"
         }
     }
 }

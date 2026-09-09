@@ -55,14 +55,14 @@ sync」ブロック全体は、本リポジトリでは **`sync_sumo_to_carla()`
 
 | # | 項目 | 状態 |
 |---|---|---|
-| 1 | `sumo_integration/sumo_simulation.py`: 歩行者データ取得ロジック追加 | 未着手 |
-| 2 | `sumo_integration/carla_simulation.py`: walker用差分集合・synchronize_pedestrian追加 | 未着手 |
-| 3 | `sumo_integration/bridge_helper.py`: `get_carla_pedestrian_transform()`追加 | 未着手 |
-| 4 | `sumo_integration/data/vtypes.json`: walkerブレンプリント追加 | 未着手 |
-| 5 | `sumo_integration/simulation_synchronization.py`: `sync_sumo_to_carla()`/`close()`統合 | 未着手 |
-| 6 | `carla_autoware.py`: `_cleanup_sumo()`に歩行者破棄処理を追加 | 未着手 |
-| 7 | `sumo_integration/NOTICE.md`: 変更ファイル一覧の更新 | 未着手 |
-| 8 | スタブ回帰テスト作成 | 未着手 |
+| 1 | `sumo_integration/sumo_simulation.py`: 歩行者データ取得ロジック追加 | ✅ 完了 |
+| 2 | `sumo_integration/carla_simulation.py`: walker用差分集合・synchronize_pedestrian追加 | ✅ 完了 |
+| 3 | `sumo_integration/bridge_helper.py`: `get_carla_pedestrian_transform()`追加 | ✅ 完了 |
+| 4 | `sumo_integration/data/vtypes.json`: walkerブレンプリント追加 | ✅ 完了 |
+| 5 | `sumo_integration/simulation_synchronization.py`: `sync_sumo_to_carla()`/`close()`統合 | ✅ 完了 |
+| 6 | `carla_autoware.py`: `_cleanup_sumo()`に歩行者破棄処理を追加 | ✅ 完了 |
+| 7 | `sumo_integration/NOTICE.md`: 変更ファイル一覧の更新 | ✅ 完了 |
+| 8 | スタブ回帰テスト作成 | ✅ 完了 |
 | 9 | 実機検証(SUMO + CARLA + Autoware fullstack) | 未着手 |
 | 10 | ドキュメント更新(起動手順.md) | 未着手 |
 
@@ -291,6 +291,9 @@ Pythonクラス`FakeSumoSimulation`/`FakeCarlaSimulation`で差し替える)を�
 - 実際の`data/vtypes.json`(タスク4で更新後のもの)を読み込み、`walker.pedestrian.*`/
   `vClass:"pedestrian"`エントリからfakeブレンプリントライブラリを構築し、タスク4の内容自体の
   回帰テストも兼ねる。
+- 実装完了: [test/pedestrian_sync_stub_test.py](../test/pedestrian_sync_stub_test.py)として
+  作成。`python3 test/pedestrian_sync_stub_test.py`実行で
+  "All pedestrian synchronization stub checks passed."(exit code 0)を確認済み。
 - カバレッジ: 新規spawn(vtypes.jsonのwalkerエントリから選ばれること、Z補正
   (`extent.z`分の引き上げ)が正しいこと)、未対応vclass(spawnされないこと)、毎tickの位置更新、
   destroy時に`sumo2carla_ped_ids`と対応walkerが削除されること、`_cleanup_sumo()`相当の

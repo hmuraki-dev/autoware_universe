@@ -77,6 +77,26 @@ class BridgeHelper(object):
         return out_transform
 
     @staticmethod
+    def get_carla_pedestrian_transform(sumo_person):
+        """
+        Returns carla transform based on a sumo person (pedestrian).
+
+        Unlike vehicles, pedestrians have no front-center-bumper reference point to correct
+        for, so this always calls get_carla_transform() with a zero extent (i.e., the
+        longitudinal offset applied for vehicles is skipped).
+
+        Z correction: a carla.Walker's transform origin is at the vertical center of its
+        bounding box rather than at the feet, while sumo's traci.person.getPosition3D()
+        reports ground/feet-level Z. Without correction, pedestrians sink into the ground up
+        to half their height. `sumo_person.extent.z` already holds half of VAR_HEIGHT (see
+        SumoSimulation.get_person()), so it is added here to lift the transform from
+        feet-level to the walker's center.
+        """
+        transform = BridgeHelper.get_carla_transform(sumo_person.transform, carla.Vector3D(0, 0, 0))
+        transform.location.z += sumo_person.extent.z
+        return transform
+
+    @staticmethod
     def get_sumo_transform(in_carla_transform, extent):
         """
         Returns sumo transform based on carla transform.

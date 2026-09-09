@@ -57,6 +57,12 @@ class CarlaSimulation(object):
         self.spawned_actors = set()
         self.destroyed_actors = set()
 
+        # The following sets contain updated pedestrian (walker) information for the current
+        # frame. Kept separate from the vehicle actor sets above.
+        self._active_walkers = set()
+        self.spawned_walkers = set()
+        self.destroyed_walkers = set()
+
         # Set traffic lights.
         self._tls = {}  # {landmark_id: traffic_ligth_actor}
 
@@ -164,6 +170,21 @@ class CarlaSimulation(object):
             vehicle.set_light_state(carla.VehicleLightState(lights))
         return True
 
+    def synchronize_pedestrian(self, walker_id, transform):
+        """
+        Updates pedestrian (walker) state.
+
+            :param walker_id: id of the walker actor to be updated.
+            :param transform: new walker transform (i.e., position and rotation).
+            :return: True if successfully updated. Otherwise, False.
+        """
+        walker = self.world.get_actor(walker_id)
+        if walker is None:
+            return False
+
+        walker.set_transform(transform)
+        return True
+
     def synchronize_traffic_light(self, landmark_id, state):
         """
         Updates traffic light state.
@@ -197,6 +218,12 @@ class CarlaSimulation(object):
         self.spawned_actors = current_actors.difference(self._active_actors)
         self.destroyed_actors = self._active_actors.difference(current_actors)
         self._active_actors = current_actors
+
+        current_walkers = set(
+            [walker.id for walker in self.world.get_actors().filter('walker.pedestrian.*')])
+        self.spawned_walkers = current_walkers.difference(self._active_walkers)
+        self.destroyed_walkers = self._active_walkers.difference(current_walkers)
+        self._active_walkers = current_walkers
 
     def tick(self):
         """
