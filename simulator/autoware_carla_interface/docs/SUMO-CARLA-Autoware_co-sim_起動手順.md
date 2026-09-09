@@ -104,6 +104,7 @@ ros2 launch autoware_launch e2e_simulator.launch.xml \
   vehicle_model:=sample_vehicle \
   sensor_model:=carla_sensor_kit \
   use_sumo:=true \
+  sumo_gui:=true \
   sumo_cfg_file:=/home/divp/CARLA/Co-Simulation/Sumo/examples/Town01.sumocfg \
   tls_manager:=sumo \
   sync_vehicle_lights:=true \
