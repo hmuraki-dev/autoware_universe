@@ -145,3 +145,29 @@ ros2 launch autoware_launch e2e_simulator.launch.xml \
 grep "MAIN_LOOP_PERIOD" /tmp/autoware_carla.log
 ```
 - 例えば、ログに[MAIN_LOOP_PERIOD]タグをつけている場合は、上記のコマンドで対象ログを抽出できます。
+
+### 2.6 歩行者(Pedestrian)同期について
+
+上記のco-sim起動(2.4)には、SUMO側の歩行者(`traci.person`)をCARLA側の`walker.pedestrian.*`
+アクターとして反映する歩行者同期が組み込まれている。
+
+- **常時有効(CLI引数・launch引数は無い)**: 車両同期(`sync_vehicle_lights`等)と異なり、
+  歩行者同期のON/OFFを切り替える起動オプションは存在しない。SUMO設定(`sumo_cfg_file`)側に
+  歩行者(`personFlow`/`person`)のルート・ネットワークが定義されていれば、追加設定なしに
+  自動的に同期される。
+- **sumo→carla の一方向のみ**: CARLA側でspawnした歩行者をSUMOへ送り返す機能(carla→sumo)は
+  実装していない。あくまでSUMOが管理する歩行者をCARLA上に可視化・追従させるための機能である。
+- **Z座標補正**: `carla.Walker`アクターのtransform原点はbounding boxの垂直中心にあり、
+  SUMOが返す座標は地面(足元)基準のため、そのまま反映すると歩行者が地面に埋まって見える。
+  この差分を吸収するため、SUMOの`VAR_HEIGHT`の半分(`sumo_person.extent.z`)をZ座標に
+  加算する補正を行っている(`BridgeHelper.get_carla_pedestrian_transform()`)。
+- **ログについて**: 歩行者のspawn/update/destroyは`logging.debug()`で出力しているが、本パッケージは
+  Pythonの`logging`モジュールに対して`basicConfig`等でレベル設定を行っていないため、
+  デフォルト状態では表示されない(ターミナルにはWARNING以上、例えば未対応vclassのため
+  blueprintが見つからなかった場合の警告のみが表示される)。spawn/update/destroyの詳細を
+  確認したい場合は、`autoware_carla_interface`起動前に`python3 -c "import logging;
+  logging.basicConfig(level=logging.DEBUG)"`相当の設定を追加する、または該当箇所に
+  一時的なデバッグ出力を追加すること。
+- 歩行者用のCARLA walkerブレンプリントは`sumo_integration/data/vtypes.json`の
+  `carla_blueprints`に`walker.pedestrian.0001`〜`0051`(`vClass: "pedestrian"`)として
+  登録済みであり、追加設定は不要。

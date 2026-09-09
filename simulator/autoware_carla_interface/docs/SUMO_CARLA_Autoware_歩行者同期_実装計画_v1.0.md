@@ -63,8 +63,8 @@ sync」ブロック全体は、本リポジトリでは **`sync_sumo_to_carla()`
 | 6 | `carla_autoware.py`: `_cleanup_sumo()`に歩行者破棄処理を追加 | ✅ 完了 |
 | 7 | `sumo_integration/NOTICE.md`: 変更ファイル一覧の更新 | ✅ 完了 |
 | 8 | スタブ回帰テスト作成 | ✅ 完了 |
-| 9 | 実機検証(SUMO + CARLA + Autoware fullstack) | 未着手 |
-| 10 | ドキュメント更新(起動手順.md) | 未着手 |
+| 9 | 実機検証(SUMO + CARLA + Autoware fullstack) | ✅ 完了(ユーザー実施) |
+| 10 | ドキュメント更新(起動手順.md) | ✅ 完了 |
 
 ---
 
@@ -327,3 +327,7 @@ Pythonクラス`FakeSumoSimulation`/`FakeCarlaSimulation`で差し替える)を�
   起動手順.md`の記載内容をベースに、本リポジトリの`_tick_sensor()`/`_cleanup_sumo()`
   構成に合わせて調整する)。
 - 本ファイル(実装計画)の進捗表・各タスクの内容を実装の進行に合わせて更新する。
+- 実装完了: [docs/SUMO-CARLA-Autoware_co-sim_起動手順.md](./SUMO-CARLA-Autoware_co-sim_起動手順.md)
+  の2.4節直後に「2.6 歩行者(Pedestrian)同期について」を追加した(常時有効・一方向・
+  Z補正の概要に加え、本パッケージには`logging.basicConfig`相当の設定が無いため
+  spawn/update/destroyのdebugログはデフォルトでは表示されない旨を明記)。
