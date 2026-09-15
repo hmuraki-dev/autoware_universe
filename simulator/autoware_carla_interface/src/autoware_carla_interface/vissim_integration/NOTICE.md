@@ -1,13 +1,17 @@
 # Vendored code notice
 
-The files in this directory (`constants.py`, `vissim_simulation.py`, `bridge_helper.py`,
-`carla_simulation.py`, `simulation_synchronization.py`, `data/vtypes.json`,
+The files in this directory (`constants.py`, `vissim_simulation.py`, `rpc_protocol.py`,
+`bridge_helper.py`, `carla_simulation.py`, `simulation_synchronization.py`, `data/vtypes.json`,
 `data/signal_mapping.json`, `data/ptypes.json`) are vendored from CARLA's official Vissim-CARLA
 co-simulation bridge:
 
 - Upstream location (this workspace's reference checkout):
   `/home/divp/CARLA/Co-Simulation/PTV-Vissim/vissim_integration/` and
   `/home/divp/CARLA/Co-Simulation/PTV-Vissim/data/`
+- `rpc_protocol.py` specifically is vendored from the `feature/vissim_windows` branch of that
+  same upstream repository (not `main`), which introduces the ZeroMQ+msgpack remote
+  Vissim(Windows)<->CARLA(Linux) co-simulation link. See
+  `docs/Vissim_CARLA_Autoware_Windowsリモート化_実装計画_v1.0.md` for the integration plan.
 - Upstream license: MIT (`Copyright (c) 2020 Computer Vision Center (CVC) at the Universitat
   Autonoma de Barcelona (UAB)`, see the header of each vendored file)
 
@@ -29,18 +33,29 @@ vendoring these files instead of referencing them via an external path.
   content as upstream, except that the walker actor-diff computation (upstream: inside `tick()`)
   was placed inside `update_actor_diff()` instead, consistent with the tick()/update_actor_diff()
   split above - see docs/Vissim_CARLA_Autoware_歩行者同期_実装計画_v1.0.md Step P2.
-- `vissim_simulation.py`: the upstream file contained a module-level debug block (`dsi =
-  ctypes.CDLL("/opt/vissim_kernel_2026.00-10/lib/libDrivingSimulatorProxy.so")` and
-  `print_vissim_last_error()`) that eagerly loads the DS Interface library from a hardcoded
-  absolute path at *import* time, and is not referenced anywhere else in the file. This was
-  removed when vendoring: left in place, it would make importing this module fail unconditionally
-  in any environment where that exact path does not exist, independently of the (correct, already
-  lazy/configurable) library loading that `PTVVissimSimulation.__init__` performs via
-  `args.vissim_lib_path`. Everything else in the file is unmodified, including the pedestrian
-  synchronization additions (`VissimPedestrianMotionState`, `VissimPedestrianConstructionElementType`,
-  `VISSIM_Ped_Data`, `VissimPedestrian`, `get_pedestrian()`, and the `VISSIM_GetTrafficPedestrians`
-  fetching logic in `tick()`), which were vendored byte-for-byte identical to upstream - see docs/
-  Vissim_CARLA_Autoware_歩行者同期_実装計画_v1.0.md Step P1.
+- `vissim_simulation.py`: as of `feature/vissim_windows_co-sim`, this file is re-vendored from the
+  upstream `feature/vissim_windows` branch (previously it was vendored from `main`, using ctypes
+  to talk to `libDrivingSimulatorProxy.so` directly in-process). `PTVVissimSimulation` is now a
+  ZeroMQ REQ client for a Windows-side Vissim adapter instead - see
+  `docs/Vissim_CARLA_Autoware_Windowsリモート化_実装計画_v1.0.md` Step W2 for the full rationale.
+  All DLL-specific logic (the `Simulator_Veh_Data`/`VISSIM_Veh_Data`/`VISSIM_Ped_Data`/
+  `VISSIM_Sig_Data` ctypes structs, DLL loading, the `Create`/`CreateID` pending/active state
+  machine) was removed from this file entirely (it now lives on the Windows side, not vendored
+  into this repository - see section 8 of that plan doc). `PTVVissimSimulation`'s public
+  interface (`__init__(args)`, `tick()`, `spawn_actor()`, `destroy_actor()`,
+  `synchronize_vehicle()`, `get_actor()`, `get_pedestrian()`, `get_signal_state()`, `signal_ids`,
+  `tick_count`, `spawned_vehicles`/`destroyed_vehicles`/`spawned_pedestrians`/
+  `destroyed_pedestrians`, `close()`) is unchanged, so `simulation_synchronization.py` requires no
+  changes. The pedestrian synchronization additions (`VissimPedestrianMotionState`,
+  `VissimPedestrianConstructionElementType`, `VissimPedestrian`, `get_pedestrian()`), signal
+  synchronization (`VissimSignalState`, `get_signal_state()`), and turn-indicator propagation
+  (`VissimLightState`) are all preserved with equivalent behavior (the upstream
+  `feature/vissim_windows` branch already had the same features, sourced from the same
+  DrivingSimulatorProxy.h fields, just delivered over the wire as msgpack dict payloads instead of
+  ctypes struct fields - confirmed field-for-field identical during the Step W0 comparison).
+  `args.vissim_lib_path`/`args.vissim_network` were replaced by `args.vissim_adapter_host`/
+  `args.vissim_adapter_port`/`args.vissim_connect_timeout_ms`/`args.vissim_rpc_timeout_ms` (see
+  plan doc section 3).
 - `simulation_synchronization.py`: extracted from the upstream `run_synchronization.py`, keeping
   only the `SimulationSynchronization` class definition (the CLI entry point / standalone
   `while True:` loop / pacing logic in `run_synchronization.py` are intentionally not vendored,
@@ -68,6 +83,15 @@ vendoring these files instead of referencing them via an external path.
   ptypes.json` maps vissim pedestrianType (100=Man, 200=Woman, 300=Wheelchair User) to CARLA
   `walker.pedestrian.*` blueprint ids; type 300 has an empty candidate list (no CARLA wheelchair
   walker exists), mirroring `vtypes.json`'s unsupported-type convention.
+- `rpc_protocol.py`: vendored functionally unmodified from the upstream `feature/vissim_windows`
+  branch (every constant, function, and the `ProtocolError` class are byte-for-byte identical to
+  upstream) - only the module-level header comment/docstring was adapted to reference this repo's
+  own documentation paths instead of the upstream repository's `docs/WINDOWS_VISSIM_REMOTE_TODO.md`/
+  `docs/WINDOWS_VISSIM_REMOTE_IMPLEMENTATION_PLAN.md` (which do not exist in this repo), and to
+  clarify that the upstream `Co-Simulation/PTV-Vissim_windows/rpc_protocol.py` copy is not vendored
+  here (see `docs/Vissim_CARLA_Autoware_Windowsリモート化_実装計画_v1.0.md` section 8). This module
+  is new to this repository (see plan doc Step W1); the previous ctypes-based `vissim_simulation.py`
+  had no equivalent.
 
 Not vendored (see plan doc Step 0 ④):
 
