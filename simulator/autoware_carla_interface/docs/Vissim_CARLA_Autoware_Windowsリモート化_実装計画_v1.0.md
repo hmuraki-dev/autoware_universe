@@ -352,22 +352,24 @@ SensorLoop._tick_sensor()                                      PTV-Vissim_window
       `rpc_protocol`/`constants`/`SimulationSynchronization`/`CarlaSimulation`/`BridgeHelper`)の
       import確認、`get_errors`でのエラーなし確認を実施済み。mojibake無しも確認済み。
 
-### Step W8: ドキュメント更新
+### Step W8: ドキュメント更新 — ✅ 完了(2026-09-15)
 
-- [ ] `docs/Vissim-CARLA-Autoware_co-sim_起動手順.md`:
+- [x] `docs/Vissim-CARLA-Autoware_co-sim_起動手順.md`:
   - 「0. 前提条件」に、Windows機の準備(`Co-Simulation/PTV-Vissim_windows/`一式のコピー、
-    `pyzmq`/`msgpack`インストール)を追加する。
-  - 「2.4 Vissim/CARLA/Autoware起動」のコマンド例・オプション一覧表を、新パラメータ
-    (`vissim_adapter_host`/`vissim_adapter_port`/`vissim_connect_timeout_ms`/
-    `vissim_rpc_timeout_ms`)に更新し、`vissim_network`/`vissim_lib_path`の記載を削除する。
-  - Windows側`server.py`の起動コマンド例(ターミナル追加、例:
-    `python server.py --vissim-network <.inpx> --vissim-connect-mode gui --vissim-version 2026`)
-    を新設のセクションとして追記する。
-  - 移植元`WINDOWS_VISSIM_REMOTE_IMPLEMENTATION_PLAN.md`のフェーズ8(実機検証)で判明した
-    運用上の注意点(Vissim`.inpx`側の「ドライブシミュレータ アクティブ」設定必須、
-    `connect`タイムアウトを長めに取る必要がある等)を「トラブルシューティング」節として
-    引き継ぐ。
-- [ ] `/memories/repo/vissim_co-sim_docs.md`に本計画docへのリンクを追記する。
+    `pyzmq`/`msgpack`インストール)・同一LAN内前提を追加した。
+  - 「2.4 Windows側Vissimアダプタ起動」を新設し、`server.py`の起動コマンド例(GUI版/
+    コンソール版の分岐)と、事前チェック(`.inpx`側「ドライブシミュレータ アクティブ」設定
+    必須、同一LAN内、ファイアウォール推奨設定)を記載した。
+  - 「2.5 Vissim/CARLA/Autoware起動」(旧2.4から改番)のコマンド例・オプション一覧表を、
+    新パラメータ(`vissim_adapter_host`/`vissim_adapter_port`/`vissim_connect_timeout_ms`/
+    `vissim_rpc_timeout_ms`)に更新し、`vissim_network`/`vissim_lib_path`の記載を削除した。
+    「独立したサーバープロセスを別ターミナルで起動する必要がない」という旧注意書きも、
+    Windows側`server.py`を事前に起動しておく必要がある旨に更新した。
+  - 「2.6 [appendix] 処理時間計測」に改番(旧2.5)。全体の章番号の整合性を確認済み。
+  - 「1.1 `autoware_launch`側の対応」の`<arg>`一覧も新パラメータに更新した。
+- [x] `/memories/repo/vissim_co-sim_docs.md`に本計画docへのリンクは既にStep W0以前から
+      追記済み(§「Windowsリモート化」節)。
+- [x] 検証済み: 章番号の整合性(`grep "^#"`で全見出しを確認)、mojibake無しを確認した。
 
 ### Step W9: 実機検証
 
@@ -410,5 +412,5 @@ SensorLoop._tick_sensor()                                      PTV-Vissim_window
 - [x] W5: 依存関係の明記(ドキュメントのみ、package.xml/setup.pyは変更なし)
 - [x] W6: `NOTICE.md`更新
 - [x] W7: テスト(既存回帰確認 + 新規ループバックテスト)
-- [ ] W8: ドキュメント更新(起動手順、repo memory)
+- [x] W8: ドキュメント更新(起動手順、repo memory)
 - [ ] W9: 実機検証(Windows実機 + 本リポジトリのAutoware統合環境)
