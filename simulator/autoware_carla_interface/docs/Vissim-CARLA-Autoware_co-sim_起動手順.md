@@ -7,6 +7,20 @@ Autoware環境を構築済みであること。
 PTV Vissim Kernel for Linux(`/opt/vissim_kernel_2026.00-10`)がインストール済みであり、
 `libDrivingSimulatorProxy.so`が利用可能であること(ライセンス(CmDongle)が有効であること)。
 
+**(`feature/vissim_windows_co-sim`ブランチ以降)** 上記のLinux Kernel版に加えて、Windows機上の
+Vissim(GUI/コンソール)とZeroMQ経由でリモート接続する構成にも対応した(詳細は
+`docs/Vissim_CARLA_Autoware_Windowsリモート化_実装計画_v1.0.md`参照。Windows機側のセットアップ
+手順・起動コマンド例は同計画のStep W8で本ドキュメントに追記予定)。この構成を使う場合、
+`autoware_carla_interface`ノードを実行するPython環境(`carla`パッケージを`pip install --user`
+した環境と同じもの)に、`pyzmq`・`msgpack`を追加でインストールしておく必要がある:
+
+```bash
+python3 -m pip install --user pyzmq msgpack
+```
+
+`carla`パッケージ同様、`package.xml`/`setup.py`には登録されていない(rosdep管理外)ため、
+手動でのインストールが必要な点に注意。
+
 
 # 1. リポジトリ
 

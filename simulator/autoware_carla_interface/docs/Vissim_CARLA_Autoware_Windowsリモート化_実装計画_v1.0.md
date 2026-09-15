@@ -304,14 +304,17 @@ SensorLoop._tick_sensor()                                      PTV-Vissim_window
 - [x] 検証済み: 両ファイルとも`xml.dom.minidom.parse()`でwell-formedなXMLであることを確認し、
       mojibake無しを確認した。
 
-### Step W5: 依存関係の確認・明記
+### Step W5: 依存関係の確認・明記 — ✅ 完了(2026-09-15)
 
-- [ ] `package.xml`/`setup.py`は変更しない方針(`carla`パッケージが現状登録されていないのと
-      同じ理由で、`pyzmq`/`msgpack`もrosdep管理外のPython実行環境に手動インストールする形を
-      踏襲する)。
-- [ ] `docs/Vissim-CARLA-Autoware_co-sim_起動手順.md`の前提条件セクションに、
-      `pyzmq`/`msgpack`のインストール手順(どのPython環境に対して`pip install pyzmq msgpack`
-      するか)を明記する。
+- [x] `package.xml`/`setup.py`は変更しない方針を維持した(`carla`パッケージが現状登録されて
+      いないのと同じ理由で、`pyzmq`/`msgpack`もrosdep管理外のPython実行環境に手動
+      インストールする形を踏襲する)。`git status`で両ファイルとも無変更であることを確認済み。
+- [x] `docs/Vissim-CARLA-Autoware_co-sim_起動手順.md`の「0. 前提条件」セクションに、
+      `feature/vissim_windows_co-sim`ブランチ以降のWindowsリモート構成に関する説明と、
+      `python3 -m pip install --user pyzmq msgpack`(`carla`パッケージと同じPython環境に
+      インストールする旨)を追記した。Windows機側のセットアップ手順・起動コマンド例など
+      本ドキュメントの全面的な書き換えはStep W8のスコープとし、今回は依存関係インストール
+      手順の追記のみに留めた。
 
 ### Step W6: `NOTICE.md`の更新 — ✅ 完了(Step W1/W2内で前倒し実施済み、2026-09-15)
 
@@ -389,7 +392,7 @@ SensorLoop._tick_sensor()                                      PTV-Vissim_window
 - [x] W2: `vissim_simulation.py`のZeroMQクライアント化(歩行者同期含む)
 - [x] W3: ROSパラメータ・`carla_autoware.py`の変更
 - [x] W4: launchファイル変更(本リポジトリ + `autoware_launch`側)
-- [ ] W5: 依存関係の明記(ドキュメントのみ、package.xml/setup.pyは変更なし)
+- [x] W5: 依存関係の明記(ドキュメントのみ、package.xml/setup.pyは変更なし)
 - [x] W6: `NOTICE.md`更新
 - [ ] W7: テスト(既存回帰確認 + 新規ループバックテスト検討)
 - [ ] W8: ドキュメント更新(起動手順、repo memory)
