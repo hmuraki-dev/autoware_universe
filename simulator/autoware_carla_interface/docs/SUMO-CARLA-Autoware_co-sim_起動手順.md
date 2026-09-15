@@ -108,7 +108,8 @@ ros2 launch autoware_launch e2e_simulator.launch.xml \
   sumo_cfg_file:=/home/divp/CARLA/Co-Simulation/Sumo/examples/Town01.sumocfg \
   tls_manager:=sumo \
   sync_vehicle_lights:=true \
-  sync_vehicle_color:=true
+  sync_vehicle_color:=true \
+  spectator_follow:=true
 ```
 
 #### オプション一覧
@@ -128,6 +129,13 @@ ros2 launch autoware_launch e2e_simulator.launch.xml \
 | `tls_manager` | 信号管理 | `sumo` | `none` |
 | `sync_vehicle_lights` | 灯火同期 | `true` | `false` |
 | `sync_vehicle_color` | 車体色同期 | `true` | `false` |
+| `spectator_follow` | EGO車両(role_name=`ego_vehicle_role_name`)にCARLAスペクテーターを自動追従させる | `true` | `false` |
+
+- `spectator_follow:=true`はCARLAスペクテーター(自由視点カメラ)をEGO車両に自動追従させる。
+  カメラの距離・高さ・角度(`--distance`/`--height`/`--pitch`/`--rate`)はlaunch引数として
+  公開されていないため、細かく調整したい場合はこの引数は使わず`ros2 run
+  autoware_carla_interface spectator_follow --distance ... --height ...`のように別ターミナルで
+  手動起動すること。
 
 ### 2.5 [appendix] 処理時間計測
 

@@ -47,6 +47,9 @@
     <arg name="sync_vehicle_color" default="False" description="Synchronize vehicle color between SUMO and CARLA"/>
     <arg name="tls_manager" default="none" description="Traffic light authority: none, sumo, or carla"/>
 
+    <!-- CARLA spectator camera auto-follow (see scripts/spectator_follow) -->
+    <arg name="spectator_follow" default="False" description="Automatically lock the CARLA spectator camera onto the ego vehicle as soon as it spawns"/>
+
     <!-- CARLA Interface -->
     <node pkg="autoware_carla_interface" exec="autoware_carla_interface" name="autoware_carla_interface" output="screen">
       <param name="host" value="$(var host)"/>
@@ -72,6 +75,20 @@
       <param name="sync_vehicle_color" value="$(var sync_vehicle_color)"/>
       <param name="tls_manager" value="$(var tls_manager)"/>
     </node>
+
+    <!-- Keeps the CARLA spectator (free) camera locked onto the ego vehicle (role_name=
+         ego_vehicle_role_name) as soon as it appears, whether spawned by autoware_carla_interface
+         itself or via RViz-initiated pose/goal (which does not change how/where the ego actor is
+         spawned in CARLA; that still happens inside autoware_carla_interface as usual). Polls for
+         the actor and re-acquires it if it is (re)spawned, so launch order does not matter.
+         Uses executable (not node), because scripts/spectator_follow is a plain argparse
+         script (not an rclpy node) and would reject the ros-args that a node action always
+         appends. -->
+    <executable
+      cmd="ros2 run autoware_carla_interface spectator_follow --host $(var host) --port $(var port) --role $(var ego_vehicle_role_name)"
+      output="screen"
+      if="$(var spectator_follow)"
+    />
 
     <arg name="input_control_cmd" default="/control/command/control_cmd"/>
     <arg name="input_odometry" default="/localization/kinematic_state"/>
