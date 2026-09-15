@@ -144,6 +144,8 @@ SensorLoop._tick_sensor()                                      PTV-Vissim_window
 | `~/autoware.1.9.0/src/launcher/autoware_launch/launch/e2e_simulator.launch.xml` | (別リポジトリ、ローカル未コミット)同様に引数転送を変更 |
 | `package.xml` / `setup.py` | Python依存(`pyzmq`, `msgpack`)の扱いを明記(下記§4.0参照。`carla`パッケージ同様、package.xml/setup.pyには追加せず、起動手順ドキュメントに手動インストール手順を追記する方針) |
 | `test/vissim_pedestrian_sync_stub_test.py` | 影響確認のみ(`FakeVissimSimulation`を使うため無改修で通るはず、§6で回帰確認) |
+| `test/vissim_rpc_protocol_test.py` | **新規追加**(移植元`util/rpc_protocol_test.py`をアダプト。プロトコル層の単体テスト) |
+| `test/vissim_adapter_stub_test.py` | **新規追加**(移植元`util/vissim_adapter_stub_test.py`をアダプト。手作りフェイクZeroMQアダプタによるループバックテスト) |
 | `docs/Vissim-CARLA-Autoware_co-sim_起動手順.md` | Windowsアダプタの起動手順、新CLI引数・ROSパラメータへの反映 |
 | `/memories/repo/vissim_co-sim_docs.md` | 本計画doc・関連ファイルの追記(ユーザー記憶) |
 
@@ -325,17 +327,30 @@ SensorLoop._tick_sensor()                                      PTV-Vissim_window
 - [x] `rpc_protocol.py`の vendor 元情報(移植元パス・ブランチ`feature/vissim_windows`)を
       追記した(Step W1で実施済み)。
 
-### Step W7: テスト
+### Step W7: テスト — ✅ 完了(2026-09-15)
 
-- [ ] 既存`test/vissim_pedestrian_sync_stub_test.py`が無改修で通ることを確認する
+- [x] 既存`test/vissim_pedestrian_sync_stub_test.py`が無改修で通ることを確認した
       (`FakeVissimSimulation`を使っており`PTVVissimSimulation`を直接テストしていないため、
-      影響を受けないはず)。
-- [ ] `PTVVissimSimulation`自体の単体テストが本リポジトリに存在しない場合、移植元の
-      `util/vissim_adapter_stub_test.py`(フェイクの`VissimKernelSession`をZeroMQ REPサーバに
-      注入したループバックテスト)に相当するテストを、本リポジトリの歩行者同期ロジックも
-      含めて`test/`配下に追加することを検討する(実Windows機・実Vissimなしで
-      ZeroMQ層・spawn/destroy/update/tick往復・タイムアウト再接続を検証できる)。
-- [ ] `ast.parse`等による構文チェック、全シンボルのimport確認(移植元のStep 3検証内容を踏襲)。
+      影響を受けなかった。実行して合格を確認済み)。
+- [x] `test/vissim_rpc_protocol_test.py`を新規追加(移植元`util/rpc_protocol_test.py`を
+      アダプト): 3種別(connect/tick/disconnect)のrequest/responseラウンドトリップ、エラー応答、
+      未知のメッセージ種別・プロトコルバージョン不一致・`seq`不一致・不正なmsgpackバイト列が
+      いずれも`ProtocolError`になることを検証。移植元の`check_windows_vendored_copy_is_identical`
+      は、本リポジトリが`Co-Simulation/PTV-Vissim_windows/`をvendorしない方針(§8)のため
+      対象外として除外した。`python3 test/vissim_rpc_protocol_test.py`で全チェック合格を確認済み。
+- [x] `test/vissim_adapter_stub_test.py`を新規追加(移植元`util/vissim_adapter_stub_test.py`を
+      アダプト、ただし本リポジトリは`vissim_kernel_session.py`/`server.py`をvendorしないため、
+      それらの代わりに`rpc_protocol.py`のメッセージ形式に直接基づく最小限の手作りZeroMQ REPループ
+      をフェイクアダプタとして実装): spawn→tick(NPC混在)→update→destroy一連の流れ、
+      `_max_simulator_vehicles`上限のクライアント側強制、歩行者・信号state
+      (`VissimSignalState`変換含む)の伝播、タイムアウト発生時の`_needs_reconnect`フラグ設定と
+      次回`tick()`での自動再接続、を検証。`python3 test/vissim_adapter_stub_test.py`で
+      全チェック合格を確認済み。
+- [x] `ast.parse`による構文チェック、`vissim_integration`配下の全公開シンボル
+      (`PTVVissimSimulation`/`VissimVehicle`/`VissimPedestrian`/`VissimSignalState`/
+      `VissimLightState`/`VissimPedestrianMotionState`/`VissimPedestrianConstructionElementType`/
+      `rpc_protocol`/`constants`/`SimulationSynchronization`/`CarlaSimulation`/`BridgeHelper`)の
+      import確認、`get_errors`でのエラーなし確認を実施済み。mojibake無しも確認済み。
 
 ### Step W8: ドキュメント更新
 
@@ -394,6 +409,6 @@ SensorLoop._tick_sensor()                                      PTV-Vissim_window
 - [x] W4: launchファイル変更(本リポジトリ + `autoware_launch`側)
 - [x] W5: 依存関係の明記(ドキュメントのみ、package.xml/setup.pyは変更なし)
 - [x] W6: `NOTICE.md`更新
-- [ ] W7: テスト(既存回帰確認 + 新規ループバックテスト検討)
+- [x] W7: テスト(既存回帰確認 + 新規ループバックテスト)
 - [ ] W8: ドキュメント更新(起動手順、repo memory)
 - [ ] W9: 実機検証(Windows実機 + 本リポジトリのAutoware統合環境)
