@@ -88,11 +88,18 @@ class InitializeInterface(object):
         self.max_real_delta_seconds = self.param_["max_real_delta_seconds"]
 
         # Vissim-CARLA co-simulation parameters (see docs/
-        # Vissim_CARLA_Autoware_統合_実装計画_v1.0.md). use_vissim=False (default) keeps every
-        # code path below a complete no-op.
+        # Vissim_CARLA_Autoware_統合_実装計画_v1.0.md and docs/
+        # Vissim_CARLA_Autoware_Windowsリモート化_実装計画_v1.0.md). use_vissim=False (default)
+        # keeps every code path below a complete no-op. As of feature/vissim_windows_co-sim,
+        # PTVVissimSimulation talks to a Windows-side Vissim adapter over ZeroMQ instead of
+        # loading libDrivingSimulatorProxy.so in-process, hence vissim_adapter_host/port/timeouts
+        # replacing the old vissim_network/vissim_lib_path (now purely local facts of the
+        # Windows-side adapter, not forwarded from here).
         self.use_vissim = self.param_["use_vissim"]
-        self.vissim_network = self.param_["vissim_network"]
-        self.vissim_lib_path = self.param_["vissim_lib_path"]
+        self.vissim_adapter_host = self.param_["vissim_adapter_host"]
+        self.vissim_adapter_port = self.param_["vissim_adapter_port"]
+        self.vissim_connect_timeout_ms = self.param_["vissim_connect_timeout_ms"]
+        self.vissim_rpc_timeout_ms = self.param_["vissim_rpc_timeout_ms"]
         self.vissim_simulator_vehicles = self.param_["vissim_simulator_vehicles"]
         self.sync_traffic_lights = self.param_["sync_traffic_lights"]
         self.vissim_carla_sim = None
@@ -195,11 +202,15 @@ class InitializeInterface(object):
         # reused from fixed_delta_seconds (not a separate parameter) so the CARLA/Vissim step
         # time cannot drift apart - see docs/Vissim_CARLA_Autoware_統合_実装計画_v1.0.md
         # sections 0.3/2.2 (a step-time mismatch was the confirmed root cause of a CreateID
-        # handshake failure in the upstream bridge).
+        # handshake failure in the upstream bridge). vissim_adapter_host/port/timeouts identify
+        # the Windows-side Vissim adapter that PTVVissimSimulation now talks to over ZeroMQ - see
+        # docs/Vissim_CARLA_Autoware_Windowsリモート化_実装計画_v1.0.md.
         vissim_args = SimpleNamespace(
             simulator_vehicles=self.vissim_simulator_vehicles,
-            vissim_lib_path=self.vissim_lib_path or None,
-            vissim_network=self.vissim_network,
+            vissim_adapter_host=self.vissim_adapter_host,
+            vissim_adapter_port=self.vissim_adapter_port,
+            vissim_connect_timeout_ms=self.vissim_connect_timeout_ms,
+            vissim_rpc_timeout_ms=self.vissim_rpc_timeout_ms,
             step_length=self.fixed_delta_seconds,
             sync_traffic_lights=self.sync_traffic_lights,
         )

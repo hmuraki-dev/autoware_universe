@@ -74,12 +74,20 @@ class carla_ros2_interface(object):
             "sensor_kit_name": (rclpy.Parameter.Type.STRING, ""),  # Empty = use YAML default
             "sensor_mapping_file": (rclpy.Parameter.Type.STRING, ""),
             # Vissim-CARLA co-simulation parameters (see docs/
-            # Vissim_CARLA_Autoware_統合_実装計画_v1.0.md). All have Python-side defaults so
-            # existing launch files that do not pass them keep working unchanged (use_vissim=False
-            # is a complete no-op, see InitializeInterface._init_vissim_integration()).
+            # Vissim_CARLA_Autoware_統合_実装計画_v1.0.md and docs/
+            # Vissim_CARLA_Autoware_Windowsリモート化_実装計画_v1.0.md). All have Python-side
+            # defaults so existing launch files that do not pass them keep working unchanged
+            # (use_vissim=False is a complete no-op, see
+            # InitializeInterface._init_vissim_integration()). vissim_network/vissim_lib_path are
+            # no longer accepted here (as of feature/vissim_windows_co-sim): the Vissim network
+            # file and DrivingSimulatorProxy DLL are now purely local facts of the Windows-side
+            # adapter (`Co-Simulation/PTV-Vissim_windows/server.py`), passed as its own CLI
+            # arguments, not forwarded from this ROS node.
             "use_vissim": (rclpy.Parameter.Type.BOOL, False),
-            "vissim_network": (rclpy.Parameter.Type.STRING, ""),
-            "vissim_lib_path": (rclpy.Parameter.Type.STRING, ""),
+            "vissim_adapter_host": (rclpy.Parameter.Type.STRING, "127.0.0.1"),
+            "vissim_adapter_port": (rclpy.Parameter.Type.INTEGER, 5555),
+            "vissim_connect_timeout_ms": (rclpy.Parameter.Type.INTEGER, 60000),
+            "vissim_rpc_timeout_ms": (rclpy.Parameter.Type.INTEGER, 2000),
             "vissim_simulator_vehicles": (rclpy.Parameter.Type.INTEGER, 1),
             "sync_traffic_lights": (rclpy.Parameter.Type.BOOL, False),
         }

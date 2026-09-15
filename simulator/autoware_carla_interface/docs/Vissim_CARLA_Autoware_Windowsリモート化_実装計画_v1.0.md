@@ -271,18 +271,24 @@ SensorLoop._tick_sensor()                                      PTV-Vissim_window
       2回目の`tick()`→`close()`まで一連の流れが実際に動作することを確認した
       (移植元`util/vissim_adapter_stub_test.py`相当のカバレッジ)。
 
-### Step W3: ROSパラメータ・`carla_autoware.py`の変更
+### Step W3: ROSパラメータ・`carla_autoware.py`の変更 — ✅ 完了(2026-09-15)
 
-- [ ] `carla_ros.py`: パラメータ宣言テーブルから`vissim_network`/`vissim_lib_path`を削除し、
+- [x] `carla_ros.py`: パラメータ宣言テーブルから`vissim_network`/`vissim_lib_path`を削除し、
       `vissim_adapter_host`(既定`"127.0.0.1"`)・`vissim_adapter_port`(既定`5555`)・
-      `vissim_connect_timeout_ms`(既定`60000`)・`vissim_rpc_timeout_ms`(既定`2000`)を追加。
-- [ ] `carla_autoware.py`の`InitializeInterface.__init__`: 対応する`self.vissim_*`属性を
-      読み替える。
-- [ ] `InitializeInterface._init_vissim_integration()`: `vissim_args`(`SimpleNamespace`)から
+      `vissim_connect_timeout_ms`(既定`60000`)・`vissim_rpc_timeout_ms`(既定`2000`)を追加した。
+- [x] `carla_autoware.py`の`InitializeInterface.__init__`: 対応する`self.vissim_*`属性
+      (`vissim_adapter_host`/`vissim_adapter_port`/`vissim_connect_timeout_ms`/
+      `vissim_rpc_timeout_ms`)を読み替えた。
+- [x] `InitializeInterface._init_vissim_integration()`: `vissim_args`(`SimpleNamespace`)から
       `vissim_lib_path`/`vissim_network`を削除し、`vissim_adapter_host`/`vissim_adapter_port`/
-      `vissim_connect_timeout_ms`/`vissim_rpc_timeout_ms`を追加する。
-      `_check_vissim_traffic_manager_exclusivity()`等、`vissim_network`/`vissim_lib_path`に
-      依存しないロジックは無改修。
+      `vissim_connect_timeout_ms`/`vissim_rpc_timeout_ms`を追加した(Step W2で書き換えた
+      `PTVVissimSimulation.__init__`が読む属性名と一致することを、Step W2のループバックテストで
+      使用したのと同じ属性名であることから確認済み)。`_check_vissim_traffic_manager_exclusivity()`
+      等、`vissim_network`/`vissim_lib_path`に依存しないロジックは無改修のまま。
+- [x] 検証済み: `ast.parse`構文チェック・`get_errors`で両ファイルともエラーなしを確認。
+      `self.vissim_network`/`self.vissim_lib_path`への参照が両ファイルに一切残っていないことを
+      grepで確認。`launch/autoware_carla_interface.launch.xml`側の対応する`<arg>`/`<param>`は
+      **意図的に未変更のまま**残している(Step W4のスコープ)。
 
 ### Step W4: launchファイルの変更
 
@@ -377,7 +383,7 @@ SensorLoop._tick_sensor()                                      PTV-Vissim_window
 - [x] W0: 事前準備(差分突き合わせ、pyzmq/msgpack環境確認)
 - [x] W1: `rpc_protocol.py`のvendor化
 - [x] W2: `vissim_simulation.py`のZeroMQクライアント化(歩行者同期含む)
-- [ ] W3: ROSパラメータ・`carla_autoware.py`の変更
+- [x] W3: ROSパラメータ・`carla_autoware.py`の変更
 - [ ] W4: launchファイル変更(本リポジトリ + `autoware_launch`側)
 - [ ] W5: 依存関係の明記(ドキュメントのみ、package.xml/setup.pyは変更なし)
 - [x] W6: `NOTICE.md`更新
