@@ -17,10 +17,16 @@
     <arg name="use_traffic_manager" default="False"/>
     <arg name="max_real_delta_seconds" default="0.05"/>
 
-    <!-- Vissim-CARLA co-simulation (see docs/Vissim_CARLA_Autoware_統合_実装計画_v1.0.md) -->
+    <!-- Vissim-CARLA co-simulation (see docs/Vissim_CARLA_Autoware_統合_実装計画_v1.0.md and
+         docs/Vissim_CARLA_Autoware_Windowsリモート化_実装計画_v1.0.md). vissim_network/
+         vissim_lib_path are no longer accepted here: the Vissim network file and
+         DrivingSimulatorProxy DLL are now purely local facts of the Windows-side adapter
+         (Co-Simulation/PTV-Vissim_windows/server.py), passed as its own CLI arguments. -->
     <arg name="use_vissim" default="False" description="Enable Vissim-CARLA co-simulation"/>
-    <arg name="vissim_network" default="" description="Path to the Vissim network file (.inpx)"/>
-    <arg name="vissim_lib_path" default="" description="Absolute path to libDrivingSimulatorProxy.so (empty: rely on LD_LIBRARY_PATH)"/>
+    <arg name="vissim_adapter_host" default="127.0.0.1" description="IP of the Windows-side vissim adapter (Co-Simulation/PTV-Vissim_windows/server.py)"/>
+    <arg name="vissim_adapter_port" default="5555" description="TCP port of the Windows-side vissim adapter"/>
+    <arg name="vissim_connect_timeout_ms" default="60000" description="Timeout (ms) for the initial (and any reconnect) connect request to the vissim adapter"/>
+    <arg name="vissim_rpc_timeout_ms" default="2000" description="Timeout (ms) for each per-tick request to the vissim adapter, once connected"/>
     <arg name="vissim_simulator_vehicles" default="1" description="Max number of Driving-Simulator (CARLA-origin) vehicles tracked by Vissim at the same time"/>
     <arg name="sync_traffic_lights" default="False" description="Synchronize traffic light state from Vissim to CARLA (Vissim -> CARLA direction only)"/>
 
@@ -58,8 +64,10 @@
       <param name="sensor_kit_name" value="$(var sensor_kit_name)"/>
       <param name="sensor_mapping_file" value="$(var sensor_mapping_file)"/>
       <param name="use_vissim" value="$(var use_vissim)"/>
-      <param name="vissim_network" value="$(var vissim_network)"/>
-      <param name="vissim_lib_path" value="$(var vissim_lib_path)"/>
+      <param name="vissim_adapter_host" value="$(var vissim_adapter_host)"/>
+      <param name="vissim_adapter_port" value="$(var vissim_adapter_port)"/>
+      <param name="vissim_connect_timeout_ms" value="$(var vissim_connect_timeout_ms)"/>
+      <param name="vissim_rpc_timeout_ms" value="$(var vissim_rpc_timeout_ms)"/>
       <param name="vissim_simulator_vehicles" value="$(var vissim_simulator_vehicles)"/>
       <param name="sync_traffic_lights" value="$(var sync_traffic_lights)"/>
     </node>

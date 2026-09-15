@@ -290,15 +290,19 @@ SensorLoop._tick_sensor()                                      PTV-Vissim_window
       grepで確認。`launch/autoware_carla_interface.launch.xml`側の対応する`<arg>`/`<param>`は
       **意図的に未変更のまま**残している(Step W4のスコープ)。
 
-### Step W4: launchファイルの変更
+### Step W4: launchファイルの変更 — ✅ 完了(2026-09-15)
 
-- [ ] 本リポジトリ`launch/autoware_carla_interface.launch.xml`: `<arg>`/`<param>`を
-      §3のBefore/After通りに変更する。
-- [ ] `~/autoware.1.9.0/src/launcher/autoware_launch`の`e2e_simulator.launch.xml`
-      (別リポジトリ、ローカル未コミット差分)にも同様の変更を適用する
+- [x] 本リポジトリ`launch/autoware_carla_interface.launch.xml`: `<arg>`/`<param>`を
+      §3のBefore/After通りに変更した(`vissim_network`/`vissim_lib_path`を削除し、
+      `vissim_adapter_host`/`vissim_adapter_port`/`vissim_connect_timeout_ms`/
+      `vissim_rpc_timeout_ms`を追加)。
+- [x] `~/autoware.1.9.0/src/launcher/autoware_launch`の`e2e_simulator.launch.xml`
+      (別リポジトリ、ローカル未コミット差分)にも同様の変更を適用した
       (`/memories/repo/vissim_co-sim_docs.md`に記載の通り、このファイルは別リポジトリのため
-      本ブランチのコミット対象ではないが、動作確認のためには必須。変更後、
-      同メモリファイルの記述を更新する)。
+      本ブランチのコミット対象ではないが、動作確認のためには必須。同メモリファイルの記述も
+      更新済み)。
+- [x] 検証済み: 両ファイルとも`xml.dom.minidom.parse()`でwell-formedなXMLであることを確認し、
+      mojibake無しを確認した。
 
 ### Step W5: 依存関係の確認・明記
 
@@ -384,7 +388,7 @@ SensorLoop._tick_sensor()                                      PTV-Vissim_window
 - [x] W1: `rpc_protocol.py`のvendor化
 - [x] W2: `vissim_simulation.py`のZeroMQクライアント化(歩行者同期含む)
 - [x] W3: ROSパラメータ・`carla_autoware.py`の変更
-- [ ] W4: launchファイル変更(本リポジトリ + `autoware_launch`側)
+- [x] W4: launchファイル変更(本リポジトリ + `autoware_launch`側)
 - [ ] W5: 依存関係の明記(ドキュメントのみ、package.xml/setup.pyは変更なし)
 - [x] W6: `NOTICE.md`更新
 - [ ] W7: テスト(既存回帰確認 + 新規ループバックテスト検討)
