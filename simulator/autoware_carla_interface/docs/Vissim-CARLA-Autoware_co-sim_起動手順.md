@@ -188,7 +188,7 @@ ros2 launch autoware_launch e2e_simulator.launch.xml \
   vehicle_model:=sample_vehicle \
   sensor_model:=carla_sensor_kit \
   use_vissim:=true \
-  vissim_adapter_host:=<Windows機のIPアドレス> \
+  vissim_adapter_host:=192.168.16.56 \
   vissim_adapter_port:=5555 \
   vissim_connect_timeout_ms:=60000 \
   sync_traffic_lights:=true \
