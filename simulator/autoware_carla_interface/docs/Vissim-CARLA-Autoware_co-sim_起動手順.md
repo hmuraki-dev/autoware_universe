@@ -13,6 +13,7 @@ Vissim-CARLAブリッジ(PTV Vissim Driving Simulator Interface経由)を盛り�
 fullstack(Vissim-CARLA-Autoware)のco-simを実装したものである。
 
 - `autoware_universe`: `feature/vissim_co-sim`ブランチ
+
 本ブランチは、Autoware Universe ワークスペース内の次のディレクトリに配置される。
 
 ```text
@@ -29,7 +30,7 @@ fullstack(Vissim-CARLA-Autoware)のco-simを実装したものである。
 
 ## 2. 実行コマンド
 ### 2.1 [ターミナル1] CARLAサーバーの起動
-CARLAサーバーが起動します。
+CARLAサーバーを起動します。
 
 ```bash
 cd ~/CARLA
@@ -141,3 +142,6 @@ ros2 launch autoware_launch e2e_simulator.launch.xml \
 | `sync_traffic_lights` | 信号機の状態をVissimからCARLAへ同期する(Vissim→CARLA方向のみ) | 省略可 | `false` |
 | `spectator_follow` | CARLAスペクテーター(自由視点カメラ)をEGO車両のスポーンと同時に自動追従させる | 省略可 | `false` |
 
+**注意**:
+- `fixed_delta_seconds`(CARLA)とVissimネットワークファイル(`.inpx`)側のシミュレーションステップ
+  時間(`simRes`)は**必ず一致させること**(既定はいずれも0.05秒。`.inpx`側は`simRes=20`に設定すること)。
