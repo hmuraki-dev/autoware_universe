@@ -375,7 +375,8 @@ class SimulationSynchronization(object):
         for carla_walker_id in self.vissim2carla_ped_ids.values():
             self.carla.destroy_actor(carla_walker_id)
 
-        # Closing PTV-Vissim connection. Note: signal state is read via VISSIM_GetSignalStates,
-        # which is a plain poll (unlike SUMO's traci subscriptions) - there is no signal-related
-        # subscription to cancel here, VISSIM_Disconnect() is sufficient on its own.
+        # Closing PTV-Vissim connection (sends 'disconnect' to the Windows-side vissim adapter,
+        # which in turn calls VISSIM_Disconnect()). Note: signal state is polled as part of every
+        # 'tick' request (unlike SUMO's traci subscriptions) - there is no signal-related
+        # subscription to cancel here, the disconnect is sufficient on its own.
         self.vissim.close()

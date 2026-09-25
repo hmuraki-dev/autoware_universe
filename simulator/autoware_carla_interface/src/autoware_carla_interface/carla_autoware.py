@@ -338,8 +338,8 @@ class InitializeInterface(object):
         Reimplements what `SimulationSynchronization.close()` does, but with each step isolated
         in its own try/except so that one failing step (e.g. destroying a single synchronized
         actor) cannot prevent the later steps - in particular `PTVVissimSimulation.close()`
-        (`VISSIM_Disconnect()`) - from running. See docs/Vissim_CARLA_Autoware_統合_実装計画_v1.0.md
-        Step 7.
+        (disconnect from the Windows-side vissim adapter) - from running. See docs/
+        Vissim_CARLA_Autoware_統合_実装計画_v1.0.md Step 7.
 
         Order:
           1. Destroy CARLA actors mirrored from vissim (`vissim2carla_ids`), one at a time.
@@ -351,8 +351,9 @@ class InitializeInterface(object):
              The real CARLA EGO actor itself is left untouched here (`_cleanup_ego_actor()`
              handles it separately).
           4. Unfreeze traffic lights that were frozen for signal sync.
-          5. Disconnect from the Vissim Kernel (`VISSIM_Disconnect()`) - always attempted last,
-             regardless of whether the steps above succeeded.
+          5. Disconnect from the Windows-side vissim adapter (`PTVVissimSimulation.close()`, which
+             sends 'disconnect' so the adapter calls `VISSIM_Disconnect()` on its side) - always
+             attempted last, regardless of whether the steps above succeeded.
 
         Deliberately does NOT restore CARLA's world settings to asynchronous mode (unlike
         `SimulationSynchronization.close()`), so that `use_vissim`'s value does not change
