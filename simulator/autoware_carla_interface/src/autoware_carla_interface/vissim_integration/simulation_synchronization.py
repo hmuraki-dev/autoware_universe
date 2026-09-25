@@ -208,7 +208,7 @@ class SimulationSynchronization(object):
         # Destroying vissim controlled vehicles in carla.
         for vissim_actor_id in self.vissim.destroyed_vehicles:
             if vissim_actor_id in self.vissim2carla_ids:
-                self.vissim.destroy_actor(self.vissim2carla_ids.pop(vissim_actor_id))
+                self.carla.destroy_actor(self.vissim2carla_ids.pop(vissim_actor_id))
 
         # Updating vissim controlled vehicles in carla.
         for vissim_actor_id in self.vissim2carla_ids:

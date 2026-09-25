@@ -73,7 +73,11 @@ vendoring these files instead of referencing them via an external path.
   spawn/destroy/update block) was ported byte-for-byte identical to upstream, placed in
   `sync_vissim_to_carla()` (former `tick()`'s single "vissim-->carla" half) since pedestrian sync
   is vissim->carla only - see docs/Vissim_CARLA_Autoware_歩行者同期_実装計画_v1.0.md Step P3. The
-  pedestrian actor cleanup loop in `close()` was ported identically as well.
+  pedestrian actor cleanup loop in `close()` was ported identically as well. Bug fix: the
+  "Destroying vissim controlled vehicles in carla" loop in `sync_vissim_to_carla()` now calls
+  `self.carla.destroy_actor()` instead of `self.vissim.destroy_actor()` - the id popped from
+  `vissim2carla_ids` is a CARLA actor id, so the vissim-side call was a silent no-op and NPCs that
+  left the vissim network were never removed from CARLA.
 - `bridge_helper.py`: vendored with the `ptypes = {}` class attribute and the
   `get_carla_pedestrian_blueprint()`/`get_carla_pedestrian_transform()` methods added, both
   byte-for-byte identical to upstream. All pre-existing methods (`get_carla_transform()`,
