@@ -46,10 +46,14 @@ from autoware_carla_interface.vissim_integration import rpc_protocol as rpc  # n
 
 
 def check_connect_roundtrip():
-    payload = {'step_length': 0.05, 'simulator_vehicles': 1}
+    # PROTO_VERSION 2 'connect' payload: 'sim_period' (already including the margin) and
+    # 'sim_res' were added on top of 'step_length'/'simulator_vehicles' (see
+    # docs/Vissim_CARLA_Autoware_シミュレーション期間管理_実装計画_v1.0.md).
+    payload = {'step_length': 0.05, 'simulator_vehicles': 1, 'sim_period': 610, 'sim_res': 20}
     data = rpc.encode_request(rpc.MSG_CONNECT, seq=1, payload=payload)
     decoded = rpc.decode_request(data)
 
+    assert rpc.PROTO_VERSION == 2
     assert decoded['v'] == rpc.PROTO_VERSION
     assert decoded['seq'] == 1
     assert decoded['type'] == rpc.MSG_CONNECT

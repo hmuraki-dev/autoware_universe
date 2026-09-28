@@ -76,6 +76,7 @@ class FakeAdapter(object):
     def __init__(self):
         self.next_tick_response = {'vehicles': [], 'pedestrians': [], 'signals': []}
         self.last_tick_request = None
+        self.connect_requests = []  # payload of every 'connect' request received, in order
         self.tick_delay_s = 0.0
         self._tick_call_count = 0
 
@@ -98,6 +99,7 @@ class FakeAdapter(object):
 
                 req = rpc.decode_request(data)
                 if req['type'] == rpc.MSG_CONNECT:
+                    self.connect_requests.append(req['payload'])
                     sock.send(rpc.encode_response(req['seq'], True, {}))
                 elif req['type'] == rpc.MSG_TICK:
                     self._tick_call_count += 1
@@ -136,14 +138,14 @@ def _start_adapter(adapter):
     return '127.0.0.1', endpoint_holder['port'], stop_event
 
 
-def _make_client(host, port, simulator_vehicles=5, rpc_timeout_ms=2000):
+def _make_client(host, port, simulator_vehicles=5, rpc_timeout_ms=2000, sim_period=600):
     client_args = types.SimpleNamespace(simulator_vehicles=simulator_vehicles,
                                         step_length=0.05,
                                         vissim_adapter_host=host,
                                         vissim_adapter_port=port,
                                         vissim_connect_timeout_ms=2000,
                                         vissim_rpc_timeout_ms=rpc_timeout_ms,
-                                        sim_period=600)
+                                        sim_period=sim_period)
     return PTVVissimSimulation(client_args)
 
 
@@ -264,6 +266,8 @@ def check_timeout_triggers_reconnect():
         client.tick()
         assert client._needs_reconnect is True  # pylint: disable=protected-access
         assert client.spawned_vehicles == set()
+        assert client.consecutive_failures == 1
+        assert client.tick_count == 0  # failed ticks do not count towards the period
 
         # Give the (now-abandoned, from the client's point of view) slow adapter-side handler
         # time to actually finish, so the adapter loop is free to service the reconnect below.
@@ -272,6 +276,39 @@ def check_timeout_triggers_reconnect():
         # The next tick() must resend 'connect' first, then proceed with the tick normally.
         client.tick()
         assert client._needs_reconnect is False  # pylint: disable=protected-access
+        assert client.consecutive_failures == 0  # reset by the successful tick
+        assert client.tick_count == 1
+        # The reconnect resent the very same connect payload as the initial connect.
+        assert len(adapter.connect_requests) == 2, adapter.connect_requests
+        assert adapter.connect_requests[0] == adapter.connect_requests[1]
+    finally:
+        client.close()
+        stop_event.set()
+
+
+def check_connect_sends_sim_period_and_resolution():
+    """
+    PROTO_VERSION 2: the client derives the values the adapter writes into the Vissim network file
+    from its own settings - sim_period + VISSIM_SIM_PERIOD_MARGIN_S (10 s), and sim_res =
+    1 / step_length - and reports the tick count at which the co-simulation period elapses.
+    """
+    adapter = FakeAdapter()
+    host, port, stop_event = _start_adapter(adapter)
+    client = _make_client(host, port, sim_period=60)
+
+    try:
+        assert adapter.connect_requests == [{
+            'step_length': 0.05,
+            'simulator_vehicles': 5,
+            'sim_period': 70,
+            'sim_res': 20,
+        }], adapter.connect_requests
+        assert client.end_tick == 1200  # 60 s at 20 ticks per second
+        assert client.consecutive_failures == 0
+
+        client.tick()
+        client.tick()
+        assert client.tick_count == 2 and client.consecutive_failures == 0
     finally:
         client.close()
         stop_event.set()
@@ -287,6 +324,7 @@ def run():
     check_capacity_limit_enforced_client_side()
     check_signals_and_pedestrians_pass_through()
     check_timeout_triggers_reconnect()
+    check_connect_sends_sim_period_and_resolution()
     print('All vissim_adapter loopback checks passed.')
 
 

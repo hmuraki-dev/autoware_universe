@@ -753,24 +753,99 @@ launchファイルのコメントから参照しているため、このStepで�
 ### Step V7: テスト
 
 - CARLAリポジトリ:
-  - [ ] `util/vissim_kernel_session_test.py`: 一時フォルダに最小の`.inpx`を作り、
+  - [x] `util/vissim_kernel_session_test.py`: 一時フォルダに最小の`.inpx`を作り、
         `_prepare_network_file()`が3属性だけを書き換えること、元ファイルが変わらないこと、
         `<simulation>`が無い/複数ある場合にエラーになること、2回目の`connect`で値が違えば
         エラー・同じなら何もしないことを確認。
-  - [ ] `util/rpc_protocol_test.py`: 新しい`connect` payloadのラウンドトリップ、
+  - [x] `util/rpc_protocol_test.py`: 新しい`connect` payloadのラウンドトリップ、
         `PROTO_VERSION`不一致がエラーになること、2つのコピーがbyte-identicalであること。
-  - [ ] `util/vissim_adapter_stub_test.py`: 新しい`connect` payloadに合わせて更新。
+  - [x] `util/vissim_adapter_stub_test.py`: 新しい`connect` payloadに合わせて更新。
+  - [x] `util/run_synchronization_loop_test.py`(新規、計画外の追加): 下記参照。
 - 本リポジトリ:
-  - [ ] `test/vissim_rpc_protocol_test.py`/`test/vissim_adapter_stub_test.py`: 同様に更新し、
+  - [x] `test/vissim_rpc_protocol_test.py`/`test/vissim_adapter_stub_test.py`: 同様に更新し、
         `consecutive_failures`がタイムアウトで増え、成功で0に戻ることを確認。
   - [x] `test/vissim_launch_params_test.py`(新規、Step V6で前倒しして追加済み): launchファイルの
         2つのノード定義の整合性。
-  - [ ] `test/vissim_sim_period_test.py`(新規、mock使用): `tick_count`が`end_tick`に達したら
+  - [x] `test/vissim_sim_period_test.py`(新規、mock使用): `tick_count`が`end_tick`に達したら
         `SensorLoop`が止まること、`consecutive_failures`が上限に達したら止まること、
         `vissim_sync=None`(Vissim未使用)なら判定しないこと、起動時検証の各エラーケース。
 - 実行環境の注意: このWindows PCには`carla`/`msgpack`/`zmq`が入っていないため、本リポジトリの
   テストとCARLAリポジトリのLinux側テストはLinux機で実行する。Windowsアダプタ側のテスト
   (`vissim_kernel_session_test.py`)は`carla`不要なので、このPCでも実行できる見込み。
+
+### Step V7実施内容(2026-09-28)
+
+**CARLAリポジトリ**
+
+- `util/vissim_kernel_session_test.py`: 6つのチェックを追加。
+  - `check_patch_simulation_attributes_only_touches_requested_attributes`: 最小の`.inpx`(タブ・他の属性・
+    他の要素を含む)で、3属性の値だけが変わり他のバイトはすべて同じであること。名前の末尾だけが一致する
+    属性(`xsimPeriod`)は書き換えないこと。
+  - `check_patch_simulation_attributes_rejects_unexpected_files`: `<simulation>`が0個・2個、属性が無い、
+    名前の一部だけ一致する属性しかない、の各場合に`RuntimeError`。
+  - `check_connect_starts_vissim_with_patched_copy`: `gui`/`console`の両方で、元と同じフォルダの
+    `.cosim.inpx`が`VISSIM_Connect`/`VISSIM_ConnectToConsole`に渡され、`numRuns="3"`が`1`になり、
+    元のファイルが変わらないこと。
+  - `check_connect_rejects_different_sim_params_when_connected`: 接続済みで値が違うと`RuntimeError`
+    (メッセージに再起動の案内)、状態(`simulator_vehicles`など)も変わらず、DLLも呼ばれないこと。
+    `disconnect()`後は新しい値で接続できること。
+  - `check_connect_validates_sim_params`: 期間0/上限超え/`True`/`70.0`、分解能0/25、
+    `step_length`との不一致がすべて`ValueError`で、DLLも呼ばれず`.cosim.inpx`も作られないこと。
+  - `check_init_rejects_generated_copy_as_network_path`: `.cosim.inpx`(大文字小文字を問わない)を
+    渡すと、DLLのロード前に`ValueError`。
+- `util/rpc_protocol_test.py`: `check_connect_roundtrip`のpayloadを新しい形
+  (`sim_period`/`sim_res`入り)にし、`PROTO_VERSION == 2`を確認。既存の
+  `check_version_mismatch_rejected`・`check_windows_vendored_copy_is_identical`はそのまま有効。
+- `util/vissim_adapter_stub_test.py`:
+  - 偽のセッションの`connect`が受け取った引数を`connect_calls`に記録するようにした。
+  - `check_timeout_triggers_reconnect`に、タイムアウト後`consecutive_failures == 1`・`tick_count == 0`、
+    再接続・成功後`consecutive_failures == 0`・`tick_count == 1`、再接続で同じ`connect`の値が
+    送られること、を追加。
+  - `check_connect_sends_sim_period_and_resolution`(新規): `sim_period=60`のクライアントが
+    `connect(0.05, 5, 70, 20)`を送り、`end_tick == 1200`であること。
+- `util/run_synchronization_loop_test.py`(新規、計画外の追加): Step V3で入れた`run_synchronization.py`の
+  ループ終了を直接確かめるテストが無かったため追加した。`get_vissim_sim_params()`の正常値・境界値・
+  エラーの各ケース、期間経過・連続失敗でループを抜けて`close()`が呼ばれること、
+  `SimulationSynchronization()`の生成が失敗したときに元の例外がそのまま伝わりアダプタとの接続も
+  閉じられること(`8b90182`の回帰テスト)。
+
+**本リポジトリ**
+
+- `test/vissim_rpc_protocol_test.py`: CARLA側と同じく`connect`のpayloadを新しい形にし、
+  `PROTO_VERSION == 2`を確認。
+- `test/vissim_adapter_stub_test.py`: 偽のアダプタが受け取った`connect`のpayloadを`connect_requests`に
+  記録するようにし、CARLA側と同じ内容を`check_timeout_triggers_reconnect`に追加、
+  `check_connect_sends_sim_period_and_resolution`(新規)でpayloadが
+  `{step_length: 0.05, simulator_vehicles: 5, sim_period: 70, sim_res: 20}`・`end_tick == 1200`で
+  あることを確認。
+- `test/vissim_sim_period_test.py`(新規): 7つのチェック(起動時検証のエラー6ケース、`use_vissim=False`
+  では不正な値も無視、`sim_period`が`PTVVissimSimulation`まで渡る、期間経過で5ループ目に停止、
+  連続失敗3回で停止、Vissim未使用なら止まらない、`run_bridge()`が上限回数を`SensorLoop`に渡す)。
+  `carla`/`zmq`/`msgpack`とROS 2依存の`carla_ros`/`modules.*`は、`run()`の間だけ
+  `mock.patch.dict(sys.modules)`でダミーに差し替える(テストランナーが他のテストと同じプロセスで
+  このファイルを読み込んでも、ダミーが漏れないようにするため)。そのため**ROS 2もCARLAも無い環境で
+  実行できる**。
+
+**このPCで実行した結果**
+
+| テスト | 結果 | 備考 |
+|---|---|---|
+| CARLA `util/vissim_kernel_session_test.py` | 合格 | 追加の依存なし |
+| CARLA `util/run_synchronization_loop_test.py` | 合格 | このPCに無い`carla`/`zmq`/`msgpack`だけダミーに差し替えて実行 |
+| 本リポジトリ `test/vissim_sim_period_test.py` | 合格 | 実行後に`sys.modules`へダミーが残らないことも確認 |
+| 本リポジトリ `test/vissim_launch_params_test.py` | 合格 | |
+
+さらに、新しいテストが実際に不具合を検出できるかを、実装をわざと壊した状態で確認した(いずれも検出):
+`numRuns`を1にしない、接続済みで値が違う`connect`を受け入れる、`SensorLoop`が停止判定を呼ばない
+(期間経過・連続失敗の両方)、起動時検証をしない。
+
+**Linux機で実行が必要なもの**(ZeroMQの実際の通信・`msgpack`・`carla`が必要なため、このPCでは未実行):
+
+- CARLA: `util/rpc_protocol_test.py`、`util/vissim_adapter_stub_test.py`、
+  `util/run_synchronization_loop_test.py`(本物の`carla`で)、既存の`util/pedestrian_sync_stub_test.py`・
+  `util/signal_sync_stub_test.py`(回帰確認)
+- 本リポジトリ: `test/vissim_rpc_protocol_test.py`、`test/vissim_adapter_stub_test.py`、既存の
+  `test/vissim_pedestrian_sync_stub_test.py`(回帰確認)
 
 ### Step V8: ドキュメント更新
 
@@ -814,6 +889,6 @@ launchファイルのコメントから参照しているため、このStepで�
 - [x] V4: 本リポジトリのvendorファイル更新
 - [x] V5: 本リポジトリのパラメータ・メインループ変更
 - [x] V6: launchファイルの変更
-- [ ] V7: テスト
+- [x] V7: テスト(このPCで実行できるものは合格。残りはLinux機での実行待ち)
 - [ ] V8: ドキュメント更新
 - [ ] V9: 実機検証
