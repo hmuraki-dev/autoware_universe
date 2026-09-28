@@ -214,6 +214,57 @@ class VissimPedestrian(object):
 # ==================================================================================================
 
 
+def get_vissim_sim_params(step_length, sim_period):
+    """
+    Validates the co-simulation's step length/period and derives the values to be written into
+    the Vissim network file by the adapter (see rpc_protocol.PROTO_VERSION 2).
+
+    The simulation resolution is deliberately derived from `step_length` instead of being a
+    separate setting: a mismatch between the two is the known cause of CreateID confirmations
+    never arriving from Vissim.
+
+    Exposed as a module-level function (not only used inside PTVVissimSimulation.__init__) so
+    that callers can validate their configuration up front, before connecting to CARLA or to the
+    vissim adapter.
+
+        :param float step_length: fixed delta seconds of the co-simulation.
+        :param int sim_period: co-simulation period in seconds, after which the caller is expected
+            to stop the co-simulation (see PTVVissimSimulation.end_tick).
+        :return: (vissim_sim_period, sim_res) - the simulation period to write into the network
+            file (sim_period plus constants.VISSIM_SIM_PERIOD_MARGIN_S) and the simulation
+            resolution (time steps per simulation second, i.e. 1 / step_length).
+        :raises ValueError: if sim_period is not a positive int, the period (plus the margin)
+            exceeds Vissim's maximum, or 1 / step_length is not an int within Vissim's valid
+            simulation resolution range.
+    """
+    if (not isinstance(sim_period, int) or isinstance(sim_period, bool) or
+            sim_period < constants.VISSIM_MIN_SIM_PERIOD_S):
+        raise ValueError('The simulation period must be an int >= %d (seconds), got %r' %
+                         (constants.VISSIM_MIN_SIM_PERIOD_S, sim_period))
+    vissim_sim_period = sim_period + constants.VISSIM_SIM_PERIOD_MARGIN_S
+    if vissim_sim_period > constants.VISSIM_MAX_SIM_PERIOD_S:
+        raise ValueError(
+            'The simulation period plus its %d s margin (%d s) exceeds the maximum Vissim '
+            'simulation period of %d s' % (constants.VISSIM_SIM_PERIOD_MARGIN_S, vissim_sim_period,
+                                           constants.VISSIM_MAX_SIM_PERIOD_S))
+
+    steps_per_second = 1.0 / step_length
+    sim_res = int(round(steps_per_second))
+    if abs(steps_per_second - sim_res) > 1e-6:
+        raise ValueError(
+            'The step length (%r s) must be 1/N seconds for an integer N, since Vissim\'s '
+            'simulation resolution is an integer number of time steps per simulation second '
+            '(1 / %r = %r)' % (step_length, step_length, steps_per_second))
+    if not constants.VISSIM_MIN_SIM_RES <= sim_res <= constants.VISSIM_MAX_SIM_RES:
+        raise ValueError(
+            'The step length (%r s) gives a Vissim simulation resolution of %d time steps per '
+            'second, outside the valid range [%d, %d]' % (step_length, sim_res,
+                                                         constants.VISSIM_MIN_SIM_RES,
+                                                         constants.VISSIM_MAX_SIM_RES))
+
+    return vissim_sim_period, sim_res
+
+
 class PTVVissimSimulation(object):
     """
     PTVVissimSimulation is responsible for the management of the vissim simulation.
@@ -227,8 +278,22 @@ class PTVVissimSimulation(object):
     rationale of this simplification).
     """
     def __init__(self, args):
+        # Validated before anything else (in particular before any socket is created), so that a
+        # bad configuration fails fast.
+        vissim_sim_period, sim_res = get_vissim_sim_params(args.step_length, args.sim_period)
+
         self._max_simulator_vehicles = args.simulator_vehicles
         self._step_length = args.step_length
+
+        # Vissim advances in lockstep with successful tick() calls (one frame per
+        # VISSIM_SetDriverVehicles), so the co-simulation period is exactly sim_period * sim_res
+        # successful ticks - see end_tick below.
+        self._end_tick = args.sim_period * sim_res
+
+        # Number of tick() calls in a row that could not be completed (timeout, failed reconnect,
+        # or an error reported by the adapter); reset to 0 by every successful tick(). See
+        # consecutive_failures below.
+        self._consecutive_failures = 0
 
         self._endpoint = 'tcp://%s:%d' % (args.vissim_adapter_host, args.vissim_adapter_port)
         # Two distinct timeouts: 'connect' (sent once at startup, and again by _reconnect() after
@@ -248,6 +313,8 @@ class PTVVissimSimulation(object):
         self._connect_payload = {
             'step_length': args.step_length,
             'simulator_vehicles': args.simulator_vehicles,
+            'sim_period': vissim_sim_period,
+            'sim_res': sim_res,
         }
         # Set whenever a request times out (see _request()): the next tick() must resend
         # 'connect' before anything else, since the adapter (and/or Vissim itself) may have been
@@ -488,6 +555,29 @@ class PTVVissimSimulation(object):
         """
         return self._tick_count
 
+    @property
+    def end_tick(self):
+        """
+        Returns the tick_count at which the co-simulation period (args.sim_period) has elapsed.
+        Vissim advances in lockstep with successful tick() calls, so once tick_count reaches this
+        value, Vissim's own simulation time equals the co-simulation period exactly. Callers are
+        expected to stop ticking and close() at that point: the period written into the Vissim
+        network file includes a margin (constants.VISSIM_SIM_PERIOD_MARGIN_S), so Vissim itself
+        never reaches the end of its simulation period first.
+        """
+        return self._end_tick
+
+    @property
+    def consecutive_failures(self):
+        """
+        Returns the number of tick() calls in a row that could not be completed (timeout, failed
+        reconnect, or an error reported by the adapter), or 0 if the last tick() succeeded.
+        Callers are expected to give up once this reaches their own limit, rather than keep
+        waiting on an adapter that may never answer again (e.g. one stuck inside a DLL call after
+        Vissim itself stopped or crashed).
+        """
+        return self._consecutive_failures
+
     # ----------------------------------------------------------------------------------------------
     # -- tick ------------------------------------------------------------------------------------------
     # ----------------------------------------------------------------------------------------------
@@ -504,6 +594,15 @@ class PTVVissimSimulation(object):
         self.spawned_pedestrians = set()
         self.destroyed_pedestrians = set()
 
+    def _record_failed_tick(self):
+        """
+        Bookkeeping for a tick() call that could not be completed (timeout, failed reconnect, or
+        an error reported by the adapter): reports "no changes" for this tick (see
+        _clear_diff_sets()) and counts it towards consecutive_failures.
+        """
+        self._clear_diff_sets()
+        self._consecutive_failures += 1
+
     def tick(self):
         """
         Tick to vissim simulation: sends any commands buffered by spawn_actor()/destroy_actor()/
@@ -517,7 +616,7 @@ class PTVVissimSimulation(object):
         """
         if self._needs_reconnect:
             if not self._reconnect():
-                self._clear_diff_sets()
+                self._record_failed_tick()
                 return
 
         response = self._request(
@@ -538,7 +637,7 @@ class PTVVissimSimulation(object):
             # the next tick() call will attempt to reconnect before sending another 'tick'.
             logging.error('vissim adapter tick request timed out; will attempt to reconnect on '
                          'the next tick()')
-            self._clear_diff_sets()
+            self._record_failed_tick()
             return
 
         if not response['ok']:
@@ -546,7 +645,7 @@ class PTVVissimSimulation(object):
             # spawns/destructions this tick, so that carla.tick() downstream is never blocked by
             # a transient adapter error.
             logging.error('vissim adapter tick request failed: %s', response['error'])
-            self._clear_diff_sets()
+            self._record_failed_tick()
             return
 
         payload = response['payload']
@@ -608,6 +707,7 @@ class PTVVissimSimulation(object):
         self._signal_states = signal_states
 
         self._tick_count += 1
+        self._consecutive_failures = 0
         if self._tick_count % 20 == 0 and pedestrians:
             sample_id, sample_pedestrian = next(iter(pedestrians.items()))
             sample_transform = sample_pedestrian.get_transform()

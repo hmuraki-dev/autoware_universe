@@ -142,7 +142,8 @@ def _make_client(host, port, simulator_vehicles=5, rpc_timeout_ms=2000):
                                         vissim_adapter_host=host,
                                         vissim_adapter_port=port,
                                         vissim_connect_timeout_ms=2000,
-                                        vissim_rpc_timeout_ms=rpc_timeout_ms)
+                                        vissim_rpc_timeout_ms=rpc_timeout_ms,
+                                        sim_period=600)
     return PTVVissimSimulation(client_args)
 
 

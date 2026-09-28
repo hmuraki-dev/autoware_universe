@@ -90,6 +90,14 @@ class carla_ros2_interface(object):
             "vissim_rpc_timeout_ms": (rclpy.Parameter.Type.INTEGER, 2000),
             "vissim_simulator_vehicles": (rclpy.Parameter.Type.INTEGER, 1),
             "sync_traffic_lights": (rclpy.Parameter.Type.BOOL, False),
+            # Simulation period management (see docs/
+            # Vissim_CARLA_Autoware_シミュレーション期間管理_実装計画_v1.0.md): the co-simulation
+            # stops (and closes Vissim) once vissim_sim_period seconds have elapsed, or after
+            # vissim_max_consecutive_failures failed vissim adapter ticks in a row. The Vissim
+            # simulation resolution is not a separate parameter: it is derived from
+            # fixed_delta_seconds.
+            "vissim_sim_period": (rclpy.Parameter.Type.INTEGER, 600),
+            "vissim_max_consecutive_failures": (rclpy.Parameter.Type.INTEGER, 3),
         }
 
         self.param_values = {}

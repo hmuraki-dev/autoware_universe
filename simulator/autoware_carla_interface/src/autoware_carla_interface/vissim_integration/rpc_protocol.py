@@ -38,7 +38,16 @@ import msgpack
 # Bumped whenever the wire format (envelope shape or any message payload shape) changes in a
 # backwards-incompatible way. Client and adapter must agree on this value - a mismatch is always
 # treated as a hard error rather than guessed at.
-PROTO_VERSION = 1
+#
+# Version history:
+#   1: initial version.
+#   2: 'connect' request payload gained 'sim_period' (int, seconds) and 'sim_res' (int, time steps
+#      per simulation second), on top of the existing 'step_length'/'simulator_vehicles'. The
+#      adapter writes them (plus numRuns=1) into a copy of the .inpx network file before starting
+#      Vissim, so that the Linux side - not the .inpx - is the single source of truth for the
+#      simulation period/resolution. 'sim_period' already includes
+#      constants.VISSIM_SIM_PERIOD_MARGIN_S (added by the client, not the adapter).
+PROTO_VERSION = 2
 
 MSG_CONNECT = 'connect'
 MSG_TICK = 'tick'

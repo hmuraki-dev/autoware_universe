@@ -42,9 +42,36 @@ class SensorLoop(object):
         # Vissim_CARLA_Autoware_統合_実装計画_v1.0.md). None (default) keeps _tick_sensor()'s
         # behavior identical to CARLA-only operation.
         self.vissim_sync = None
+        # Only used when vissim_sync is set (see _check_vissim_stop_conditions()).
+        self.vissim_max_consecutive_failures = None
 
     def _stop_loop(self):
         self.running = False
+
+    def _check_vissim_stop_conditions(self):
+        """
+        Stops the loop once the Vissim co-simulation period has elapsed, or once the vissim
+        adapter has failed too many ticks in a row (see docs/
+        Vissim_CARLA_Autoware_シミュレーション期間管理_実装計画_v1.0.md sections 2.5/2.6).
+
+        The normal shutdown path then runs (InitializeInterface._cleanup() ->
+        PTVVissimSimulation.close() -> 'disconnect', which closes Vissim), and the process exits,
+        which in turn shuts down the whole launch (on_exit="shutdown" in
+        autoware_carla_interface.launch.xml when use_vissim is true).
+
+        The period is judged on PTVVissimSimulation.tick_count (successful vissim ticks only),
+        not on CARLA's own time: Vissim advances in lockstep with successful ticks, while CARLA
+        keeps ticking even when a vissim tick fails.
+        """
+        vissim = self.vissim_sync.vissim
+        if vissim.tick_count >= vissim.end_tick:
+            print(f"Vissim co-simulation period elapsed ({vissim.end_tick} ticks), stopping.")
+            self.running = False
+        elif vissim.consecutive_failures >= self.vissim_max_consecutive_failures:
+            print(f"Error: giving up after {vissim.consecutive_failures} consecutive failed "
+                  f"vissim adapter tick(s), stopping. The vissim adapter (and Vissim) may need "
+                  f"to be restarted.")
+            self.running = False
 
     def _tick_sensor(self, timestamp):
         if self.timestamp_last_run < timestamp.elapsed_seconds and self.running:
@@ -62,6 +89,7 @@ class SensorLoop(object):
             CarlaDataProvider.get_world().tick()
             if self.vissim_sync is not None:
                 self.vissim_sync.sync_carla_to_vissim()
+                self._check_vissim_stop_conditions()
 
 
 class InitializeInterface(object):
@@ -102,11 +130,15 @@ class InitializeInterface(object):
         self.vissim_rpc_timeout_ms = self.param_["vissim_rpc_timeout_ms"]
         self.vissim_simulator_vehicles = self.param_["vissim_simulator_vehicles"]
         self.sync_traffic_lights = self.param_["sync_traffic_lights"]
+        # See docs/Vissim_CARLA_Autoware_シミュレーション期間管理_実装計画_v1.0.md.
+        self.vissim_sim_period = self.param_["vissim_sim_period"]
+        self.vissim_max_consecutive_failures = self.param_["vissim_max_consecutive_failures"]
         self.vissim_carla_sim = None
         self.vissim_sim = None
         self.vissim_sync = None
 
         self._check_vissim_traffic_manager_exclusivity()
+        self._check_vissim_sim_period_params()
 
     def _check_vissim_traffic_manager_exclusivity(self):
         """
@@ -128,6 +160,33 @@ class InitializeInterface(object):
                 "auto-adopt mechanism would register Traffic Manager NPCs into Vissim "
                 "indiscriminately alongside the ego vehicle, silently competing for the limited "
                 "vissim_simulator_vehicles slot pool. Disable one of the two."
+            )
+
+    def _check_vissim_sim_period_params(self):
+        """
+        Validates the Vissim simulation period parameters at startup, before connecting to CARLA
+        or to the vissim adapter (see docs/
+        Vissim_CARLA_Autoware_シミュレーション期間管理_実装計画_v1.0.md section 2.2). No-op when
+        `use_vissim` is False.
+
+        The period/resolution checks themselves live in the vendored `get_vissim_sim_params()`
+        (shared with the upstream CARLA repository's orchestrator, so that both validate
+        identically): `vissim_sim_period` must be a positive int within Vissim's limits, and
+        `fixed_delta_seconds` must be 1/N seconds with N a valid Vissim simulation resolution
+        (1-20) - the resolution written into the Vissim network file is derived from it.
+
+            :raises ValueError: if any of the parameters is invalid.
+        """
+        if not self.use_vissim:
+            return
+
+        from .vissim_integration.vissim_simulation import get_vissim_sim_params
+
+        get_vissim_sim_params(self.fixed_delta_seconds, self.vissim_sim_period)
+        if self.vissim_max_consecutive_failures < 1:
+            raise ValueError(
+                "vissim_max_consecutive_failures must be >= 1, got "
+                f"{self.vissim_max_consecutive_failures}"
             )
 
     def _parse_spawn_point(self):
@@ -204,7 +263,10 @@ class InitializeInterface(object):
         # sections 0.3/2.2 (a step-time mismatch was the confirmed root cause of a CreateID
         # handshake failure in the upstream bridge). vissim_adapter_host/port/timeouts identify
         # the Windows-side Vissim adapter that PTVVissimSimulation now talks to over ZeroMQ - see
-        # docs/Vissim_CARLA_Autoware_Windowsリモート化_実装計画_v1.0.md.
+        # docs/Vissim_CARLA_Autoware_Windowsリモート化_実装計画_v1.0.md. sim_period is sent to the
+        # adapter (plus a margin), which writes it - together with the resolution derived from
+        # step_length - into the Vissim network file; see docs/
+        # Vissim_CARLA_Autoware_シミュレーション期間管理_実装計画_v1.0.md.
         vissim_args = SimpleNamespace(
             simulator_vehicles=self.vissim_simulator_vehicles,
             vissim_adapter_host=self.vissim_adapter_host,
@@ -213,6 +275,7 @@ class InitializeInterface(object):
             vissim_rpc_timeout_ms=self.vissim_rpc_timeout_ms,
             step_length=self.fixed_delta_seconds,
             sync_traffic_lights=self.sync_traffic_lights,
+            sim_period=self.vissim_sim_period,
         )
 
         self.vissim_carla_sim = CarlaSimulation(client, self.world)
@@ -268,6 +331,7 @@ class InitializeInterface(object):
         self.bridge_loop.sensor = self.sensor_wrapper
         self.bridge_loop.ego_actor = self.ego_actor
         self.bridge_loop.vissim_sync = self.vissim_sync
+        self.bridge_loop.vissim_max_consecutive_failures = self.vissim_max_consecutive_failures
         self.bridge_loop.start_system_time = time.time()
         self.bridge_loop.start_game_time = GameTime.get_time()
         self.bridge_loop.running = True

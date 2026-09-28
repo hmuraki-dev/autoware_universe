@@ -60,7 +60,13 @@ vendoring these files instead of referencing them via an external path.
   `motion_state` and signal `state` are handled.
   `args.vissim_lib_path`/`args.vissim_network` were replaced by `args.vissim_adapter_host`/
   `args.vissim_adapter_port`/`args.vissim_connect_timeout_ms`/`args.vissim_rpc_timeout_ms` (see
-  plan doc section 3).
+  plan doc section 3). The simulation period management additions (upstream `feature/vissim_windows`
+  commit `93fcf84`, "Step V3") were re-vendored identically: the module-level
+  `get_vissim_sim_params()`, the new `args.sim_period` (validated at the very start of
+  `PTVVissimSimulation.__init__`, and sent together with the derived `sim_res` in the 'connect'
+  payload), the `end_tick`/`consecutive_failures` properties, and `_record_failed_tick()` - the
+  function/method bodies were copied verbatim from upstream, with no new deviations - see
+  `docs/Vissim_CARLA_Autoware_シミュレーション期間管理_実装計画_v1.0.md` Step V4.
 - `simulation_synchronization.py`: extracted from the upstream `run_synchronization.py`, keeping
   only the `SimulationSynchronization` class definition (the CLI entry point / standalone
   `while True:` loop / pacing logic in `run_synchronization.py` are intentionally not vendored,
@@ -82,7 +88,9 @@ vendoring these files instead of referencing them via an external path.
   "Destroying vissim controlled vehicles in carla" loop in `sync_vissim_to_carla()` now calls
   `self.carla.destroy_actor()` instead of `self.vissim.destroy_actor()` - the id popped from
   `vissim2carla_ids` is a CARLA actor id, so the vissim-side call was a silent no-op and NPCs that
-  left the vissim network were never removed from CARLA.
+  left the vissim network were never removed from CARLA. (The same fix was later applied upstream
+  as well, in `feature/vissim_windows` commit `8b90182`, so this is no longer a deviation in
+  behavior.)
 - `bridge_helper.py`: vendored with the `ptypes = {}` class attribute and the
   `get_carla_pedestrian_blueprint()`/`get_carla_pedestrian_transform()` methods added, both
   byte-for-byte identical to upstream. All pre-existing methods (`get_carla_transform()`,
@@ -91,7 +99,10 @@ vendoring these files instead of referencing them via an external path.
   without modification (only this provenance header was added to `constants.py`). `data/
   ptypes.json` maps vissim pedestrianType (100=Man, 200=Woman, 300=Wheelchair User) to CARLA
   `walker.pedestrian.*` blueprint ids; type 300 has an empty candidate list (no CARLA wheelchair
-  walker exists), mirroring `vtypes.json`'s unsupported-type convention.
+  walker exists), mirroring `vtypes.json`'s unsupported-type convention. `constants.py` was
+  re-vendored after upstream `feature/vissim_windows` commit `1d5b08e` ("Step V1"), which added
+  `VISSIM_SIM_PERIOD_MARGIN_S` and the `VISSIM_MIN_/MAX_SIM_RES`/`VISSIM_MIN_/MAX_SIM_PERIOD_S`
+  value ranges (identical to upstream).
 - `rpc_protocol.py`: vendored functionally unmodified from the upstream `feature/vissim_windows`
   branch (every constant, function, and the `ProtocolError` class are byte-for-byte identical to
   upstream) - only the module-level header comment/docstring was adapted to reference this repo's
@@ -100,7 +111,11 @@ vendoring these files instead of referencing them via an external path.
   clarify that the upstream `Co-Simulation/PTV-Vissim_windows/rpc_protocol.py` copy is not vendored
   here (see `docs/Vissim_CARLA_Autoware_Windowsリモート化_実装計画_v1.0.md` section 8). This module
   is new to this repository (see plan doc Step W1); the previous ctypes-based `vissim_simulation.py`
-  had no equivalent.
+  had no equivalent. Re-vendored after upstream `feature/vissim_windows` commit `1d5b08e`
+  ("Step V1"), which bumped `PROTO_VERSION` to 2 (the 'connect' payload gained `sim_period`/
+  `sim_res`) and added a version history comment - both identical to upstream. This copy must
+  therefore be used with a Windows-side adapter at the same upstream revision or later (see
+  `docs/Vissim_CARLA_Autoware_シミュレーション期間管理_実装計画_v1.0.md`).
 
 Not vendored (see plan doc Step 0 ④):
 

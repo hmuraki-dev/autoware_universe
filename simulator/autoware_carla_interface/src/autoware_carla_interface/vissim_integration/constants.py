@@ -40,3 +40,20 @@ VISSIM_DEFAULT_VEHICLE_TYPE = 0
 # VISSIM Vehicle data constants.
 NAME_MAX_LENGTH = 100
 MAX_UDA = 16
+
+# Simulation period/resolution management (see PROTO_VERSION 2 in rpc_protocol.py). The Linux
+# side owns the co-simulation period and stops the whole co-simulation once it has elapsed; the
+# period written into the .inpx network file is that value plus this margin, so that Vissim itself
+# never reaches the end of its simulation period first (Vissim only advances when ticked, so a
+# generous margin costs nothing - it only absorbs the few ticks by which Vissim may run ahead of
+# the client's own count after a timed-out-but-processed tick request).
+VISSIM_SIM_PERIOD_MARGIN_S = 10
+
+# Valid ranges of the Vissim 'Simulation' object attributes written into the .inpx network file
+# (from attribute.xlsx shipped with PTV Vissim 2025, confirmed to work with Vissim 2026).
+# SimRes is 1-20 time steps per simulation second without the 'Automotive' add-on license (1-1000
+# with it); the license-independent range is used here. SimPeriod is in simulation seconds.
+VISSIM_MIN_SIM_RES = 1
+VISSIM_MAX_SIM_RES = 20
+VISSIM_MIN_SIM_PERIOD_S = 1
+VISSIM_MAX_SIM_PERIOD_S = 2678400
