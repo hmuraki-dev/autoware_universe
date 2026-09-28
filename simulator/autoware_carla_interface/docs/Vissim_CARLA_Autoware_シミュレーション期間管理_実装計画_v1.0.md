@@ -301,7 +301,7 @@ Vissimはco-simからtickされない限り進まないため、余裕を大き�
 
 | ファイル | 変更内容 |
 |---|---|
-| `~/autoware.1.9.0/src/launcher/autoware_launch/launch/e2e_simulator.launch.xml`(Linux機) | `vissim_sim_period`/`vissim_max_consecutive_failures`の引数転送を追加。このPCには無いため、変更内容を起動手順書に記載し、ユーザーがLinux機で適用する |
+| `~/autoware.1.9.0/src/launcher/autoware_launch/autoware_launch/launch/e2e_simulator.launch.xml`(Linux機) | `vissim_sim_period`/`vissim_max_consecutive_failures`の引数転送を追加。このPCには無いため、変更内容を起動手順書に記載し、ユーザーがLinux機で適用する |
 
 ---
 
@@ -866,8 +866,15 @@ launchファイルのコメントから参照しているため、このStepで�
 出力に含まれる`ERROR`/`WARNING`ログは、いずれもテストが意図的に起こしている状況(タイムアウト、連続失敗、
 上限数、type 300の歩行者、スタブの信号機が一部しか無いこと)によるもので、想定どおり。
 
-未実施: `ros2 launch autoware_carla_interface autoware_carla_interface.launch.xml --show-args`による
-新しいlaunch引数の表示確認(ビルド後にLinux機で確認する)。
+**launch引数の表示確認(2026-09-28、Linux機`DIVP-WS03`でビルド後に実施)**:
+`ros2 launch autoware_carla_interface autoware_carla_interface.launch.xml --show-args`と
+`ros2 launch autoware_launch e2e_simulator.launch.xml --show-args`の両方で、`vissim_sim_period`
+(既定`'600'`)・`vissim_max_consecutive_failures`(既定`'3'`)が説明文つきで表示されることを確認した。
+ただし`--show-args`はinclude先のファイルの引数もまとめて表示するので、`e2e_simulator.launch.xml`側の
+表示だけでは、同ファイル自体に追加されたかは判断できない。そこで、Linux機の
+`~/autoware.1.9.0/src/launcher/autoware_launch/autoware_launch/launch/e2e_simulator.launch.xml`を
+`grep`し、起動手順書2.6.1の4行(宣言2行: 40・41行目、include先への受け渡し2行: 101・102行目)が
+入っていることを確認した(変更はこのPCで行い、ユーザーがLinux機に反映)。
 
 ### Step V8: ドキュメント更新
 

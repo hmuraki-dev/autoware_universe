@@ -141,7 +141,7 @@ SensorLoop._tick_sensor()                                      PTV-Vissim_window
 | `src/autoware_carla_interface/carla_ros.py` | ROSパラメータ変更: `vissim_network`/`vissim_lib_path`を削除、`vissim_adapter_host`/`vissim_adapter_port`/`vissim_connect_timeout_ms`/`vissim_rpc_timeout_ms`を追加 |
 | `src/autoware_carla_interface/carla_autoware.py` | `InitializeInterface.__init__`/`_init_vissim_integration()`のパラメータ読み出し・`vissim_args`組み立てを変更 |
 | `launch/autoware_carla_interface.launch.xml` | `<arg>`/`<param>`を同様に変更 |
-| `~/autoware.1.9.0/src/launcher/autoware_launch/launch/e2e_simulator.launch.xml` | (別リポジトリ、ローカル未コミット)同様に引数転送を変更 |
+| `~/autoware.1.9.0/src/launcher/autoware_launch/autoware_launch/launch/e2e_simulator.launch.xml` | (別リポジトリ、ローカル未コミット)同様に引数転送を変更 |
 | `package.xml` / `setup.py` | Python依存(`pyzmq`, `msgpack`)の扱いを明記(下記§4.0参照。`carla`パッケージ同様、package.xml/setup.pyには追加せず、起動手順ドキュメントに手動インストール手順を追記する方針) |
 | `test/vissim_pedestrian_sync_stub_test.py` | 影響確認のみ(`FakeVissimSimulation`を使うため無改修で通るはず、§6で回帰確認) |
 | `test/vissim_rpc_protocol_test.py` | **新規追加**(移植元`util/rpc_protocol_test.py`をアダプト。プロトコル層の単体テスト) |

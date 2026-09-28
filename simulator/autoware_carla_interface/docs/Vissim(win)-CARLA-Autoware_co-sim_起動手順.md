@@ -228,7 +228,7 @@ ros2 launch autoware_launch e2e_simulator.launch.xml \
 - `vissim_sim_period`・`vissim_max_consecutive_failures`を`e2e_simulator.launch.xml`から指定するには、`autoware_launch`側で引数の受け渡しを追加しておく必要がある(2.6.1参照)。追加していない場合は、既定値(600秒・3回)で動作する。
 
 #### 2.6.1 `autoware_launch`側の対応(`e2e_simulator.launch.xml`)
-`~/autoware.1.9.0/src/launcher/autoware_launch/launch/e2e_simulator.launch.xml`(別リポジトリ、ローカル変更)に、既存の`vissim_*`引数と同じ2か所へ次の行を追加する。
+`~/autoware.1.9.0/src/launcher/autoware_launch/autoware_launch/launch/e2e_simulator.launch.xml`(別リポジトリ、ローカル変更)に、既存の`vissim_*`引数と同じ2か所へ次の行を追加する。
 
 ```xml
 <!-- (1) 引数の宣言(既存の vissim_* の <arg> と同じ場所) -->
