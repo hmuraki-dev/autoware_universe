@@ -53,6 +53,11 @@ vendoring these files instead of referencing them via an external path.
   `feature/vissim_windows` branch already had the same features, sourced from the same
   DrivingSimulatorProxy.h fields, just delivered over the wire as msgpack dict payloads instead of
   ctypes struct fields - confirmed field-for-field identical during the Step W0 comparison).
+  One deviation: `tick()` converts each vehicle row's raw `turn_indicator` int into a
+  `VissimLightState` before passing it to `VissimVehicle` (upstream passes the raw int, which
+  contradicts `VissimVehicle`'s `lights_state=VissimLightState.NONE` default). Unknown values are
+  logged as a warning and fall back to `VissimLightState.NONE`, mirroring how pedestrian
+  `motion_state` and signal `state` are handled.
   `args.vissim_lib_path`/`args.vissim_network` were replaced by `args.vissim_adapter_host`/
   `args.vissim_adapter_port`/`args.vissim_connect_timeout_ms`/`args.vissim_rpc_timeout_ms` (see
   plan doc section 3).

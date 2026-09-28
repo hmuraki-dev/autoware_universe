@@ -554,10 +554,17 @@ class PTVVissimSimulation(object):
         # -- vehicles --
         vehicles = {}
         for row in payload.get('vehicles', []):
+            try:
+                lights_state = VissimLightState(row['turn_indicator'])
+            except ValueError:
+                logging.warning('[vissim] unknown TurningIndicator value %r for VehicleID=%s',
+                                row['turn_indicator'], row['id'])
+                lights_state = VissimLightState.NONE
+
             vehicles[row['id']] = VissimVehicle(
                 row['id'], row['type'], row['model_filename'], row['color'],
                 [row['x'], row['y'], row['z']], [row['pitch'], row['heading'], 0.0], row['speed'],
-                row['turn_indicator'])
+                lights_state)
 
         active_vehicles = set(self._vissim_vehicles.keys())
         current_vehicles = set(vehicles.keys())

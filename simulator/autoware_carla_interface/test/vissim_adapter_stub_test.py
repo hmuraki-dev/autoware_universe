@@ -59,7 +59,7 @@ sys.path.insert(0, os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(
 
 from autoware_carla_interface.vissim_integration import rpc_protocol as rpc  # noqa: E402
 from autoware_carla_interface.vissim_integration.vissim_simulation import (  # noqa: E402
-    PTVVissimSimulation, VissimSignalState)
+    PTVVissimSimulation, VissimLightState, VissimSignalState)
 
 # ==================================================================================================
 # -- fake adapter --------------------------------------------------------------------------------
@@ -179,6 +179,8 @@ def check_spawn_update_destroy_roundtrip():
         assert client.destroyed_vehicles == set()
         npc = client.get_actor(999)
         assert npc.get_transform().location.x == 50.0
+        # raw turn_indicator int is converted into the VissimLightState enum.
+        assert npc._lights_state == VissimLightState.NONE  # pylint: disable=protected-access
 
         # -- update: buffered client-side until the next tick() --
         assert client.synchronize_vehicle(
