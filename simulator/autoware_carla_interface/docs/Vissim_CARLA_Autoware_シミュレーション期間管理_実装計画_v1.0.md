@@ -847,15 +847,82 @@ launchファイルのコメントから参照しているため、このStepで�
 - 本リポジトリ: `test/vissim_rpc_protocol_test.py`、`test/vissim_adapter_stub_test.py`、既存の
   `test/vissim_pedestrian_sync_stub_test.py`(回帰確認)
 
+**Linux機での実行結果(2026-09-28、ユーザーが`DIVP-WS03`で実施、`carla310_env`環境)**: 全11本合格。
+
+| リポジトリ | テスト | 結果 |
+|---|---|---|
+| CARLA | `util/rpc_protocol_test.py` | 合格 |
+| CARLA | `util/vissim_adapter_stub_test.py` | 合格(2回実行し2回とも合格。タイムアウトのテストもタイミングに左右されず安定) |
+| CARLA | `util/run_synchronization_loop_test.py` | 合格(本物の`carla`で実行) |
+| CARLA | `util/vissim_kernel_session_test.py` | 合格 |
+| CARLA | `util/pedestrian_sync_stub_test.py`(回帰確認) | 合格 |
+| CARLA | `util/signal_sync_stub_test.py`(回帰確認) | 合格 |
+| 本リポジトリ | `test/vissim_rpc_protocol_test.py` | 合格 |
+| 本リポジトリ | `test/vissim_adapter_stub_test.py` | 合格 |
+| 本リポジトリ | `test/vissim_sim_period_test.py` | 合格 |
+| 本リポジトリ | `test/vissim_launch_params_test.py` | 合格 |
+| 本リポジトリ | `test/vissim_pedestrian_sync_stub_test.py`(回帰確認) | 合格 |
+
+出力に含まれる`ERROR`/`WARNING`ログは、いずれもテストが意図的に起こしている状況(タイムアウト、連続失敗、
+上限数、type 300の歩行者、スタブの信号機が一部しか無いこと)によるもので、想定どおり。
+
+未実施: `ros2 launch autoware_carla_interface autoware_carla_interface.launch.xml --show-args`による
+新しいlaunch引数の表示確認(ビルド後にLinux機で確認する)。
+
 ### Step V8: ドキュメント更新
 
-- [ ] 本リポジトリ`docs/Vissim(win)-CARLA-Autoware_co-sim_起動手順.md`: 新パラメータ、
+- [x] 本リポジトリ`docs/Vissim(win)-CARLA-Autoware_co-sim_起動手順.md`: 新パラメータ、
       `.cosim.inpx`の生成、期間経過・連続失敗で全ノードが止まること、アダプタが固まった場合の
       再起動手順、`e2e_simulator.launch.xml`の変更内容。
-- [ ] 本リポジトリ`docs/Vissim_CARLA_Autoware_統合_実装計画_v1.0.md`: 0.3節2.が本計画で解消された
+- [x] 本リポジトリ`docs/Vissim_CARLA_Autoware_統合_実装計画_v1.0.md`: 0.3節2.が本計画で解消された
       ことを追記。
-- [ ] CARLAリポジトリ`docs/WINDOWS_VISSIM_REMOTE_IMPLEMENTATION_PLAN.md`/
+- [x] CARLAリポジトリ`docs/WINDOWS_VISSIM_REMOTE_IMPLEMENTATION_PLAN.md`/
       `Vissim(win)-CARLA_co-sim_起動手順.md`: 同様に追記。
+
+### Step V8実施内容(2026-09-28)
+
+**本リポジトリ`docs/Vissim(win)-CARLA-Autoware_co-sim_起動手順.md`**
+
+- 「0. 前提条件」: `.inpx`の`simPeriod`/`simRes`/`numRuns`は設定不要になったこと、CARLAリポジトリと
+  本リポジトリは`PROTO_VERSION`が一致する組み合わせで使うこと、を追加。
+- 「2.2 アダプタ起動」: 「シミュレーション期間・分解能について」を追加(`.cosim.inpx`の生成と書き換わる
+  3つの値、`.inpx`のフォルダに書き込み権限が必要なこと、`.cosim.inpx`を直接指定しないこと、期間・
+  ステップ時間を変えたらアダプタとVissimも起動し直すこと)。
+- 「2.6 Vissim/CARLA/Autoware起動」: コマンド例に`vissim_sim_period:=600`を追加。オプション表に
+  `vissim_sim_period`・`vissim_max_consecutive_failures`を追加。「注意」の「`.inpx`側の`simRes`を
+  `fixed_delta_seconds`に必ず合わせること」を、「自動で書き込まれるので手で合わせる必要はない、ただし
+  `fixed_delta_seconds`は1/N秒(N=1〜20)にすること」に書き換えた。
+- 「2.6.1 `autoware_launch`側の対応」(新設): `e2e_simulator.launch.xml`に追加する4行(Step V6に記載した
+  もの)。
+- 「2.6.2 終了時の動作」(新設): 期間経過・連続失敗・Ctrl+Cそれぞれのログと、Vissimがどうなるか、
+  期間の数え方(tickの成功回数)、`use_vissim:=false`では全体停止しないこと、連続失敗で止まったときの
+  アダプタの再起動手順。
+
+**本リポジトリ`docs/Vissim_CARLA_Autoware_統合_実装計画_v1.0.md`**
+
+- 0.3節2.(run境界跨ぎで車両が消える、【未解決】)に「【解消・2026-09-28】」の注記を追加。Vissimが
+  run境界に達する前にco-simが終了する構成になったので発生しなくなったこと、ただし現象そのものの原因は
+  未調査のままであることを明記した。
+- 5章「優先度A」の同じ項目、7章「実装時に確認が必要な事項」の期間の項目とステップ時間の一致の項目に、
+  解決済みの旨を追記。
+
+**CARLAリポジトリ`docs/WINDOWS_VISSIM_REMOTE_IMPLEMENTATION_PLAN.md`**
+
+- 3.3節(`connect`の仕様): payloadの例を`PROTO_VERSION` 2の形にし、`sim_period`/`sim_res`の説明を追加。
+- 4.8節(フェーズ8)の「run境界跨ぎの挙動を確認する」項目に、4.9節により確認不要になった旨を追記。
+- 4.9節「フェーズ9: シミュレーション期間管理(`PROTO_VERSION` 2)」を新設(背景、方式、変更したファイルと
+  コミット、既存不具合の修正、テスト結果、残りの実機検証)。詳細は本計画書を参照する形にした。
+
+**CARLAリポジトリ`docs/Vissim(win)-CARLA_co-sim_起動手順.md`**
+
+- 「0.」: `.inpx`の3つの値は設定不要になったことを追加。
+- 「2. アダプタ起動」: 本リポジトリの起動手順書と同じ「シミュレーション期間・分解能について」を追加
+  (引数名は`run_synchronization.py`のもの)。
+- 「3.4 run_synchronization.py」: コマンド例に`--sim-period 600`を追加。オプション表に`--sim-period`・
+  `--max-consecutive-failures`を追加し、`--step-length`に1/N秒の制約を追記。「終了時の動作」を追加。
+
+**変更しなかったもの**: 本リポジトリの`README.md`(Vissim関連のパラメータがそもそも記載されていないため)、
+CARLAリポジトリの`PTV-Vissim_windows/README.md`(Step V2で更新済み)。
 
 ### Step V9: 実機検証
 
@@ -890,5 +957,5 @@ launchファイルのコメントから参照しているため、このStepで�
 - [x] V5: 本リポジトリのパラメータ・メインループ変更
 - [x] V6: launchファイルの変更
 - [x] V7: テスト(このPCで実行できるものは合格。残りはLinux機での実行待ち)
-- [ ] V8: ドキュメント更新
+- [x] V8: ドキュメント更新
 - [ ] V9: 実機検証
