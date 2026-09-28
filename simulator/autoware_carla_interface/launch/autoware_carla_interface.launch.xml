@@ -29,6 +29,11 @@
     <arg name="vissim_rpc_timeout_ms" default="2000" description="Timeout (ms) for each per-tick request to the vissim adapter, once connected"/>
     <arg name="vissim_simulator_vehicles" default="1" description="Max number of Driving-Simulator (CARLA-origin) vehicles tracked by Vissim at the same time"/>
     <arg name="sync_traffic_lights" default="False" description="Synchronize traffic light state from Vissim to CARLA (Vissim -> CARLA direction only)"/>
+    <!-- Simulation period management (see docs/Vissim_CARLA_Autoware_シミュレーション期間管理_実装計画_v1.0.md).
+         The Vissim simulation resolution is not a separate argument: it is derived from
+         fixed_delta_seconds (which must be 1/N s with N in [1, 20] when use_vissim is true). -->
+    <arg name="vissim_sim_period" default="600" description="Co-simulation period (s). Once elapsed, the co-simulation stops, closes Vissim and shuts down this whole launch (use_vissim only)"/>
+    <arg name="vissim_max_consecutive_failures" default="3" description="Stop the co-simulation (and this whole launch) after this many consecutive failed vissim adapter ticks (use_vissim only)"/>
 
     <!-- CARLA spectator camera auto-follow (see scripts/spectator_follow) -->
     <arg name="spectator_follow" default="False" description="Automatically lock the CARLA spectator camera onto the ego vehicle as soon as it spawns"/>
@@ -48,8 +53,20 @@
     <let name="sensor_mapping_file_default" value="$(find-pkg-share autoware_carla_interface)/config/sensor_mapping.yaml" unless="$(var use_light_weight_sensor_mapping)"/>
     <arg name="sensor_mapping_file" default="$(var sensor_mapping_file_default)" description="Path to sensor mapping YAML"/>
 
-    <!-- CARLA Interface -->
-    <node pkg="autoware_carla_interface" exec="autoware_carla_interface" name="autoware_carla_interface" output="screen">
+    <!-- CARLA Interface
+         Declared twice on purpose, selected by use_vissim, because only the use_vissim variant
+         must shut down this whole launch when the node exits (on_exit="shutdown": the
+         co-simulation period elapsed, the vissim adapter stopped answering, or any other exit -
+         without the bridge, the co-simulation cannot continue anyway). on_exit is compared as a
+         literal string and does not accept substitutions such as $(var ...), so a single
+         declaration is not possible. <set_parameter> inside a <group> was considered to avoid
+         repeating the <param> list, but was rejected: SetParameter extends the enclosing scope's
+         global_params list in place, so parameters such as host/port/timeout could leak into
+         nodes launched later by an including launch file (e.g. autoware_launch's
+         e2e_simulator.launch.xml) that already uses <set_parameter>.
+         KEEP THE TWO <param> LISTS IDENTICAL (checked by test/vissim_launch_params_test.py). The
+         use_vissim=False variant behaves exactly as before this change. -->
+    <node pkg="autoware_carla_interface" exec="autoware_carla_interface" name="autoware_carla_interface" output="screen" unless="$(var use_vissim)">
       <param name="host" value="$(var host)"/>
       <param name="port" value="$(var port)"/>
       <param name="timeout" value="$(var timeout)"/>
@@ -70,6 +87,32 @@
       <param name="vissim_rpc_timeout_ms" value="$(var vissim_rpc_timeout_ms)"/>
       <param name="vissim_simulator_vehicles" value="$(var vissim_simulator_vehicles)"/>
       <param name="sync_traffic_lights" value="$(var sync_traffic_lights)"/>
+      <param name="vissim_sim_period" value="$(var vissim_sim_period)"/>
+      <param name="vissim_max_consecutive_failures" value="$(var vissim_max_consecutive_failures)"/>
+    </node>
+    <node pkg="autoware_carla_interface" exec="autoware_carla_interface" name="autoware_carla_interface" output="screen" if="$(var use_vissim)" on_exit="shutdown">
+      <param name="host" value="$(var host)"/>
+      <param name="port" value="$(var port)"/>
+      <param name="timeout" value="$(var timeout)"/>
+      <param name="sync_mode" value="$(var sync_mode)"/>
+      <param name="fixed_delta_seconds" value="$(var fixed_delta_seconds)"/>
+      <param name="carla_map" value="$(var carla_map)"/>
+      <param name="ego_vehicle_role_name" value="$(var ego_vehicle_role_name)"/>
+      <param name="spawn_point" value="$(var spawn_point)"/>
+      <param name="vehicle_type" value="$(var vehicle_type)"/>
+      <param name="use_traffic_manager" value="$(var use_traffic_manager)"/>
+      <param name="max_real_delta_seconds" value="$(var max_real_delta_seconds)"/>
+      <param name="sensor_kit_name" value="$(var sensor_kit_name)"/>
+      <param name="sensor_mapping_file" value="$(var sensor_mapping_file)"/>
+      <param name="use_vissim" value="$(var use_vissim)"/>
+      <param name="vissim_adapter_host" value="$(var vissim_adapter_host)"/>
+      <param name="vissim_adapter_port" value="$(var vissim_adapter_port)"/>
+      <param name="vissim_connect_timeout_ms" value="$(var vissim_connect_timeout_ms)"/>
+      <param name="vissim_rpc_timeout_ms" value="$(var vissim_rpc_timeout_ms)"/>
+      <param name="vissim_simulator_vehicles" value="$(var vissim_simulator_vehicles)"/>
+      <param name="sync_traffic_lights" value="$(var sync_traffic_lights)"/>
+      <param name="vissim_sim_period" value="$(var vissim_sim_period)"/>
+      <param name="vissim_max_consecutive_failures" value="$(var vissim_max_consecutive_failures)"/>
     </node>
 
     <!-- Keeps the CARLA spectator (free) camera locked onto the ego vehicle (role_name=

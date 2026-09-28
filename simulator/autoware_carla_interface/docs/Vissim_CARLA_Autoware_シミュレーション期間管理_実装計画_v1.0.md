@@ -677,9 +677,78 @@ Python側に既定値を持たせたので、まだ渡していないlaunchフ�
 
 ### Step V6: launchファイルの変更
 
-- [ ] `launch/autoware_carla_interface.launch.xml`: `<arg>`/`<param>`追加、`use_vissim`時のみ
+- [x] `launch/autoware_carla_interface.launch.xml`: `<arg>`/`<param>`追加、`use_vissim`時のみ
       `on_exit="shutdown"`(§2.7、Step V0の結果に従う)。
-- [ ] `e2e_simulator.launch.xml`(Linux機、別リポジトリ)の変更内容を起動手順書に記載する。
+- [x] `e2e_simulator.launch.xml`(Linux機、別リポジトリ)の変更内容を記載する(本計画書の下記。
+      起動手順書への反映はStep V8)。
+
+### Step V6実施内容(2026-09-28)
+
+**`launch/autoware_carla_interface.launch.xml`**
+
+- `<arg>`を2つ追加: `vissim_sim_period`(既定`600`)、`vissim_max_consecutive_failures`(既定`3`)。
+  説明文に「`use_vissim`のときのみ有効」「期間経過でlaunch全体が止まる」ことを書いた。
+- `autoware_carla_interface`ノードを2つに分けた。
+  - `unless="$(var use_vissim)"`: 従来と同じ(`on_exit`なし)。
+  - `if="$(var use_vissim)"`: `on_exit="shutdown"`付き。
+  - どちらも同じ22個の`<param>`(既存20個 + 新しい2個)を持つ。「2つの一覧を同じに保つこと」と、
+    その理由を定義の直前のコメントに書いた。
+
+**`<set_parameter>`で重複を避ける案を検討し、不採用にした**(計画外の検討):
+
+`<param>`の一覧を2回書く代わりに、専用の`<group>`の中で`<set_parameter>`を並べ、その中に`if`/`unless`の
+ノード定義を置けば重複を無くせる。ROS 2 Humbleのソース(`launch_ros`の`humble`ブランチ、
+`launch_ros/actions/set_parameter.py`・`node.py`、`launch`の`group_action.py`)を確認した結果、
+次の理由で採用しなかった。
+
+- `SetParameter.execute()`は、`context.launch_configurations`の`global_params`リストを取り出して
+  **その場で`extend()`する**。
+- `<group>`(`scoped=True`)は`launch_configurations`の辞書をコピーするが、中のリストは上の階層と
+  共有されたままになる。
+- そのため、includeする側(`e2e_simulator.launch.xml`など)が既に`<set_parameter>`を使っていると、
+  `host`/`port`/`timeout`などが、後から起動される他のAutowareノードにも付いてしまう
+  (`Node`は`global_params`を全て`-p name:=value`としてコマンドラインに付ける)。
+
+**`test/vissim_launch_params_test.py`(新規、Step V7の一部を前倒し)**
+
+launchファイルのコメントから参照しているため、このStepで追加した。ROS 2もCARLAも不要で、XMLと
+`carla_ros.py`のソースを読むだけなので、このPCでも実行できる。
+
+1. `autoware_carla_interface`ノードがちょうど2つあり、`unless`/`if`が`use_vissim`で、`if`側だけが
+   `on_exit="shutdown"`を持ち、それ以外の属性は同じ。
+2. 2つの`<param>`の一覧(名前と値、順序も含む)が同じで、名前の重複も無い。
+3. launchが渡す`<param>`の名前の集合が、`carla_ros.py`のパラメータ宣言表と一致する(ソースを
+   `ast`で読む。`rclpy`は不要)。
+4. `<param>`の値の`$(var X)`が、すべて定義済みの`<arg>`/`<let>`を参照している。
+
+**`e2e_simulator.launch.xml`(`autoware_launch`、Linux機のローカル未コミット差分)に加える変更**
+
+このPCには無いため、変更内容のみを記載する(Step V8で起動手順書にも反映する)。既存の`vissim_*`引数と
+同じ2か所に、それぞれ2行ずつ追加する。
+
+```xml
+<!-- (1) 引数の宣言(既存の vissim_* の <arg> と同じ場所) -->
+<arg name="vissim_sim_period" default="600" description="Co-simulation period (s)"/>
+<arg name="vissim_max_consecutive_failures" default="3" description="Stop after this many consecutive failed vissim adapter ticks"/>
+
+<!-- (2) autoware_carla_interface.launch.xml を include している箇所の中(既存の vissim_* の <arg> と同じ場所) -->
+<arg name="vissim_sim_period" value="$(var vissim_sim_period)"/>
+<arg name="vissim_max_consecutive_failures" value="$(var vissim_max_consecutive_failures)"/>
+```
+
+この変更は**値をコマンドラインで変えたい場合にのみ必要**。転送しなくても
+`autoware_carla_interface.launch.xml`の既定値(600秒・3回)が使われ、`on_exit="shutdown"`はinclude先の
+ノードでもLaunchService全体に効く(`Shutdown`アクションはincludeの深さに関係しない)ので、期間経過で
+`e2e_simulator.launch.xml`の全ノードが止まる。
+
+**実施した検証**
+
+1. `xml.dom.minidom`でlaunchファイルがwell-formedであることを確認。
+2. `python test/vissim_launch_params_test.py`: 全チェック合格。
+3. 一時コピーの`if`側だけ`vissim_sim_period`の値を`60`に書き換えると、チェック2が差分を検出して
+   失敗することを確認(テストが実際に効いていることの確認)。
+4. 未実施: `ros2 launch ... --show-args`や実際の起動での確認(このPCにROS 2が無いため)。Linux機で
+   Step V7・V9の際に確認する。
 
 ### Step V7: テスト
 
@@ -694,6 +763,8 @@ Python側に既定値を持たせたので、まだ渡していないlaunchフ�
 - 本リポジトリ:
   - [ ] `test/vissim_rpc_protocol_test.py`/`test/vissim_adapter_stub_test.py`: 同様に更新し、
         `consecutive_failures`がタイムアウトで増え、成功で0に戻ることを確認。
+  - [x] `test/vissim_launch_params_test.py`(新規、Step V6で前倒しして追加済み): launchファイルの
+        2つのノード定義の整合性。
   - [ ] `test/vissim_sim_period_test.py`(新規、mock使用): `tick_count`が`end_tick`に達したら
         `SensorLoop`が止まること、`consecutive_failures`が上限に達したら止まること、
         `vissim_sync=None`(Vissim未使用)なら判定しないこと、起動時検証の各エラーケース。
@@ -742,7 +813,7 @@ Python側に既定値を持たせたので、まだ渡していないlaunchフ�
 - [x] V3: CARLA公式側Linuxオーケストレータの変更(CARLAリポジトリ)
 - [x] V4: 本リポジトリのvendorファイル更新
 - [x] V5: 本リポジトリのパラメータ・メインループ変更
-- [ ] V6: launchファイルの変更
+- [x] V6: launchファイルの変更
 - [ ] V7: テスト
 - [ ] V8: ドキュメント更新
 - [ ] V9: 実機検証
