@@ -109,11 +109,27 @@ def check_param_values_reference_declared_args():
             assert var in defined, '<param name="%s"> references undefined $(var %s)' % (name, var)
 
 
+def check_executables_not_started_through_ros2_run():
+    """
+    When the launch shuts itself down (on_exit="shutdown" of the use_vissim node), it signals only
+    the processes it started itself. "ros2 run" does not forward that signal to its child, which
+    was then left running after the launch had exited (observed with spectator_follow, see
+    docs/Vissim_CARLA_Autoware_シミュレーション期間管理_実装計画_v1.0.md Step V9). Executables must
+    therefore be started directly.
+    """
+    root = ET.parse(_LAUNCH_FILE).getroot()
+    for executable in root.iter('executable'):
+        cmd = executable.get('cmd', '')
+        assert not re.match(r'\s*ros2\s+run\b', cmd), \
+            '<executable> started through "ros2 run" (will be orphaned on launch shutdown): %s' % cmd
+
+
 def run():
     check_two_variants_selected_by_use_vissim()
     check_param_lists_identical()
     check_params_match_node_declarations()
     check_param_values_reference_declared_args()
+    check_executables_not_started_through_ros2_run()
     print('All launch parameter checks passed.')
 
 

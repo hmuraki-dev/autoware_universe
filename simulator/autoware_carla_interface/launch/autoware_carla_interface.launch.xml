@@ -122,9 +122,15 @@
          the actor and re-acquires it if it is (re)spawned, so launch order does not matter.
          Uses executable (not node), because scripts/spectator_follow is a plain argparse
          script (not an rclpy node) and would reject the ros-args that a node action always
-         appends. -->
+         appends. The installed script is started directly rather than through
+         "ros2 run": when the launch shuts down on its own (e.g. on_exit="shutdown" of the
+         use_vissim autoware_carla_interface node above), it only signals the process it started
+         itself, and "ros2 run" does not forward that SIGINT/SIGTERM to its child, which was then
+         left running after the launch had exited (see docs/
+         Vissim_CARLA_Autoware_シミュレーション期間管理_実装計画_v1.0.md Step V9). Started directly,
+         the script receives SIGINT itself and exits through its KeyboardInterrupt handler. -->
     <executable
-      cmd="ros2 run autoware_carla_interface spectator_follow --host $(var host) --port $(var port) --role $(var ego_vehicle_role_name)"
+      cmd="$(find-pkg-prefix autoware_carla_interface)/lib/autoware_carla_interface/spectator_follow --host $(var host) --port $(var port) --role $(var ego_vehicle_role_name)"
       output="screen"
       if="$(var spectator_follow)"
     />

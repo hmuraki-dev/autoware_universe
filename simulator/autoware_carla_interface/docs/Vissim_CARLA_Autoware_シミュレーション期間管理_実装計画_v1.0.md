@@ -934,14 +934,93 @@ CARLAリポジトリの`PTV-Vissim_windows/README.md`(Step V2で更新済み)。
 ### Step V9: 実機検証
 
 - [ ] `vissim_sim_period`を短め(例: 60秒)にして起動し、次を確認する。
-  - [ ] Windows側に`.cosim.inpx`が生成され、`simPeriod=70`/`simRes=20`/`numRuns=1`になっている。
+  - [x] Windows側に`.cosim.inpx`が生成され、`simPeriod=70`/`simRes=20`/`numRuns=1`になっている。
   - [ ] 60秒(1200tick)経過でco-simが終了し、Vissimが閉じ、`e2e_simulator.launch.xml`の全ノードが
-        止まる。
-  - [ ] CARLA上にVissim由来のアクターが残らない。
+        止まる。(co-simの終了・Vissimが閉じることは確認済み。`spectator_follow`が残る問題を修正し、
+        再確認待ち)
+  - [x] CARLA上にVissim由来のアクターが残らない。
 - [ ] 実行中にWindows側アダプタを強制終了し、安全策(連続失敗3回)で停止すること、全ノードが
       止まることを確認する。
 - [ ] アダプタを再起動せずに`vissim_sim_period`を変えて再接続した場合、エラーになることを確認する。
 - [ ] `use_vissim=False`(CARLA単体)で、従来通り動作し、ブリッジ終了で全体停止しないことを確認する。
+
+### Step V9実施内容
+
+**1回目(2026-09-28、`vissim_sim_period:=60`、Windows機のVissim 2026 + Linux機`DIVP-WS03`)**
+
+- Windows側アダプタのログ:
+  `INFO: Wrote co-simulation network file C:\Users\divp\SBIR\Vissim\work_muraki\CARLA\Town01.cosim.inpx
+  (from C:\Users\divp\SBIR\Vissim\work_muraki\CARLA\Town01.inpx): simPeriod 3600 -> 70, simRes 20 -> 20,
+  numRuns 1 -> 1`
+  → 元の`.inpx`と同じフォルダに`.cosim.inpx`が作られ、`simPeriod`が元の3600ではなくLinux側の指定
+  (60 + 余裕10 = 70)になった。`simRes`は`fixed_delta_seconds=0.05`から求めた20。`numRuns`は元の`.inpx`が
+  もともと1だったので変化なし(1以外から1への書き換えはStep V7のテストで確認済み)。
+- Linux側のログ: `[autoware_carla_interface-1] Vissim co-simulation period elapsed (1200 ticks), stopping.`
+  → tickの成功回数がちょうど`end_tick`(60秒 × 20 = 1200)に達した時点で停止した。
+- 停止後のLinux側のログ:
+
+  ```text
+  [autoware_carla_interface-1] Vissim co-simulation period elapsed (1200 ticks), stopping.
+  [autoware_carla_interface-1] Cleaning up CARLA resources...
+  [autoware_carla_interface-1] Cleanup complete.
+  [INFO] [autoware_carla_interface-1]: process has finished cleanly [pid 401907]
+  ```
+
+  → 既存の終了処理(`_cleanup()`)が最後まで通った。`_cleanup_vissim()`の各ステップ(Vissim由来の
+  アクター削除、信号機の固定解除、`disconnect`)はどれも`Warning: ...`を出しておらず、失敗していない。
+  ノードは正常終了した。
+- ユーザーの目視確認: Vissimはシミュレーション期間の経過後に閉じた(`disconnect` → アダプタの
+  `VISSIM_Disconnect()`による)。`e2e_simulator.launch.xml`で起動した全ノードが止まった
+  (`on_exit="shutdown"`による)。
+- 終了後、CARLAサーバーを起動したまま`world.get_actors()`で数えた結果: `vehicles: 0 walkers: 0`
+  → Vissim由来の車両・歩行者も、EGO(`_cleanup_ego_actor()`で削除)も残っていない。
+- 結論(暫定): 1つ目の確認項目(期間経過での終了)はすべて期待どおり……と判断したが、下記の2回目の
+  実行の後に`ps`で確認したところ、プロセスが一部残っていたことが分かった(下記参照)。
+
+**2回目(2026-09-28、安全策: 実行中にWindows側`server.py`を強制終了、`vissim_connect_timeout_ms`=120000)**
+
+- Linux側のログ: tickのタイムアウト(2000 ms)1回 + 再接続のタイムアウト(120000 ms)2回の後に
+  `Error: giving up after 3 consecutive failed vissim adapter tick(s), stopping. ...`が出て、終了処理
+  (`disconnect`は想定どおりタイムアウト)を経て`process has finished cleanly`。最後のROSのログから
+  停止までの時間は約245秒で、2 + 120 × 2 = 242秒と整合した。
+- ログの表示順: `print()`(標準出力、`ros2 launch`の下ではバッファリングされる)と`logging`/ROSのログ
+  (標準エラー出力)の表示順が入れ替わって見えたが、実際の処理順は`_cleanup()`の順どおり。
+  `PYTHONUNBUFFERED=1`を付けて起動すると表示順も揃う。
+- Vissimは開いたまま残った(アダプタが止まっているため`disconnect`が届かない。想定どおり)。
+- **問題**: 終了後に`ros2 node list`・`ps`で確認すると、`autoware_carla_interface.launch.xml`内の
+  ノード・プロセスが残っていた。1回目の実行(17:03起動)の`autoware_raw_vehicle_cmd_converter`・
+  `multi_camera_combiner`も残っており、1回目も完全には止まっていなかった。
+
+**3回目・4回目(2026-09-28、全プロセスを停止してから、A: 期間経過、B: Windows側強制終了を再試行)**
+
+`PYTHONUNBUFFERED=1 ros2 launch ... 2>&1 | tee ~/cosim_run_{A,B}.log`で起動し、終了後に`ps`・
+`ros2 node list`・ログの`grep`で確認した。
+
+- A・Bとも、`ros2 node list`は空。launchはSIGINT → 5秒後にSIGTERM → さらに10秒後にSIGKILLの順で
+  全プロセスを止めており、残ったのは**`spectator_follow`だけ**だった(A・Bで1つずつ)。
+  `raw_vehicle_cmd_converter`・`multi_camera_combiner`は今回はきちんと終了したので、2回目に残っていたのは、
+  それより前の実行の片付けが不完全だったためと考えられる。
+- **原因**: `spectator_follow`は`<executable cmd="ros2 run autoware_carla_interface spectator_follow ...">`で
+  起動していた(このブランチの`1979543bf`で追加。スクリプト本体はupstreamの`e32a2aff1`)。launchが
+  直接起動しているのは`ros2 run`(ros2cliのPythonプロセス)で、スクリプト本体はその子プロセスになる。
+  launchが自分で終了処理をするとき(`on_exit="shutdown"`)は、自分が起動した`ros2 run`にだけSIGINTを送る。
+  `ros2 run`はそれを子に渡さずに待ち続け、5秒後のSIGTERMで自分だけ終了する(ログの
+  `ros2-2 ... exit code -15`)。子のスクリプトにはシグナルが届かず、親を失って残る(`ps`で親PIDが3299)。
+  Ctrl+Cの場合は端末がフォアグラウンドのプロセス全体にSIGINTを送るので、スクリプトにも直接届き、
+  `KeyboardInterrupt`で終了する。これまで表に出なかったのはこのため。
+- **修正**: `launch/autoware_carla_interface.launch.xml`で、`ros2 run`を通さずインストール済みのスクリプト
+  (`$(find-pkg-prefix autoware_carla_interface)/lib/autoware_carla_interface/spectator_follow`、
+  `CMakeLists.txt`の`install(PROGRAMS ... DESTINATION lib/${PROJECT_NAME})`と一致)を直接起動するように
+  変更した。スクリプト本体(upstream)は変更していない。
+  `test/vissim_launch_params_test.py`に`check_executables_not_started_through_ros2_run`を追加し、
+  `<executable>`が`ros2 run`で始まっていないことを確認するようにした(修正前のlaunchファイルでは
+  このチェックが失敗することを確認済み)。
+- 今回の変更とは関係なく、以前からある終了時の挙動(いずれも最終的には終了しており、残らない):
+  `multi_camera_combiner`が`rclpy.shutdown()`を2回呼んで`exit code 1`、`republish-*`・
+  `component_container_mt-64`(planning)がSIGTERM後に`exit code -11`、`rviz2`がSIGTERMでも止まらず
+  SIGKILLで終了。
+- B(Windows側強制終了)では、Vissimは開いたまま残った(想定どおり、手で閉じる)。
+- 次: 修正後のlaunchで、A・Bをもう一度実行し、何も残らないことを確認する。
 
 ---
 
