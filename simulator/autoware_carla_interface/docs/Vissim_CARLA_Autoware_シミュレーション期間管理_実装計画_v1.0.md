@@ -1,0 +1,516 @@
+# Vissim(Windows)–CARLA–Autoware シミュレーション期間管理 実装計画
+
+作成日: 2026-09-28
+版: v1.0
+対象ブランチ:
+- 本リポジトリ(`autoware_universe`): `feature/vissim_windows_co-sim`
+- CARLAリポジトリ(`C:\Users\hirokazu.muraki.bp\src\CARLA`、Linux機では`/home/divp/CARLA`):
+  `feature/vissim_windows`
+
+前提ドキュメント:
+- `docs/Vissim_CARLA_Autoware_統合_実装計画_v1.0.md`(統合の元計画。0.3節2.「Simulation Period
+  跨ぎでCARLA車両が消失」が本計画で解消される)
+- `docs/Vissim_CARLA_Autoware_Windowsリモート化_実装計画_v1.0.md`(Windowsアダプタ構成。本計画で
+  「Windows側は無改修で流用」という同計画§5の方針を変更する)
+- `docs/Vissim(win)-CARLA-Autoware_co-sim_起動手順.md`(起動手順、正本)
+
+---
+
+## 0. 背景と要件
+
+### 0.1 現状の問題
+
+- Vissimは`.inpx`の`<simulation simPeriod="...">`で設定されたシミュレーション期間が経過すると、
+  シミュレーションを終了する。
+- co-sim側(`autoware_carla_interface`)はシミュレーション期間を知らないため、Vissim終了後も
+  応答を待ち続ける。
+
+### 0.2 要件(ユーザー確定事項、2026-09-28)
+
+| # | 項目 | 決定 |
+|---|---|---|
+| 1 | Vissimへの設定方式 | **案A**: Windowsアダプタが`.inpx`のコピーを作って値を書き換え、それを`VISSIM_Connect`に渡す |
+| 2 | シミュレーション分解能 | 独立パラメータにせず、`fixed_delta_seconds`から求める(`simRes = 1 / fixed_delta_seconds`) |
+| 3 | 期間経過時の停止範囲 | `ros2 launch autoware_launch e2e_simulator.launch.xml`で起動した**全ノード**を止める |
+| 4 | `simPeriod`に足す余裕 | 推奨値(§2.3で**10秒**と決定)。あわせて`numRuns=1`を強制する |
+| 5 | 安全策 | 入れる(連続失敗回数の上限で停止、§2.5) |
+| 6 | Windows側コード | 変更する(`C:\Users\hirokazu.muraki.bp\src\CARLA`に実装) |
+
+---
+
+## 1. 前提調査で判明した事実
+
+### 1.1 DS Interface(`DrivingSimulatorProxy.h`、PTV Vissim 2025で確認)
+
+- **シミュレーション期間・分解能を設定する関数は存在しない。** 提供される関数は
+  `VISSIM_Connect`/`VISSIM_ConnectToConsole`/`VISSIM_ConnectToKernel`/`VISSIM_Disconnect`/
+  `VISSIM_SetDriverVehicles`(ほか車両・歩行者の設定系)/`VISSIM_DataReady`/
+  `VISSIM_GetTrafficVehicles`(ほか取得系)/`VISSIM_GetSignalStates`/`VISSIM_GetLastErrorMessage`
+  のみ。
+- `VISSIM_Connect`の`simulatorFrequency`は「シミュレータ側のフレームレート」であり、`.inpx`の
+  `simRes`を上書きしない(統合計画0.3節1.で、両者の不一致がCreateID確認失敗の原因だった実績がある)。
+  → **Vissimへ期間・分解能を「セット」するには、`.inpx`そのものを書き換えるしかない**(案A採用の根拠)。
+- `VISSIM_SetDriverVehicles`: 「受信直後に次フレームの計算を開始する」。つまりVissimは
+  co-simのtickごとに1フレーム進む(ロックステップ)。
+  → **Vissim側の経過時間 = co-simのtick成功回数 × `step_length`** で決まる。co-sim側で
+  tick数を数えれば、Vissimの期間終了タイミングを正確に予測できる。
+- `VISSIM_GetTrafficVehicles`: 「Vissimの計算が終わるまでブロックする」。
+  → 期間経過でVissimが止まると、アダプタ(`server.py`)はDLL呼び出しの中でブロックしたまま戻らず、
+  REP応答を返せない。Linux側は「2秒でtickタイムアウト → 次のtickで`connect`再送(60秒待ち)→
+  タイムアウト → …」を永久に繰り返す。**これが0.1の「待ち続ける」の実体**。アダプタが固まって
+  いるので、再接続も成功しない。
+- `VISSIM_Disconnect`: 「シミュレーション実行を停止し、Vissimを閉じ、DLLを切断する」。
+  → **「co-simからVissimへ終了を指示する」は、既存の`PTVVissimSimulation.close()`が送る
+  `disconnect`メッセージでそのまま実現できる**。新しいプロトコルメッセージは不要。
+
+### 1.2 `.inpx`の形式
+
+平文XML。`<simulation>`要素が1つあり、対象の属性はすべてここにある(Town01で確認)。
+
+```xml
+<simulation comment="" numCores="1" numRuns="1" randSeed="42" randSeedIncr="1" retroSync="false"
+  simMode="MICRO" simPeriod="300" simRes="20" simSpeed="3" startTm="0" useAllCores="true"
+  useMaxSimSpeed="false" volumeIncrDynAssign="0"/>
+```
+
+### 1.3 Windowsアダプタ(`Co-Simulation/PTV-Vissim_windows/`)の現状
+
+- `server.py`: `_handle_connect()`が`payload['step_length']`/`payload['simulator_vehicles']`のみを
+  `VissimKernelSession.connect()`へ渡す。
+- `vissim_kernel_session.py`: `__init__`で`network_path`(`--vissim-network`)を保持し、`connect()`で
+  そのまま`VISSIM_Connect`/`VISSIM_ConnectToConsole`に渡す。**2回目以降の`connect()`は何もしない**
+  (接続済みの状態で再度DLLを呼ぶとVissim GUIが無期限にハングする実績があるため)。
+- `rpc_protocol.py`/`constants.py`: Linux側(`Co-Simulation/PTV-Vissim/vissim_integration/`)と
+  **byte-identical**に保つ運用(`util/rpc_protocol_test.py`で一致を検査)。本リポジトリの
+  `rpc_protocol.py`もプロトコル内容(`PROTO_VERSION`含む)を一致させ続ける必要がある。
+- `PROTO_VERSION = 1`。バージョンが違うメッセージは`ProtocolError`になる。
+
+### 1.4 プロトコル変更の波及範囲(重要)
+
+`connect`メッセージの中身を変えるため、**同じプロトコルを話す3つのクライアント/サーバーすべて**を
+同時に更新する必要がある。
+
+| 実装 | 場所 | 役割 |
+|---|---|---|
+| Windowsアダプタ | CARLA `Co-Simulation/PTV-Vissim_windows/` | サーバー |
+| CARLA公式側のLinuxオーケストレータ | CARLA `Co-Simulation/PTV-Vissim/`(`run_synchronization.py`+`vissim_integration/`) | クライアント(Autowareなしの単体co-sim用) |
+| 本リポジトリ | `autoware_carla_interface/vissim_integration/` | クライアント(Autoware統合) |
+
+CARLA公式側のLinuxオーケストレータは要件6の「Windows側」には含まれないが、アダプタとプロトコルを
+共有しているため、**更新しないとアダプタと通信できなくなる**。本計画では同じCARLAリポジトリ内の
+変更として一緒に更新する(Step V3)。
+
+### 1.5 launchでの全体停止
+
+- `autoware_carla_interface.launch.xml`の`<node>`には、現在`on_exit`/`required`の指定がない。
+  そのため`autoware_carla_interface`ノードが終了しても、他のAutowareノードは動き続ける。
+- ROS 2 launch(Humble)のXMLフロントエンドは`<node ... on_exit="shutdown"/>`をサポートする
+  (`ExecuteProcess`の`on_exit`属性)。`Shutdown`アクションはLaunchService全体に効くため、
+  `e2e_simulator.launch.xml`からincludeされていても、**`ros2 launch`で起動した全ノードが止まる**。
+
+---
+
+## 2. 設計
+
+### 2.1 全体の流れ
+
+```text
+[起動時]
+Linux: carla_ros.py / carla_autoware.py
+  vissim_sim_period(秒) と fixed_delta_seconds を検証
+  sim_res = round(1 / fixed_delta_seconds)
+  end_tick = round(vissim_sim_period / fixed_delta_seconds)
+  connect payload = {step_length, simulator_vehicles,
+                     sim_period = vissim_sim_period + 余裕10秒, sim_res}
+        │  ZeroMQ connect
+        ▼
+Windows: server.py → VissimKernelSession.connect()
+  <network>.inpx を読み、<simulation> の simPeriod / simRes / numRuns を書き換えて
+  同じフォルダの <network>.cosim.inpx に保存
+  VISSIM_Connect(..., <network>.cosim.inpx, ...)
+
+[毎tick]
+SensorLoop._tick_sensor():
+  sync_vissim_to_carla() → world.tick() → sync_carla_to_vissim()
+  (a) vissim.tick_count >= end_tick                     → 正常終了(期間経過)
+  (b) vissim.consecutive_failures >= 上限                → 異常終了(安全策)
+  どちらかで running = False
+
+[終了時]
+既存 _cleanup() → _cleanup_vissim() → PTVVissimSimulation.close()
+  → disconnect → VISSIM_Disconnect()(Vissimの実行停止・終了)
+プロセス終了 → launch の on_exit="shutdown" → e2e_simulator の全ノード停止
+```
+
+### 2.2 パラメータ
+
+| 名前(ROS param / launch arg) | 型 | 既定値 | 説明 |
+|---|---|---|---|
+| `vissim_sim_period` | int(秒) | `600` | co-simのシミュレーション期間。経過したらco-sim全体を終了する。**1以上必須**(0以下は起動時エラー) |
+| `vissim_max_consecutive_failures` | int | `3` | Vissimアダプタとのtickが連続で何回失敗したら停止するか(§2.5)。**1以上必須** |
+| `fixed_delta_seconds` | double | `0.05`(既存) | ここから`simRes`を求める。独立した分解能パラメータは作らない(要件2) |
+
+- `vissim_sim_period`を整数秒にするのは、Vissimの`simPeriod`が秒単位の整数属性であるため。
+- 既定値`600`(10分)は、Town01.inpxの`300`秒では短時間のAutowareテストでも足りなくなる
+  可能性があるため、少し長めにした。実機運用に合わせて見直してよい。
+- 余裕(10秒)と`numRuns=1`はパラメータにせず固定する(§2.3)。
+
+**起動時の検証**(`InitializeInterface.__init__`、`use_vissim=True`の場合のみ):
+
+1. `vissim_sim_period >= 1`
+2. `vissim_max_consecutive_failures >= 1`
+3. `1 / fixed_delta_seconds`が整数である(許容誤差`1e-6`)。例: `0.05`→`20`はOK、`0.03`→`33.33…`はNG
+4. `sim_res`がVissimの分解能として有効な範囲(**1〜20**、Step V0で確認済み)である
+5. Vissimに書き込む`simPeriod`(`vissim_sim_period + 10`)が、Vissimの上限`2678400`秒以下である
+   (Step V0で確認済み)
+
+いずれかに違反した場合は`ValueError`で起動を止める(既存の`_check_vissim_traffic_manager_exclusivity()`
+と同じ方式)。
+
+### 2.3 `simPeriod`の余裕を10秒にする理由
+
+Vissimはロックステップで進む(§1.1)ので、原理的にはVissimの経過時間とco-simのtick数は一致する。
+それでも余裕を取るのは、次の「co-simが数えるtick数より、Vissimのほうが先に進む」ケースがあるため。
+
+- tickリクエストがLinux側でタイムアウトしたが、アダプタ側では実際には処理されてVissimが1フレーム
+  進んでいた場合。Linux側は失敗として数えない(`tick_count`は成功時しか増えない)ので、Vissimの
+  ほうが先行する。
+- 安全策(§2.5)により連続失敗は最大`vissim_max_consecutive_failures`回で停止するので、先行量は
+  数tick程度に収まる。
+
+`fixed_delta_seconds=0.05`なら10秒は200tick分に当たり、上記の先行量に対して十分な余裕がある。
+Vissimはco-simからtickされない限り進まないため、余裕を大きく取ることによるコスト(待ち時間など)は
+発生しない。したがって**余裕は固定値10秒**とし、`constants.py`に定数として置く
+(`VISSIM_SIM_PERIOD_MARGIN_S = 10`)。
+
+`numRuns=1`を強制するのは、複数runの設定だと期間経過時に次のrunへ遷移し、統合計画0.3節2.の
+「run境界でCARLA車両が消える」問題が起きるため。co-simが期間内に終了する本計画の設計と合わせて、
+この問題は発生しなくなる。
+
+### 2.4 `.inpx`の書き換え(Windowsアダプタ)
+
+`VissimKernelSession`に新しいメソッド`_prepare_network_file(sim_period, sim_res)`を追加する。
+
+- 元の`.inpx`を読み、`<simulation ...>`要素の`simPeriod`/`simRes`/`numRuns`の3属性だけを
+  書き換える。
+  - **XML全体をパースして書き直すことはしない**(ElementTreeで書き直すと、属性順・空白・名前空間
+    表記などが変わり、Vissimが読めるか保証できないため)。`<simulation\b[^>]*>`を正規表現で
+    特定し、その中の3属性の値だけを置き換える。
+  - `<simulation`要素がちょうど1つでない場合、または3属性のどれかが無い場合は`RuntimeError`
+    (`connect`の失敗としてLinux側に返る)。
+- 書き換えたものを**元と同じフォルダ**に`<元のファイル名>.cosim.inpx`として保存する
+  (例: `Town01.inpx` → `Town01.cosim.inpx`)。
+  - 同じフォルダに置くのは、`.inpx`内の相対パス参照(信号制御ファイル、3Dモデルなど)を壊さない
+    ため。
+  - 既に存在する場合は上書きする。元の`.inpx`は一切変更しない。
+  - 文字コードはUTF-8(`.inpx`の宣言通り)。バイナリで読み書きし、改行コードなどを保つ。
+- `connect()`では、このコピーのパスを`VISSIM_Connect`/`VISSIM_ConnectToConsole`に渡す。
+- 書き換え内容(元の値 → 新しい値)をINFOログに出す。
+
+**2回目以降の`connect`**(既存の「何もしない」処理の拡張):
+
+- `sim_period`/`sim_res`が初回と**同じ**なら、今まで通り何もしない。
+- **違う**なら`RuntimeError`を返す(Vissimは起動済みで、`.inpx`の変更は反映できないため)。
+  エラーメッセージで「アダプタ(とVissim)を再起動すること」を案内する。
+
+### 2.5 安全策(連続失敗で停止)
+
+`PTVVissimSimulation`に`consecutive_failures`(読み取り専用プロパティ)を追加する。
+
+- `tick()`が最後まで完了しなかったとき(tickタイムアウト、再接続の失敗、アダプタからの`ok=False`
+  応答)に1増やし、成功したら0に戻す。
+- `SensorLoop`は`sync_vissim_to_carla()`の後にこの値を確認し、上限以上になったらエラーログを出して
+  ループを止める。以降は正常終了と同じ終了処理(`_cleanup()`)を通る。
+
+既定値3の場合、最悪の停止までの時間は「tickタイムアウト2秒 + 再接続タイムアウト60秒 × 2」で
+約2分。Vissimのクラッシュなど、期間とは関係なくアダプタが応答しなくなった場合でも、無期限に
+待ち続けることはなくなる。
+
+> 注: アダプタがDLL呼び出しの中でブロックしたまま固まった場合、終了処理の`disconnect`も
+> タイムアウトする(2秒)。`close()`は`finally`でソケットを必ず閉じるので、Linux側の終了は
+> 妨げられない。固まったアダプタとVissimは手動で再起動する必要がある(起動手順書に記載する)。
+
+### 2.6 期間経過の判定
+
+- 判定には`PTVVissimSimulation.tick_count`を使う。成功したtickだけが数えられるので、Vissim自身の
+  経過時間と一致する。CARLAの時刻(`GameTime`/snapshot)は、タイムアウトしたtickの分だけVissimと
+  ずれるので使わない。
+- `end_tick = round(vissim_sim_period / fixed_delta_seconds)`を起動時に1回だけ計算する。
+- `tick_count >= end_tick`になったら、INFOログ(期間、tick数)を出してループを止める。
+
+### 2.7 launchでの全体停止
+
+`autoware_carla_interface.launch.xml`の`autoware_carla_interface`ノードに`on_exit="shutdown"`を
+付ける。
+
+- ただし`use_vissim=False`(CARLA単体)のときの挙動は変えない(これまでの「`use_vissim=False`なら
+  既存動作に影響しない」という方針を維持)。そのため、ノード定義を`use_vissim`で2つに分ける
+  (`if="$(var use_vissim)"`側だけに`on_exit="shutdown"`を付ける)。
+  - `on_exit`は置換(`$(var ...)`)を解釈しないため(Step V0で確認済み)、1つの定義にはまとめられない。
+- `on_exit`はノードがどんな理由で終了しても効く(期間経過、安全策、例外、Ctrl+C)。Vissim使用時は
+  ブリッジが止まればco-sim全体が成り立たないので、どの場合も全体停止でよい。
+
+### 2.8 プロトコル変更
+
+- `connect`リクエストのpayloadに`sim_period`(int、余裕を足した後の値)と`sim_res`(int)を追加する。
+  余裕を足すのはLinux側(アダプタは受け取った値をそのまま書くだけ)。「Linux側が単一の情報源、
+  アダプタは受け取った値を使うだけ」という既存の設計に合わせる。
+- `PROTO_VERSION`を`1`→`2`に上げる。古いアダプタと新しいクライアント(またはその逆)を組み合わせたとき、
+  黙って動いて期間が効かないのではなく、はっきりエラーにするため。
+- `rpc_protocol.py`はCARLAリポジトリの2つのコピーをbyte-identicalに保ち、本リポジトリのコピーも
+  コード本体を一致させる。
+- `constants.py`に`VISSIM_SIM_PERIOD_MARGIN_S = 10`を追加する(CARLAリポジトリの2つのコピー、
+  本リポジトリのコピー)。
+
+---
+
+## 3. 変更ファイル一覧
+
+### 3.1 CARLAリポジトリ(`C:\Users\hirokazu.muraki.bp\src\CARLA`、ブランチ`feature/vissim_windows`)
+
+| ファイル | 変更内容 |
+|---|---|
+| `Co-Simulation/PTV-Vissim_windows/rpc_protocol.py` | `PROTO_VERSION`を2に上げる。docstringに`connect`の新キーを記載 |
+| `Co-Simulation/PTV-Vissim_windows/constants.py` | `VISSIM_SIM_PERIOD_MARGIN_S = 10`を追加 |
+| `Co-Simulation/PTV-Vissim_windows/vissim_kernel_session.py` | `connect(step_length, simulator_vehicles, sim_period, sim_res)`に変更、`_prepare_network_file()`追加、2回目以降の`connect`の値比較 |
+| `Co-Simulation/PTV-Vissim_windows/server.py` | `_handle_connect()`で新キーを渡す |
+| `Co-Simulation/PTV-Vissim_windows/README.md` | `.cosim.inpx`が生成されること、期間・分解能はLinux側で管理することを追記 |
+| `Co-Simulation/PTV-Vissim/vissim_integration/rpc_protocol.py` / `constants.py` | Windows側とbyte-identicalになるよう同じ変更 |
+| `Co-Simulation/PTV-Vissim/vissim_integration/vissim_simulation.py` | `connect` payloadに`sim_period`/`sim_res`追加、`consecutive_failures`追加 |
+| `Co-Simulation/PTV-Vissim/run_synchronization.py` | `--sim-period`/`--max-consecutive-failures`引数追加、ループに期間経過・連続失敗の判定を追加 |
+| `Co-Simulation/PTV-Vissim/util/vissim_kernel_session_test.py` | `.inpx`書き換え・`connect`値比較のテストを追加 |
+| `Co-Simulation/PTV-Vissim/util/vissim_adapter_stub_test.py` / `rpc_protocol_test.py` | 新しい`connect` payloadに合わせて更新 |
+| `Co-Simulation/PTV-Vissim/docs/WINDOWS_VISSIM_REMOTE_IMPLEMENTATION_PLAN.md` / `Vissim(win)-CARLA_co-sim_起動手順.md` | 仕様変更を追記 |
+
+### 3.2 本リポジトリ(`autoware_universe`、ブランチ`feature/vissim_windows_co-sim`)
+
+| ファイル | 変更内容 |
+|---|---|
+| `vissim_integration/rpc_protocol.py` / `constants.py` | CARLAリポジトリと同じ変更 |
+| `vissim_integration/vissim_simulation.py` | CARLAリポジトリと同じ変更(`connect` payload、`consecutive_failures`) |
+| `vissim_integration/NOTICE.md` | vendor元の更新を記載 |
+| `carla_ros.py` | `vissim_sim_period`/`vissim_max_consecutive_failures`を宣言 |
+| `carla_autoware.py` | パラメータ読み込み・検証、`vissim_args`への追加、`SensorLoop`に期間経過・連続失敗の判定を追加 |
+| `launch/autoware_carla_interface.launch.xml` | `<arg>`/`<param>`追加、`use_vissim`時のみ`on_exit="shutdown"` |
+| `test/vissim_adapter_stub_test.py` / `test/vissim_rpc_protocol_test.py` | 新しい`connect` payload・`consecutive_failures`に合わせて更新 |
+| `test/vissim_sim_period_test.py`(新規) | `SensorLoop`の期間経過・連続失敗の判定、起動時検証のテスト |
+| `docs/Vissim(win)-CARLA-Autoware_co-sim_起動手順.md` | 新パラメータ、`.cosim.inpx`、全体停止の挙動を追記 |
+| `docs/Vissim_CARLA_Autoware_統合_実装計画_v1.0.md` | 0.3節2.が本計画で解消されたことを追記 |
+
+### 3.3 別リポジトリ(ローカル未コミット)
+
+| ファイル | 変更内容 |
+|---|---|
+| `~/autoware.1.9.0/src/launcher/autoware_launch/launch/e2e_simulator.launch.xml`(Linux機) | `vissim_sim_period`/`vissim_max_consecutive_failures`の引数転送を追加。このPCには無いため、変更内容を起動手順書に記載し、ユーザーがLinux機で適用する |
+
+---
+
+## 4. 実装ステップ
+
+### Step V0: 事前確認(コード変更なし)
+
+- [x] Vissimの`simRes`(1秒あたりのタイムステップ数)の有効範囲を確認する。
+- [x] launch XMLの`on_exit`属性に置換(`$(var ...)`)が使えるかを確認する。
+- [x] 書き換えた`.cosim.inpx`をVissim GUIで開けること、`simPeriod`/`simRes`/`numRuns`が
+      反映されることを手動で確認する(2026-09-28、ユーザーがVissim 2026で確認済み)。
+- [ ] (任意)現状の「期間経過後に`VISSIM_GetTrafficVehicles`がブロックする」挙動を実機で観察し、
+      §1.1の分析と一致するか確認する(未実施。Step V9の実機検証で、変更後の挙動と合わせて確認する)。
+
+### Step V0実施内容(2026-09-28)
+
+**1. Vissimの属性の値域**
+
+PTV Vissim 2025付属の属性一覧(`C:\Program Files\PTV Vision\PTV Vissim 2025\Doc\Eng\attribute.xlsx`、
+`Attributes`シート、Object=`Simulation`)で確認した。
+
+| 属性 | 型 | 最小 | 最大 | 既定 | 備考 |
+|---|---|---|---|---|---|
+| `SimRes` | unsigned int32 | 1 | 1000 | 10 | 説明文: 「値域 1〜20。値域はライセンスに依存し、既定は1〜20、アドオンモジュール'Automotive'のライセンスがある場合は1〜1000」 |
+| `SimPeriod` | durationInSeconds | 1 | 2678400(31日) | 3600 | シミュレーション秒 |
+| `NumRuns` | unsigned int32 | 1 | (なし) | 1 | 連続して実行するrun数 |
+
+→ 計画への反映:
+- §2.2の検証4は**`sim_res`が1〜20**とする(想定通り)。'Automotive'ライセンスがあれば20を超えても
+  よいが、ライセンスの有無はLinux側から分からないため、標準の範囲で検証する。`fixed_delta_seconds`の
+  既定値`0.05`(=20)はこの範囲の上限にあたる。
+- §2.2の検証に**5. `vissim_sim_period + 10`(余裕込み)が2678400以下**を追加する。
+
+**2. launchの`on_exit`属性**
+
+ROS 2 Humbleのlaunchのソース(`ros2/launch`の`humble`ブランチ、
+`launch/launch/actions/execute_process.py`の`ExecuteProcess.parse()`)を確認した。
+
+- `on_exit`属性は文字列をそのまま`'shutdown'`と比較しており、**置換(`$(var ...)`)は解釈されない**。
+  `'shutdown'`以外の値はエラーになる(対照的に`respawn`は`parser.parse_substitution()`を通すので
+  置換が使える)。
+- `launch_ros`の`Node.parse()`(`humble`ブランチ)は`super().parse(entity, parser, ignore=['cmd'])`で
+  `ExecuteProcess.parse()`を呼ぶので、`<node>`でも同じ扱いになる。
+
+→ 計画への反映: §2.7の通り、**ノード定義を`use_vissim`で2つに分ける**
+(`if="$(var use_vissim)"`側だけに`on_exit="shutdown"`を付け、`unless="$(var use_vissim)"`側は今のまま)。
+`<param>`の並びが2つに重複するため、差分が出ないよう注意して実装する(Step V6)。
+
+**3. 確認用の`.cosim.inpx`**
+
+Step V2で実装する予定と同じ方法(`<simulation\b[^>]*>`を正規表現で1つだけ特定し、3属性の値だけを
+バイト列のまま置き換える)で、CARLAリポジトリの
+`Co-Simulation/PTV-Vissim/examples/Town01/Town01.cosim.inpx`を作成した
+(`simPeriod` 300→70、`simRes` 20→20、`numRuns` 1→1)。
+
+- 元ファイルとの差分は`<simulation>`の1行だけであること、行数(22237行)が同じであることを`diff`で
+  確認済み。
+- このファイルはgit管理外(未追跡)。Step V2で`.gitignore`に`*.cosim.inpx`を追加する。
+
+**GUIでの確認結果(2026-09-28、ユーザーがVissim 2026で実施)**: `Town01.cosim.inpx`について、
+(a)エラーなく読み込めること、(b)「シミュレーションパラメータ」で期間が70秒・分解能が20になって
+いること、(c)シミュレーションを実行して70秒で止まること、をすべて確認した。
+→ §2.4の「`<simulation>`要素の3属性だけを正規表現で置き換える」方式で問題ないことが確定した。
+
+**注意(バージョン差)**: 実運用のVissimは**2026**。1.の値域はこのPCに入っている**2025**の
+`attribute.xlsx`で確認したもので、2026の資料では未確認。ただし2026のGUIで`simRes=20`・
+`simPeriod=70`が期待通りに動いたことは(c)で確認できている。§1.1のDS Interfaceの内容も2025の
+`DrivingSimulatorProxy.h`で確認したものだが、Windowsアダプタ(Vissim 2026で稼働実績あり)が
+使っている関数・構造体と一致している。
+
+### Step V1: プロトコル・定数の更新(CARLAリポジトリ)
+
+- [x] `PTV-Vissim_windows/rpc_protocol.py`: `PROTO_VERSION = 2`、docstringに`connect`の新キー
+      (`sim_period`、`sim_res`)を追記。
+- [x] `PTV-Vissim_windows/constants.py`: `VISSIM_SIM_PERIOD_MARGIN_S = 10`を追加。
+- [x] 上記2ファイルを`PTV-Vissim/vissim_integration/`へコピーし、byte-identicalであることを
+      `diff`で確認。
+
+### Step V1実施内容(2026-09-28)
+
+- `PTV-Vissim_windows/rpc_protocol.py`: `PROTO_VERSION`を`1`→`2`に変更。`PROTO_VERSION`直前の
+  コメントにバージョン履歴を追加し、v2で`connect`リクエストのpayloadに`sim_period`(int、秒、
+  余裕込み)と`sim_res`(int)が加わったこと、余裕はクライアント側で足すことを記載した。
+  エンベロープの形・検証処理は変更していない(新キーの検証はアダプタ側`connect()`の責務、Step V2)。
+- `PTV-Vissim_windows/constants.py`: 次の定数を追加した。
+  - `VISSIM_SIM_PERIOD_MARGIN_S = 10`(§2.3)
+  - **計画外の追加**: `VISSIM_MIN_SIM_RES = 1`/`VISSIM_MAX_SIM_RES = 20`/
+    `VISSIM_MIN_SIM_PERIOD_S = 1`/`VISSIM_MAX_SIM_PERIOD_S = 2678400`(Step V0で確認した値域)。
+    §2.2の起動時検証はLinux側2か所(Step V3・V5)とアダプタ側(Step V2)の3か所で行うため、
+    値域を1か所にまとめておくことにした。
+- 上記2ファイルを`PTV-Vissim/vissim_integration/`へコピーし、`cmp`でbyte-identicalであることを
+  確認した。改行コードはLFのまま(元と同じ)。
+- 検証: `ast.parse`で構文確認、`constants`をimportして追加した定数の値を確認した。
+  `rpc_protocol.py`のimport確認・`util/rpc_protocol_test.py`の実行は、このPCに`msgpack`が
+  無いため未実施(Step V7でまとめて実行する)。既存テストは`rpc.PROTO_VERSION`を参照しており、
+  バージョン番号を決め打ちしていないため、この変更で壊れる箇所は無いことをgrepで確認した。
+- 注意: この時点では、CARLAリポジトリのアダプタとLinux側クライアントは`PROTO_VERSION=2`を名乗るが、
+  まだ新キーを送受信しない(Step V2・V3で対応)。本リポジトリのコピーは`PROTO_VERSION=1`のまま
+  (Step V4で対応)なので、**Step V4が終わるまで本リポジトリとアダプタは通信できない**。
+
+### Step V2: Windowsアダプタの変更(CARLAリポジトリ)
+
+- [ ] `vissim_kernel_session.py`:
+  - [ ] `_prepare_network_file(sim_period, sim_res)`を追加(§2.4)。
+  - [ ] `connect(step_length, simulator_vehicles, sim_period, sim_res)`に変更。初回は
+        `_prepare_network_file()`の結果を`VISSIM_Connect`/`VISSIM_ConnectToConsole`に渡す。
+        2回目以降は値を比較し、違えば`RuntimeError`。
+  - [ ] 受信値の検証(`sim_period`/`sim_res`が正の整数か)。既存の`_is_valid_number()`と同じ方針。
+- [ ] `server.py`: `_handle_connect()`で`payload['sim_period']`/`payload['sim_res']`を渡す。
+- [ ] `README.md`を更新。
+- [ ] `.gitignore`に`*.cosim.inpx`を追加(自動生成されるコピーをコミットしないため)。
+
+### Step V3: CARLA公式側Linuxオーケストレータの変更(CARLAリポジトリ)
+
+- [ ] `vissim_integration/vissim_simulation.py`: `connect` payloadに`sim_period`(=
+      `args.sim_period + VISSIM_SIM_PERIOD_MARGIN_S`)・`sim_res`(=`round(1/step_length)`)を追加。
+      `consecutive_failures`プロパティを追加(§2.5)。
+- [ ] `run_synchronization.py`: `--sim-period`(秒、既定600)・`--max-consecutive-failures`(既定3)を
+      追加。`synchronization_loop()`の`while True:`を、期間経過・連続失敗で抜けるように変更。
+      起動時検証(§2.2の1〜4)を追加。
+
+### Step V4: 本リポジトリのvendorファイル更新
+
+- [ ] `vissim_integration/rpc_protocol.py`/`constants.py`/`vissim_simulation.py`にStep V1/V3と
+      同じ変更を適用する(本リポジトリ固有の既存デビエーション、例えば`lights_state`のenum変換は
+      維持する)。
+- [ ] `NOTICE.md`を更新。
+
+### Step V5: 本リポジトリのパラメータ・メインループ変更
+
+- [ ] `carla_ros.py`: `vissim_sim_period`(INTEGER、既定600)・`vissim_max_consecutive_failures`
+      (INTEGER、既定3)を宣言。
+- [ ] `carla_autoware.py`:
+  - [ ] `InitializeInterface.__init__`でパラメータを読み込み、新メソッド
+        `_check_vissim_sim_period_params()`で検証(§2.2、`use_vissim=True`時のみ)。
+  - [ ] `_init_vissim_integration()`で`vissim_args`に`sim_period`を追加(`sim_res`は
+        `PTVVissimSimulation`側で`step_length`から求める)。
+  - [ ] `SensorLoop`に`vissim_end_tick`/`vissim_max_consecutive_failures`を追加し、
+        `_tick_sensor()`内で判定(§2.1)。`run_bridge()`で値を設定。
+- [ ] `use_vissim=False`時に新しいコードパスへ一切入らないことを確認。
+
+### Step V6: launchファイルの変更
+
+- [ ] `launch/autoware_carla_interface.launch.xml`: `<arg>`/`<param>`追加、`use_vissim`時のみ
+      `on_exit="shutdown"`(§2.7、Step V0の結果に従う)。
+- [ ] `e2e_simulator.launch.xml`(Linux機、別リポジトリ)の変更内容を起動手順書に記載する。
+
+### Step V7: テスト
+
+- CARLAリポジトリ:
+  - [ ] `util/vissim_kernel_session_test.py`: 一時フォルダに最小の`.inpx`を作り、
+        `_prepare_network_file()`が3属性だけを書き換えること、元ファイルが変わらないこと、
+        `<simulation>`が無い/複数ある場合にエラーになること、2回目の`connect`で値が違えば
+        エラー・同じなら何もしないことを確認。
+  - [ ] `util/rpc_protocol_test.py`: 新しい`connect` payloadのラウンドトリップ、
+        `PROTO_VERSION`不一致がエラーになること、2つのコピーがbyte-identicalであること。
+  - [ ] `util/vissim_adapter_stub_test.py`: 新しい`connect` payloadに合わせて更新。
+- 本リポジトリ:
+  - [ ] `test/vissim_rpc_protocol_test.py`/`test/vissim_adapter_stub_test.py`: 同様に更新し、
+        `consecutive_failures`がタイムアウトで増え、成功で0に戻ることを確認。
+  - [ ] `test/vissim_sim_period_test.py`(新規、mock使用): `tick_count`が`end_tick`に達したら
+        `SensorLoop`が止まること、`consecutive_failures`が上限に達したら止まること、
+        `vissim_sync=None`(Vissim未使用)なら判定しないこと、起動時検証の各エラーケース。
+- 実行環境の注意: このWindows PCには`carla`/`msgpack`/`zmq`が入っていないため、本リポジトリの
+  テストとCARLAリポジトリのLinux側テストはLinux機で実行する。Windowsアダプタ側のテスト
+  (`vissim_kernel_session_test.py`)は`carla`不要なので、このPCでも実行できる見込み。
+
+### Step V8: ドキュメント更新
+
+- [ ] 本リポジトリ`docs/Vissim(win)-CARLA-Autoware_co-sim_起動手順.md`: 新パラメータ、
+      `.cosim.inpx`の生成、期間経過・連続失敗で全ノードが止まること、アダプタが固まった場合の
+      再起動手順、`e2e_simulator.launch.xml`の変更内容。
+- [ ] 本リポジトリ`docs/Vissim_CARLA_Autoware_統合_実装計画_v1.0.md`: 0.3節2.が本計画で解消された
+      ことを追記。
+- [ ] CARLAリポジトリ`docs/WINDOWS_VISSIM_REMOTE_IMPLEMENTATION_PLAN.md`/
+      `Vissim(win)-CARLA_co-sim_起動手順.md`: 同様に追記。
+
+### Step V9: 実機検証
+
+- [ ] `vissim_sim_period`を短め(例: 60秒)にして起動し、次を確認する。
+  - [ ] Windows側に`.cosim.inpx`が生成され、`simPeriod=70`/`simRes=20`/`numRuns=1`になっている。
+  - [ ] 60秒(1200tick)経過でco-simが終了し、Vissimが閉じ、`e2e_simulator.launch.xml`の全ノードが
+        止まる。
+  - [ ] CARLA上にVissim由来のアクターが残らない。
+- [ ] 実行中にWindows側アダプタを強制終了し、安全策(連続失敗3回)で停止すること、全ノードが
+      止まることを確認する。
+- [ ] アダプタを再起動せずに`vissim_sim_period`を変えて再接続した場合、エラーになることを確認する。
+- [ ] `use_vissim=False`(CARLA単体)で、従来通り動作し、ブリッジ終了で全体停止しないことを確認する。
+
+---
+
+## 5. 対象外
+
+- COM APIによるVissim操作(§2案B。不採用)。
+- シミュレーション期間の途中変更、一時停止・再開。
+- `numRuns`>1の複数run連続実行。
+- アダプタがDLL呼び出しの中で固まった場合の自動復旧(手動再起動とする、§2.5注)。
+
+---
+
+## 6. タスクチェックリスト(サマリ)
+
+- [x] V0: 事前確認(`simRes`範囲、`on_exit`の置換可否、`.cosim.inpx`のGUI確認)
+- [x] V1: プロトコル・定数の更新(CARLAリポジトリ)
+- [ ] V2: Windowsアダプタの変更(CARLAリポジトリ)
+- [ ] V3: CARLA公式側Linuxオーケストレータの変更(CARLAリポジトリ)
+- [ ] V4: 本リポジトリのvendorファイル更新
+- [ ] V5: 本リポジトリのパラメータ・メインループ変更
+- [ ] V6: launchファイルの変更
+- [ ] V7: テスト
+- [ ] V8: ドキュメント更新
+- [ ] V9: 実機検証
