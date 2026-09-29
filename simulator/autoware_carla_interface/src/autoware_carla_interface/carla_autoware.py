@@ -16,6 +16,7 @@
 
 import random
 import signal
+import sys
 import time
 from types import SimpleNamespace
 
@@ -471,6 +472,11 @@ class InitializeInterface(object):
 
 def main():
     """Run the CARLA-Autoware bridge with proper cleanup on all exit paths."""
+    # Under ros2 launch, stdout is a pipe and therefore block-buffered, so the print() messages
+    # below (stop reason, cleanup warnings) showed up long after - and out of order with - the
+    # immediately written stderr logs (logging / rclpy). Flush stdout at every newline instead.
+    sys.stdout.reconfigure(line_buffering=True)
+
     carla_bridge = InitializeInterface()
     carla_bridge.load_world()
 
