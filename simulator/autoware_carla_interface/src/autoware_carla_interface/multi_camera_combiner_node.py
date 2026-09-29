@@ -20,6 +20,7 @@ import cv2
 from cv_bridge import CvBridge
 import numpy as np
 import rclpy
+from rclpy.executors import ExternalShutdownException
 from rclpy.node import Node
 from sensor_msgs.msg import CompressedImage
 from sensor_msgs.msg import Image
@@ -156,11 +157,15 @@ def main(args=None):
     node = MultiCameraCombiner()
     try:
         rclpy.spin(node)
-    except KeyboardInterrupt:
+    except (KeyboardInterrupt, ExternalShutdownException):
         pass
     finally:
         node.destroy_node()
-        rclpy.shutdown()
+        # On SIGINT/SIGTERM, rclpy's own signal handler has usually shut the context down
+        # already; calling rclpy.shutdown() again raises RCLError ("rcl_shutdown already
+        # called") and made this process exit with code 1 on every launch shutdown.
+        if rclpy.ok():
+            rclpy.shutdown()
 
 
 if __name__ == "__main__":
