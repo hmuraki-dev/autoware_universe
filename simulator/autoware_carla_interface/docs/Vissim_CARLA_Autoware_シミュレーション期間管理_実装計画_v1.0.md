@@ -314,7 +314,8 @@ Vissimはco-simからtickされない限り進まないため、余裕を大き�
 - [x] 書き換えた`.cosim.inpx`をVissim GUIで開けること、`simPeriod`/`simRes`/`numRuns`が
       反映されることを手動で確認する(2026-09-28、ユーザーがVissim 2026で確認済み)。
 - [ ] (任意)現状の「期間経過後に`VISSIM_GetTrafficVehicles`がブロックする」挙動を実機で観察し、
-      §1.1の分析と一致するか確認する(未実施。Step V9の実機検証で、変更後の挙動と合わせて確認する)。
+      §1.1の分析と一致するか確認する(未実施のまま終了。変更後はVissimが期間の終わりに達しないため
+      この挙動は起きず、Step V9でも観察できなかった。任意の項目のため省略)。
 
 ### Step V0実施内容(2026-09-28)
 
@@ -933,16 +934,17 @@ CARLAリポジトリの`PTV-Vissim_windows/README.md`(Step V2で更新済み)。
 
 ### Step V9: 実機検証
 
-- [ ] `vissim_sim_period`を短め(例: 60秒)にして起動し、次を確認する。
+- [x] `vissim_sim_period`を短め(例: 60秒)にして起動し、次を確認する。
   - [x] Windows側に`.cosim.inpx`が生成され、`simPeriod=70`/`simRes=20`/`numRuns=1`になっている。
-  - [ ] 60秒(1200tick)経過でco-simが終了し、Vissimが閉じ、`e2e_simulator.launch.xml`の全ノードが
-        止まる。(co-simの終了・Vissimが閉じることは確認済み。`spectator_follow`が残る問題を修正し、
-        再確認待ち)
+  - [x] 60秒(1200tick)経過でco-simが終了し、Vissimが閉じ、`e2e_simulator.launch.xml`の全ノードが
+        止まる。(`spectator_follow`が残る問題を`9835b2350`で修正し、再確認済み)
   - [x] CARLA上にVissim由来のアクターが残らない。
-- [ ] 実行中にWindows側アダプタを強制終了し、安全策(連続失敗3回)で停止すること、全ノードが
+- [x] 実行中にWindows側アダプタを強制終了し、安全策(連続失敗3回)で停止すること、全ノードが
       止まることを確認する。
-- [ ] アダプタを再起動せずに`vissim_sim_period`を変えて再接続した場合、エラーになることを確認する。
-- [ ] `use_vissim=False`(CARLA単体)で、従来通り動作し、ブリッジ終了で全体停止しないことを確認する。
+- [x] アダプタを再起動せずに`vissim_sim_period`を変えて再接続した場合、エラーになることを確認する。
+      (実機では未実施。Step V7の`util/vissim_kernel_session_test.py`の
+      `check_connect_rejects_different_sim_params_when_connected`で確認済みとし、ユーザー判断で実機確認は省略)
+- [x] `use_vissim=False`(CARLA単体)で、従来通り動作し、ブリッジ終了で全体停止しないことを確認する。
 
 ### Step V9実施内容
 
@@ -1022,6 +1024,49 @@ CARLAリポジトリの`PTV-Vissim_windows/README.md`(Step V2で更新済み)。
 - B(Windows側強制終了)では、Vissimは開いたまま残った(想定どおり、手で閉じる)。
 - 次: 修正後のlaunchで、A・Bをもう一度実行し、何も残らないことを確認する。
 
+**5回目・6回目(2026-09-28、修正`9835b2350`を反映した後に、A・Bを再試行)**
+
+Linux機で`git pull`した(`--symlink-install`のため再ビルド不要)。取り残されていた`spectator_follow`を
+止め、Windows側の`server.py`も起動し直してから、前回と同じ手順で実行した。
+
+| | A: 期間経過(`vissim_sim_period:=60`) | B: Windows側`server.py`を強制終了 |
+|---|---|---|
+| 終了後の`ps`(`--ros-args`/`spectator_follow`/`ros2 launch`) | 何も残らない | 何も残らない |
+| 終了後の`ros2 node list --no-daemon` | 空 | 空 |
+| ログ | `ros2-2`(`ros2 run`)へのSIGTERMが無くなり、`spectator_follow`は最初のSIGINTで終了 | 同左 |
+
+- 以前からある終了時の挙動(`multi_camera_combiner`の`exit code 1`、`republish-*`・
+  `component_container_mt-64`の`exit code -11`)は引き続き出ているが、いずれも終了しており残らない。
+- 結論: 1つ目(期間経過)・2つ目(安全策)の確認項目は、修正後のlaunchで**すべて期待どおり**。
+
+**7回目(2026-09-29、CARLA単体: `use_vissim:=false`、Windows側は使用せず)**
+
+- 4-a: `use_vissim:=false spectator_follow:=true`で起動し、別の端末から
+  `pkill -INT -f "lib/autoware_carla_interface/autoware_carla_interface"`でブリッジのノードだけを止めた。
+  - ブリッジは`Cleaning up CARLA resources...` → `Cleanup complete.` →
+    `process has finished cleanly`で正常終了したが、その後に他のノードへの停止シグナルは送られなかった。
+  - `ps`に`ros2 launch`本体・`spectator_follow`・`autoware_raw_vehicle_cmd_converter`が残っており、
+    launch全体は動き続けた。→ `unless="$(var use_vissim)"`側のノード定義(`on_exit`なし)が使われ、
+    変更前と同じ動作であることを確認した。
+  - (端末2の`ros2 node list`は空だったが、`ROS_DOMAIN_ID=33`が未設定だったためと考えられる。`ps`の
+    結果から判定には影響しない)
+- 4-b: 端末1でCtrl+Cを押すと、`ps`・`ros2 node list`とも空になり、全体が止まった。
+- `Spin thread did not terminate within timeout`(`carla_ros.py`の終了処理)はCARLA単体でも出たので、
+  今回の変更とは関係の無い、以前からある警告であることが分かった。
+- 結論: 4つ目の確認項目は期待どおり。
+
+**3つ目の確認項目(値を変えての再接続)について(2026-09-29、ユーザー判断)**
+
+アダプタが接続中のまま違う`sim_period`/`sim_res`で`connect`すると拒否され、状態も変わらないことは、
+Step V7の`util/vissim_kernel_session_test.py`(`check_connect_rejects_different_sim_params_when_connected`)で
+確認済み。このエラーは既存の`connect`失敗と同じ経路(`ok=False`の応答 → `PTVVissimSimulation.__init__`の
+`RuntimeError` → ノードの異常終了 → `on_exit="shutdown"`)でLinux側に伝わる。そのため、実機での確認は
+省略した(実機で再現するには、Linux側だけを`kill -9`で止めてアダプタを接続中のまま残す必要がある)。
+
+**Step V9のまとめ**: 4つの確認項目のうち3つを実機で確認し、すべて期待どおりだった。途中で見つかった
+`spectator_follow`が残る問題(このブランチの`1979543bf`で追加した`ros2 run`経由の起動が原因。今回の変更で
+表に出たもの)は`9835b2350`で修正した。
+
 ---
 
 ## 5. 対象外
@@ -1044,4 +1089,4 @@ CARLAリポジトリの`PTV-Vissim_windows/README.md`(Step V2で更新済み)。
 - [x] V6: launchファイルの変更
 - [x] V7: テスト(このPCで実行できるものは合格。残りはLinux機での実行待ち)
 - [x] V8: ドキュメント更新
-- [ ] V9: 実機検証
+- [x] V9: 実機検証(3つ目の確認項目は単体テストでの確認のみ)
