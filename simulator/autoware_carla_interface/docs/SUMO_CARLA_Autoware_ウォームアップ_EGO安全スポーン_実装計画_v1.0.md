@@ -85,7 +85,7 @@
 - ペース合わせ(`max_real_delta_seconds`のsleep)は`run_bridge()`のループにだけある。
   → ウォームアップを`run_bridge()`の外の専用ループで`sumo.tick()`だけ回せば、sleepもCARLA tickも挟まず、
   **SUMOの計算速度そのままで進む**。
-- 開発用PC(Windows、SUMO 1.26.0)でTown01を計測した結果、100秒ぶんのウォームアップは**1秒未満**(§6 #2)。
+- Town01で計測した結果、100秒ぶんのウォームアップはLinux機(DIVP-WS03)で**約1.6秒**、開発用PC(Windows)で約0.9秒(§6 #2)。
   `traci.simulationStep(目標時刻)`で一気に進める方式も試したが、ステップごとに回す方式と速さはほぼ同じだったため、
   **ステップごとに`sumo.tick()`を回す方式**にする(進捗ログ・停止フラグの確認・信号マネージャの更新が既存どおり行えるため)。
 
@@ -113,7 +113,7 @@
 - Town01の例では、SUMOの車両タイプ(`carlavtypes.rou.xml`)は**CARLAのブループリントIDそのもの**で、
   車長もCARLAの`bounding_box`から作られている(例: `vehicle.toyota.prius`のSUMO車長4.54 m)。
   `BridgeHelper.get_carla_blueprint()`はIDが一致するブループリントをそのまま使うので、
-  **Town01ではSUMOとCARLAの車長差はほぼない**見込み(S0 #4で確認)。
+  **Town01ではSUMOとCARLAの車長差はほぼない**(S0 #4で確認済み。最大でford.mustangの0.19 m)。
 - 車両タイプIDがブループリントにない場合は、vClassから`vtypes.json`の候補をランダムに選ぶため、車長差が出る。
 
 ### 1.6 信号(`tls_manager`)
@@ -267,6 +267,7 @@ rear_clearance  = |s_rear| − L_ego/2 − L_rear/2
   1. SUMOに`vehicle_type`と同じIDの車両タイプがあれば、その車長(`traci.vehicletype.getLength()`。
      Town01では`carlavtypes.rou.xml`がCARLAの寸法から作られている)
   2. なければ、S0 #4で確認した`vehicle_type`の車長を`ego_spawn_gate.py`の表から引く
+     (`vehicle.toyota.prius`はCARLA 4.51 m、SUMO 4.54 mで、1.の方法でも差は0.03 m)
 - `front_clearance ≥ ego_spawn_front_margin` かつ `rear_clearance ≥ ego_spawn_rear_margin` ならSAFE。
 - 前方車(後方車)がいない側は条件を満たすとみなす。
 - **重複チェック**: 車線によらず、EGO予定位置の外形と重なる車両が1台でもあればUNSAFE
@@ -284,7 +285,7 @@ rear_clearance  = |s_rear| − L_ego/2 − L_rear/2
 #### 2.6.4 SUMOとの車長差(要件5)
 
 - 基本は**必要距離の設定で吸収**する。§1.4のとおり中心がSUMOとCARLAで一致するため、前方・後方とも
-  車長差の半分ずつが効く。Town01の例では車長差はほぼない見込み(§1.5)。
+  車長差の半分ずつが効く。Town01の例では車長差は最大0.19 mで、前後それぞれ0.1 m程度にしかならない(§6-3)。
 - オプション(Step S8、必要になったら): `L = max(CARLAの車長, SUMOの車長)`で計算する。
   SUMOの車長はsubscription結果にすでにあるため、Vissim版と違って対応表は不要で、実装は小さい。
 
@@ -495,24 +496,28 @@ python3 tools/carla_bbox_probe.py --all-from-vtypes \
 | # | 項目 | 状態 | 結果 |
 |---|---|---|---|
 | 1 | CARLA側の車両なしでSUMOが進むか | **確認済み**(開発用PC、2026-09-30) | 1500秒まで正常に進んだ。車両が0台になった後も`simulationStep()`を受け付ける |
-| 2 | 1ステップの処理時間 | 開発用PCで確認。Linux機は計測待ち | 下記6-1 |
+| 2 | 1ステップの処理時間 | **確認済み**(Linux機・開発用PC、2026-09-30) | 下記6-1。一気に進める方式(`--mode jump`)はLinux機では未計測(開発用PCで差がなかったため方針は変えない) |
 | 3 | 車両タイプとブループリントの対応 | **確認済み**(Town01) | Town01で出発する27車種はすべてCARLAのブループリントIDで、`vtypes.json`にも登録済み |
-| 4 | EGO・NPC車種の`bounding_box`とSUMO車長の差 | 実機計測待ち | `vehicle.toyota.prius`のSUMO車長は4.54 m(`carlavtypes.rou.xml`)。CARLAの寸法は`carla_bbox_probe.py --all-from-vtypes`で計測する |
+| 4 | EGO・NPC車種の`bounding_box`とSUMO車長の差 | **確認済み**(Linux機、2026-09-30) | 下記6-3。車長差は最大0.19 m、`bounding_box`中心のずれは最大0.057 mで、判定式の補正は不要 |
 | 5 | 出発する車両タイプ | **確認済み**(Town01) | 下記6-2 |
 | 6 | 交通流が安定するまでの時間 | **確認済み**(Town01) | 安定しない(§1.7)。下記6-1 |
 | 7 | Autowareがセンサー開始の遅れに耐えるか | Step S4へ移動 | |
 | 8 | `<end>`到達後のTraCIの挙動 | 未確認 | Town01の`.sumocfg`には`<end>`がないため、現状の運用では起きない |
 
 **6-1. Town01(`CARLA/Co-Simulation/Sumo/examples/Town01.sumocfg`)の計測結果**
-(開発用PC: Windows 11、SUMO 1.26.0、`--step-length 0.05`、ヘッドレス。Linux機の値は別途計測する)
+(`--step-length 0.05`、ヘッドレス。車両数・歩行者数はLinux機と開発用PCで完全に一致した)
 
 | SUMO時刻 | 20 s | 60 s | 100 s | 140 s | 200 s | 300 s | 400 s以降 |
 |---|---|---|---|---|---|---|---|
 | 車両数 | 19 | 54 | 72 | 60 | 18 | 4 | 0 |
 | 歩行者数 | 600 | 596 | 594 | 581 | 579 | 556 | 減少(1500 sで355) |
 
-- 300秒ぶん(6000ステップ)のwall-clockは2.7秒(実時間の約110倍)。`simulationStep()`は平均0.35 ms、p95 0.74 ms、最大3.9 ms。
-  → ウォームアップ100秒は約1秒で終わる見込み。
+| 計測した機械 | 300秒ぶんのwall-clock | 実時間比 | `simulationStep()` 平均 / p50 / p95 / 最大 | ウォームアップ100秒の見積もり |
+|---|---|---|---|---|
+| Linux機(DIVP-WS03、実機) | 4.82 s | 62倍 | 0.61 / 0.47 / 1.08 / 8.19 ms | 1.6 s |
+| 開発用PC(Windows 11、SUMO 1.26.0) | 2.66 s | 113倍 | 0.35 / 0.28 / 0.74 / 3.94 ms | 0.9 s |
+
+- → ウォームアップ100秒は実機で約1.6秒。1ステップは車両数が多いほど重く、最大の100秒付近で平均1.3 ms。
 - `simulationStep(300)`で一気に進めた場合は1.7秒で、ステップごとの方式と大差ない(§1.3)。
 - 車両の出発は0〜99秒の100台だけ。歩行者は開始20秒で約600人に達し、その後ゆっくり減る。
 
@@ -528,6 +533,18 @@ python3 tools/carla_bbox_probe.py --all-from-vtypes \
 | bicycle | bh.crossbike (1.51)、diamondback.century (1.66)、gazelle.omafiets (1.84) |
 
 - 最長はtesla.cybertruck(6.36 m)。Vissim版のトレーラー(16.5 m)のような大きな車長差の原因はない。
+
+**6-3. CARLAの`bounding_box`とSUMO車長の差**(Linux機、`carla_bbox_probe.py --all-from-vtypes`、`carlavtypes.rou.xml`の27車種)
+
+| 項目 | 結果 |
+|---|---|
+| EGO(`vehicle.toyota.prius`) | CARLA 長さ4.51 m・幅2.01 m・高さ1.52 m、中心のずれ(x) 0.002 m、SUMO車長4.54 m(差 −0.02 m) |
+| 車長差(CARLA − SUMO)が大きい車種 | ford.mustang −0.19 m、tesla.cybertruck −0.09 m、nissan.patrol +0.08 m。ほかの24車種は±0.04 m以内 |
+| `bounding_box`中心のx方向のずれ | 最大でnissan.patrolの−0.057 m、次いでford.mustang 0.032 m・tesla.model3 0.029 m。ほかは0.025 m以内 |
+| `bounding_box`中心のz方向のずれ | 車高の約半分(箱の中心が地面から車高/2の位置にある)。平面の判定には影響しない |
+
+- → **判定式に中心のずれの補正は入れない**。車長差も必要距離(既定20 m)に比べて無視できるため、
+  Town01ではStep S8(長いほうの車長で判定)は不要。
 
 ---
 
