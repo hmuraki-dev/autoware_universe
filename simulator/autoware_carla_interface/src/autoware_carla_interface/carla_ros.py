@@ -85,6 +85,13 @@ class carla_ros2_interface(object):
             "sync_vehicle_lights": (rclpy.Parameter.Type.BOOL, False),
             "sync_vehicle_color": (rclpy.Parameter.Type.BOOL, False),
             "tls_manager": (rclpy.Parameter.Type.STRING, "none"),
+            # SUMO warmup / EGO safe spawn parameters (see
+            # docs/SUMO_CARLA_Autoware_ウォームアップ_EGO安全スポーン_実装計画_v1.0.md 2.2).
+            # sumo_warmup_time=0 (default) disables the warmup.
+            "sumo_warmup_time": (rclpy.Parameter.Type.INTEGER, 0),
+            "ego_spawn_front_margin": (rclpy.Parameter.Type.DOUBLE, 20.0),
+            "ego_spawn_rear_margin": (rclpy.Parameter.Type.DOUBLE, 20.0),
+            "ego_spawn_wait_timeout": (rclpy.Parameter.Type.INTEGER, 60),
         }
 
         self.param_values = {}

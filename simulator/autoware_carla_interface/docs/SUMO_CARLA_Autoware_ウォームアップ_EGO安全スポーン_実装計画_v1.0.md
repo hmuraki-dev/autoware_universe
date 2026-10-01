@@ -127,6 +127,20 @@
 
 ### 1.7 Town01の交通需要(S0 #6の計測結果)
 
+**検証に使う需要(2026-10-01に変更)**: `CARLA/Co-Simulation/Sumo/examples/Town01.sumocfg`(`rou/Town01.rou.xml`を変更したもの)。
+
+- 2つの入力(`-19.0.00`→`-18.0.00`、`5.0.00`→`-18.0.00`)それぞれ600台/hを、`<flow>`(`period="exp(...)"`のポアソン発生、0〜3600秒)で流入させる。
+  車両グループの割合はA(乗用車)70%・B(トラック)10%・C(トレーラー`european_hgv`)5%・D(バス`fusorosa`)5%・E(二輪)10%。歩行者はなし。
+- 計測(開発用PC、1800秒)では、出発は1800秒で591台(約1180台/h)。車両数は120秒で約30台、400秒で約40台に達するが、
+  **その後もゆっくり増え続け、30分では一定にならない**(600〜900秒の平均44台 → 1500〜1800秒の平均65台、最大81台)。下記§6-4。
+  → ウォームアップ時間は「完全に安定するまで」ではなく、目的の交通量に達するまでの時間で決める(例: 400〜600秒で約40台)。
+  増え続ける原因(信号での滞留の蓄積など)はsumo-guiで確認する。
+- 新しく出発する車種のうち、`vehicle.carlamotors.european_hgv`(7.94 m)と`vehicle.mitsubishi.fusorosa`(10.27 m)は
+  `vtypes.json`に登録されていないが、`BridgeHelper.get_carla_blueprint()`はブループリントIDの完全一致を先に探すため、
+  CARLAにこのブループリントがあればそのままスポーンされる(S4で確認)。
+
+**変更前の需要(参考、2026-09-30の計測)**:
+
 - `rou/Town01.rou.xml`は**車両100台を`depart`=0〜99秒で1台ずつ出発させるだけ**で、flowによる継続的な流入はない。
   歩行者は`personFlow`(3600秒間)。
 - 計測では、車両数は100秒付近で最大(72〜73台)になり、その後は到着で減り続け、**400秒以降は0台**になる。
@@ -183,6 +197,11 @@ launch arg / ROS paramとして追加する(`launch/autoware_carla_interface.lau
 | `ego_spawn_wait_timeout` | int(秒) | `60` | 空き待ちの上限。超えたら試験開始失敗。1以上必須 |
 
 - 必要距離・待ち時間上限の名前はVissim版と同じにする(起動手順書を揃えるため)。ウォームアップ時間だけ`sumo_`を付ける。
+- 必要距離のparamは`$(eval "float('...')")`で渡す。`ego_spawn_front_margin:=25`のように整数で指定しても、
+  DOUBLEで宣言したROS paramと型が合うようにするため(rclpyは宣言と異なる型の値を受け付けない)。
+- `ros2 launch autoware_launch e2e_simulator.launch.xml`から指定するには、`autoware_launch`側
+  (Linux機の`~/autoware.1.9.0/src/launcher/autoware_launch/autoware_launch/launch/e2e_simulator.launch.xml`、別リポジトリ)にも
+  既存の`sumo_*`引数と同じように4つの引数の受け渡しを追加する必要がある。追加していない場合は既定値(ウォームアップ無効)で動作する。
 
 起動時の検査(`_check_sumo_warmup_params()`を追加し、`__init__`で`_check_sumo_traffic_manager_exclusivity()`の後に呼ぶ):
 - `sumo_warmup_time > 0`は`use_sumo=True`のときだけ有効。
@@ -345,6 +364,7 @@ rear_clearance  = |s_rear| − L_ego/2 − L_rear/2
 | `src/autoware_carla_interface/sumo_integration/ego_spawn_gate.py` | **新規**。状態遷移(WARMUP/WAIT/SPAWN)と`evaluate_spawn_gap()`、判定用の固定値 |
 | `src/autoware_carla_interface/sumo_integration/simulation_synchronization.py` | `spawn_all_sumo_actors_in_carla()`追加(既存メソッドは無変更) |
 | `src/autoware_carla_interface/sumo_integration/sumo_simulation.py` | `get_vehicle_ids()`/`get_person_ids()`等の読み出しメソッド追加(既存メソッドは無変更) |
+| `test/sumo_warmup_params_test.py` | **新規**(S1)。起動時検査と、launch・`carla_ros.py`のパラメータ定義の一致 |
 | `test/sumo_ego_spawn_gate_test.py` | **新規**。ギャップ判定の単体テスト(既存の`pedestrian_sync_stub_test.py`と同じく手動実行のスクリプト) |
 | `test/sumo_warmup_catchup_stub_test.py` | **新規**。キャッチアップのスタブテスト(偽のSUMO/CARLAで`spawn_all_sumo_actors_in_carla()`を検査) |
 | `docs/SUMO-CARLA-Autoware_co-sim_起動手順.md` | パラメータ・スポーン地点の選び方・ルートファイルの条件・記録項目 |
@@ -408,11 +428,19 @@ python3 tools/carla_bbox_probe.py --all-from-vtypes \
 
 **完了条件**: 1〜6・8の結果を本計画書§6に記録し、方針に影響があれば計画を更新する。
 
-### Step S1: パラメータ追加(動作変更なし)
+### Step S1: パラメータ追加(動作変更なし) — **実装済み**(2026-10-01)
 
 - launch arg / ROS param 4つを追加し、`carla_autoware.py`で読み込み、§2.2の起動時検査を追加する。
 - `sumo_warmup_time=0`では何もしない。
 - テスト: 起動時検査の異常系(検査関数を切り出してスクリプトで確認)。
+- 実装内容:
+  - 検査は`sumo_integration/ego_spawn_gate.py`の`validate_warmup_params()`(traci/carla非依存の純粋関数)。
+    `InitializeInterface._check_sumo_warmup_params()`から呼ぶ。ウォームアップ無効時は`sumo_warmup_time ≥ 0`だけを検査する。
+  - `sumo_warmup_time > 0`を指定した場合、S3で実装するまでは「未実装のため従来どおりすぐにEGOをスポーンする」旨のWARNINGを出す。
+  - `test/sumo_warmup_params_test.py`: 検査の正常系・異常系、launch arg・param・`carla_ros.py`のパラメータ定義の一致
+    (既定値・型、整数で指定したときに渡る型)。`python3 test/sumo_warmup_params_test.py`で実行。
+- 実機確認(Linux機): `colcon build`後、(1) 引数なしで従来どおり起動すること、(2) `sumo_warmup_time:=100 tls_manager:=carla`等の
+  異常な組み合わせで起動時にエラーになること。
 
 ### Step S2: EGOスポーン処理の切り出し・停止フラグ(動作変更なし)
 
@@ -497,14 +525,14 @@ python3 tools/carla_bbox_probe.py --all-from-vtypes \
 |---|---|---|---|
 | 1 | CARLA側の車両なしでSUMOが進むか | **確認済み**(開発用PC、2026-09-30) | 1500秒まで正常に進んだ。車両が0台になった後も`simulationStep()`を受け付ける |
 | 2 | 1ステップの処理時間 | **確認済み**(Linux機・開発用PC、2026-09-30) | 下記6-1。一気に進める方式(`--mode jump`)はLinux機では未計測(開発用PCで差がなかったため方針は変えない) |
-| 3 | 車両タイプとブループリントの対応 | **確認済み**(Town01) | Town01で出発する27車種はすべてCARLAのブループリントIDで、`vtypes.json`にも登録済み |
+| 3 | 車両タイプとブループリントの対応 | **確認済み**(Town01) | 変更後の需要で出発する22車種はすべてCARLAのブループリントID。`european_hgv`・`fusorosa`は`vtypes.json`に未登録だが、ブループリントIDの完全一致でスポーンされる見込み(§1.7、S4で確認) |
 | 4 | EGO・NPC車種の`bounding_box`とSUMO車長の差 | **確認済み**(Linux機、2026-09-30) | 下記6-3。車長差は最大0.19 m、`bounding_box`中心のずれは最大0.057 mで、判定式の補正は不要 |
 | 5 | 出発する車両タイプ | **確認済み**(Town01) | 下記6-2 |
-| 6 | 交通流が安定するまでの時間 | **確認済み**(Town01) | 安定しない(§1.7)。下記6-1 |
+| 6 | 交通流が安定するまでの時間 | **確認済み**(Town01、変更後の需要は開発用PCのみ) | 変更後の需要では400秒で約40台に達した後もゆっくり増え続ける(§1.7、下記6-4)。変更前の需要は安定しない(下記6-1) |
 | 7 | Autowareがセンサー開始の遅れに耐えるか | Step S4へ移動 | |
 | 8 | `<end>`到達後のTraCIの挙動 | 未確認 | Town01の`.sumocfg`には`<end>`がないため、現状の運用では起きない |
 
-**6-1. Town01(`CARLA/Co-Simulation/Sumo/examples/Town01.sumocfg`)の計測結果**
+**6-1. Town01・変更前の需要(`CARLA/Co-Simulation/Sumo/examples/Town01.sumocfg`、2026-09-30時点)の計測結果**
 (`--step-length 0.05`、ヘッドレス。車両数・歩行者数はLinux機と開発用PCで完全に一致した)
 
 | SUMO時刻 | 20 s | 60 s | 100 s | 140 s | 200 s | 300 s | 400 s以降 |
@@ -545,6 +573,18 @@ python3 tools/carla_bbox_probe.py --all-from-vtypes \
 
 - → **判定式に中心のずれの補正は入れない**。車長差も必要距離(既定20 m)に比べて無視できるため、
   Town01ではStep S8(長いほうの車長で判定)は不要。
+
+---
+
+**6-4. Town01・変更後の需要の計測結果**(開発用PC、`--duration 1800`、2026-10-01)
+
+| SUMO時刻の区間 | 0〜120 s | 120〜240 s | 240〜360 s | 360〜600 s | 600〜900 s | 900〜1200 s | 1200〜1500 s | 1500〜1800 s |
+|---|---|---|---|---|---|---|---|---|
+| 車両数 平均(最小〜最大) | 13(0〜26) | 30(26〜35) | 28(22〜35) | 39(33〜46) | 44(39〜50) | 51(41〜60) | 50(43〜60) | 65(53〜81) |
+
+- 1800秒ぶんのwall-clockは18.8秒(実時間の約96倍)。ウォームアップ600秒なら開発用PCで約4秒(Linux機ではその約1.8倍の見込み、6-1の比)。
+- 車種別の出発台数(900秒時点、283台): carlacola 39、fusorosa 19、seat.leon 20、audi.etron 18、lincoln.mkz 15 ほか。
+  `carlavtypes.rou.xml`の車長はCARLAの寸法に合わせて更新されている(例: audi.a2 3.71 m、ford.mustang 4.72 m)。
 
 ---
 

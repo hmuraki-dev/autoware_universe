@@ -158,7 +158,15 @@ class InitializeInterface(object):
         self.sumo_sim = None
         self.sumo_sync = None
 
+        # SUMO warmup / EGO safe spawn parameters (see
+        # docs/SUMO_CARLA_Autoware_ウォームアップ_EGO安全スポーン_実装計画_v1.0.md)
+        self.sumo_warmup_time = self.param_["sumo_warmup_time"]
+        self.ego_spawn_front_margin = self.param_["ego_spawn_front_margin"]
+        self.ego_spawn_rear_margin = self.param_["ego_spawn_rear_margin"]
+        self.ego_spawn_wait_timeout = self.param_["ego_spawn_wait_timeout"]
+
         self._check_sumo_traffic_manager_exclusivity()
+        self._check_sumo_warmup_params()
 
     def _check_sumo_traffic_manager_exclusivity(self):
         """
@@ -181,6 +189,35 @@ class InitializeInterface(object):
                 "duplicate into SUMO, alongside SUMO's own NPCs. Disable "
                 "use_traffic_manager when use_sumo is enabled (see "
                 "docs/SUMO_CARLA_Autoware_統合修正項目_v0.5.md section 2.11)."
+            )
+
+    def _check_sumo_warmup_params(self):
+        """
+        Refuse to start if the SUMO warmup / EGO safe spawn parameters are invalid.
+
+        See docs/SUMO_CARLA_Autoware_ウォームアップ_EGO安全スポーン_実装計画_v1.0.md
+        section 2.2. With the default `sumo_warmup_time=0` (warmup disabled) this
+        accepts any value of the other parameters, so behavior is unchanged.
+        """
+        # ego_spawn_gate has no traci/sumolib/carla dependency, so importing it
+        # here is safe even when `use_sumo` is False.
+        from .sumo_integration.ego_spawn_gate import validate_warmup_params
+
+        validate_warmup_params(
+            self.use_sumo,
+            self.sumo_warmup_time,
+            self.ego_spawn_front_margin,
+            self.ego_spawn_rear_margin,
+            self.ego_spawn_wait_timeout,
+            self.spawn_point,
+            self.tls_manager,
+        )
+        if self.sumo_warmup_time > 0:
+            # Step S1 only adds and validates the parameters; the warmup itself
+            # is implemented from Step S3 on.
+            self.interface.logger.warning(
+                f"sumo_warmup_time={self.sumo_warmup_time} is set, but the SUMO warmup / "
+                "EGO safe spawn is not implemented yet; EGO is spawned immediately as before."
             )
 
     def _parse_spawn_point(self):

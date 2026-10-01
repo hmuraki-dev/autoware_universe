@@ -47,6 +47,16 @@
     <arg name="sync_vehicle_color" default="False" description="Synchronize vehicle color between SUMO and CARLA"/>
     <arg name="tls_manager" default="none" description="Traffic light authority: none, sumo, or carla"/>
 
+    <!--
+      SUMO warmup / EGO safe spawn parameters (see
+      docs/SUMO_CARLA_Autoware_ウォームアップ_EGO安全スポーン_実装計画_v1.0.md section 2.2).
+      sumo_warmup_time=0 (default) disables the warmup and keeps the current behavior.
+    -->
+    <arg name="sumo_warmup_time" default="0" description="Seconds (integer) to advance SUMO alone before spawning EGO. 0 = disabled. Requires use_sumo=True and a fixed spawn_point"/>
+    <arg name="ego_spawn_front_margin" default="20.0" description="Required distance [m] between the EGO front and the rear of the vehicle ahead before EGO is spawned"/>
+    <arg name="ego_spawn_rear_margin" default="20.0" description="Required distance [m] between the EGO rear and the front of the vehicle behind before EGO is spawned"/>
+    <arg name="ego_spawn_wait_timeout" default="60" description="Max seconds (integer) to wait for a safe gap after the warmup; exceeding it fails the test start"/>
+
     <!-- CARLA spectator camera auto-follow (see scripts/spectator_follow) -->
     <arg name="spectator_follow" default="False" description="Automatically lock the CARLA spectator camera onto the ego vehicle as soon as it spawns"/>
 
@@ -74,6 +84,11 @@
       <param name="sync_vehicle_lights" value="$(var sync_vehicle_lights)"/>
       <param name="sync_vehicle_color" value="$(var sync_vehicle_color)"/>
       <param name="tls_manager" value="$(var tls_manager)"/>
+      <param name="sumo_warmup_time" value="$(var sumo_warmup_time)"/>
+      <!-- float() so that an integer argument (e.g. ego_spawn_front_margin:=25) still matches the DOUBLE parameter type -->
+      <param name="ego_spawn_front_margin" value="$(eval &quot;float('$(var ego_spawn_front_margin)')&quot;)"/>
+      <param name="ego_spawn_rear_margin" value="$(eval &quot;float('$(var ego_spawn_rear_margin)')&quot;)"/>
+      <param name="ego_spawn_wait_timeout" value="$(var ego_spawn_wait_timeout)"/>
     </node>
 
     <!-- Keeps the CARLA spectator (free) camera locked onto the ego vehicle (role_name=
