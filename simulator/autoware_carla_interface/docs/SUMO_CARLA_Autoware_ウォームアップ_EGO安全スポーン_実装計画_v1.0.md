@@ -445,12 +445,20 @@ python3 tools/carla_bbox_probe.py --all-from-vtypes \
   `Error: invalid parameters: ...`の1行を出し、終了コード1で終わるようにした。ROSノードは終了前に後始末する。
   `use_sumo`と`use_traffic_manager`の併用エラーも同じ表示になる。
 
-### Step S2: EGOスポーン処理の切り出し・停止フラグ(動作変更なし)
+### Step S2: EGOスポーン処理の切り出し・停止フラグ(動作変更なし) — **実装済み**(2026-10-01)
 
 - `load_world()`のEGOスポーン・センサー設定・Traffic Manager設定を`_spawn_ego_and_sensors()`へ移す。
 - 停止フラグとシグナルハンドラの登録位置を§2.8のとおり変える。
 - ウォームアップ無効時は`load_world()`から呼び、現状と同じ順序・同じ動作にする。
 - 確認: ウォームアップ無効で実機co-simが従来どおり動くこと。Ctrl+Cで従来どおり終了すること。
+- 実装内容:
+  - `_spawn_ego_and_sensors(client)`: `load_world()`末尾の処理をそのまま移した。S2では常に`load_world()`の最後から呼ぶ。
+  - 停止フラグ`InitializeInterface.stop_requested`: `_stop_loop()`(SIGINT/SIGTERMハンドラ)が立てる。
+    `bridge_loop`がまだない場合(従来は`AttributeError`になっていた)はフラグだけを立てる。
+    `run_bridge()`は開始前にフラグが立っていれば何もせずに戻る(その後`finally`の`_cleanup()`が従来どおり走る)。
+  - シグナルハンドラの登録位置は変えない(`load_world()`の後、`try`の前)。S3のゲート処理はハンドラ登録後・`try`の中で
+    `run_bridge()`の前に呼ぶので、ゲート中のCtrl+Cもフラグで止められ、`_cleanup()`も走る。
+  - 単体テストは追加していない(`carla_autoware.py`はcarla・rclpyに依存し、切り出しのみで判定ロジックがないため)。実機で確認する。
 
 ### Step S3: WARMUPとキャッチアップ
 

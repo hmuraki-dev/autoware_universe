@@ -130,6 +130,12 @@ class InitializeInterface(object):
         self.sensor_wrapper = None
         self.ego_actor = None
         self.prev_tick_wall_time = 0.0
+        self.bridge_loop = None
+        # Set by the SIGINT/SIGTERM handler (_stop_loop). Checked by run_bridge()
+        # and, from Step S3 on, by the SUMO warmup / EGO spawn gate, which runs
+        # before bridge_loop exists (see
+        # docs/SUMO_CARLA_Autoware_ウォームアップ_EGO安全スポーン_実装計画_v1.0.md 2.8).
+        self.stop_requested = False
 
         # Parameter for Initializing Carla World
         self.local_host = self.param_["host"]
@@ -359,6 +365,18 @@ class InitializeInterface(object):
         # when `use_sumo` is False.
         self._init_sumo_integration(client)
 
+        self._spawn_ego_and_sensors(client)
+
+    def _spawn_ego_and_sensors(self, client):
+        """
+        Spawn EGO, set up its sensors and (optionally) the Traffic Manager NPCs.
+
+        Step S2 of docs/SUMO_CARLA_Autoware_ウォームアップ_EGO安全スポーン_実装計画_v1.0.md:
+        extracted unchanged from the end of `load_world()`, which still calls it
+        right after `_init_sumo_integration()`. From Step S3 on, when the SUMO
+        warmup is enabled, it is called by the EGO spawn gate instead, once a
+        safe gap has been found.
+        """
         spawn_point, randomize = self._parse_spawn_point()
         self.ego_actor = CarlaDataProvider.request_new_actor(
             self.vehicle_type, spawn_point, self.agent_role_name, random_location=randomize
@@ -373,6 +391,9 @@ class InitializeInterface(object):
             self._setup_traffic_manager(client)
 
     def run_bridge(self):
+        if self.stop_requested:
+            # SIGINT/SIGTERM arrived before the main loop started.
+            return
         self.bridge_loop = SensorLoop()
         self.bridge_loop.sensor = self.sensor_wrapper
         self.bridge_loop.ego_actor = self.ego_actor
@@ -396,7 +417,11 @@ class InitializeInterface(object):
                 self.bridge_loop._tick_sensor(timestamp)
 
     def _stop_loop(self, sign, frame):
-        self.bridge_loop._stop_loop()
+        self.stop_requested = True
+        # bridge_loop only exists once run_bridge() has started; before that
+        # (e.g. during the warmup), the flag above is what stops the process.
+        if self.bridge_loop is not None:
+            self.bridge_loop._stop_loop()
 
     def _cleanup(self):
         """
