@@ -165,8 +165,14 @@ class InitializeInterface(object):
         self.ego_spawn_rear_margin = self.param_["ego_spawn_rear_margin"]
         self.ego_spawn_wait_timeout = self.param_["ego_spawn_wait_timeout"]
 
-        self._check_sumo_traffic_manager_exclusivity()
-        self._check_sumo_warmup_params()
+        try:
+            self._check_sumo_traffic_manager_exclusivity()
+            self._check_sumo_warmup_params()
+        except ValueError:
+            # Invalid launch parameters: release the ROS node/spin thread created
+            # above before main() reports the error and exits.
+            self._cleanup_ros_interface()
+            raise
 
     def _check_sumo_traffic_manager_exclusivity(self):
         """
@@ -512,7 +518,14 @@ class InitializeInterface(object):
 
 def main():
     """Run the CARLA-Autoware bridge with proper cleanup on all exit paths."""
-    carla_bridge = InitializeInterface()
+    try:
+        carla_bridge = InitializeInterface()
+    except ValueError as e:
+        # Invalid launch parameter combination (startup checks in
+        # InitializeInterface.__init__). Report it as one line instead of a
+        # traceback, so the cause is easy to spot in the launch output.
+        print(f"Error: invalid parameters: {e}", flush=True)
+        return 1
     carla_bridge.load_world()
 
     # Register signal handlers for graceful shutdown

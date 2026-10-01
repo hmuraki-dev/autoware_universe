@@ -439,8 +439,11 @@ python3 tools/carla_bbox_probe.py --all-from-vtypes \
   - `sumo_warmup_time > 0`を指定した場合、S3で実装するまでは「未実装のため従来どおりすぐにEGOをスポーンする」旨のWARNINGを出す。
   - `test/sumo_warmup_params_test.py`: 検査の正常系・異常系、launch arg・param・`carla_ros.py`のパラメータ定義の一致
     (既定値・型、整数で指定したときに渡る型)。`python3 test/sumo_warmup_params_test.py`で実行。
-- 実機確認(Linux機): `colcon build`後、(1) 引数なしで従来どおり起動すること、(2) `sumo_warmup_time:=100 tls_manager:=carla`等の
-  異常な組み合わせで起動時にエラーになること。
+- 実機確認(Linux機、2026-10-01): (1) 引数なしで従来どおり起動した。(2) `sumo_warmup_time:=100`のみ(`spawn_point`未指定)で、
+  `ValueError: sumo_warmup_time > 0 requires spawn_point ...`によりSUMO接続前に停止した(期待どおり)。
+- 補足(実機確認を受けて): 検査エラーがトレースバックに埋もれて分かりにくかったため、`main()`で`ValueError`を受けて
+  `Error: invalid parameters: ...`の1行を出し、終了コード1で終わるようにした。ROSノードは終了前に後始末する。
+  `use_sumo`と`use_traffic_manager`の併用エラーも同じ表示になる。
 
 ### Step S2: EGOスポーン処理の切り出し・停止フラグ(動作変更なし)
 
