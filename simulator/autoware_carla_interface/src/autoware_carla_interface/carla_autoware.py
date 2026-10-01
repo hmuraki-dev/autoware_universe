@@ -17,6 +17,7 @@
 import logging
 import random
 import signal
+import sys
 import time
 
 import carla
@@ -543,6 +544,13 @@ class InitializeInterface(object):
 
 def main():
     """Run the CARLA-Autoware bridge with proper cleanup on all exit paths."""
+    # Under ros2 launch, stdout is a pipe and therefore block-buffered: the
+    # print() messages of the shutdown path ("Cleaning up CARLA resources...")
+    # stay in the buffer and can be lost if the process is killed (e.g. launch
+    # escalating to SIGKILL after Ctrl+C), or show up late and out of order with
+    # the stderr logs (rclpy). Flush stdout at every newline instead.
+    sys.stdout.reconfigure(line_buffering=True)
+
     try:
         carla_bridge = InitializeInterface()
     except ValueError as e:
