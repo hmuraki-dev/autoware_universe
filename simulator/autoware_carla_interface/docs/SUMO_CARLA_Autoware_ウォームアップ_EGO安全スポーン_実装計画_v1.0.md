@@ -330,6 +330,7 @@ rear_clearance  = |s_rear| − L_ego/2 − L_rear/2
 | ウォームアップ中・空き待ち中にSUMOが異常終了 | 試験開始失敗として終了 |
 | EGOスポーン失敗(`request_new_actor`がNone) | 試験開始失敗として終了(待ち直しはしない) |
 | SIGINT/SIGTERM | ウォームアップ・空き待ちのループも停止フラグを見て抜ける |
+| SIGINT後のTraCI切断(`FatalTraCIError`) | Ctrl+CのSIGINTはSUMOにも届き、SUMOが先に終了する(S2の実機確認で判明、従来からの挙動)。停止フラグが立った後のTraCI切断は異常ではなく正常な停止として扱い、トレースバックを出さずに後始末して終了コード0で終える。停止要求なしのTraCI切断は従来どおり異常終了 |
 
 - 現状の`main()`はシグナルハンドラを`load_world()`の後に登録し、`_stop_loop()`は`self.bridge_loop`を前提にしている。
   ゲート処理を`load_world()`と`run_bridge()`の間に入れるため、停止フラグを`InitializeInterface`側に持たせ、
@@ -459,6 +460,16 @@ python3 tools/carla_bbox_probe.py --all-from-vtypes \
   - シグナルハンドラの登録位置は変えない(`load_world()`の後、`try`の前)。S3のゲート処理はハンドラ登録後・`try`の中で
     `run_bridge()`の前に呼ぶので、ゲート中のCtrl+Cもフラグで止められ、`_cleanup()`も走る。
   - 単体テストは追加していない(`carla_autoware.py`はcarla・rclpyに依存し、切り出しのみで判定ロジックがないため)。実機で確認する。
+- 実機確認(Linux機、2026-10-01):
+  - 引数なしで従来どおり起動・co-simが動いた。`sumo_warmup_time:=100`のみで`Error: invalid parameters: ...`の1行で終了した。
+    `sumo_warmup_time:=100 spawn_point:=...`で未実装のWARNINGが出て従来どおり起動した。
+  - Ctrl+Cで`Cleaning up CARLA resources...`→`Cleanup complete.`まで走り、SUMOプロセス・CARLA上のアクター(vehicle/walker/sensor)は0になった。
+  - 判明した点1: Ctrl+C後の`print()`がros2 launch下で失われていた → `main()`で標準出力を行バッファにした(`b23fe45d4`)。
+    また`ros2 launch ... | tee`ではCtrl+Cで`tee`も終了してログが切れるため、ログ保存は`tee -i`を使う(S7で起動手順書に反映)。
+  - 判明した点2(従来からの挙動): Ctrl+CのSIGINTはSUMOのプロセスにも届くため、SUMOが先に終了し、次の`traci.simulationStep()`で
+    `FatalTraCIError: Connection closed by SUMO.` → `Error during bridge operation` → 後始末 → トレースバック・終了コード1になる。
+    EGOのSUMO側の車両(`carla0`)の削除も`Connection already closed.`の警告になる(SUMOごと終了しているので実害はない)。
+    ゲート処理中のCtrl+Cでも同じことが起きるため、S3で「停止要求後のTraCI切断は正常な停止として扱う」対処を入れる(§2.8)。
 
 ### Step S3: WARMUPとキャッチアップ
 
