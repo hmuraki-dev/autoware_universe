@@ -575,6 +575,13 @@ python3 tools/carla_bbox_probe.py --all-from-vtypes \
   - #37: 600.05秒の最初の判定で後続車`in1_A.53`と重複してWAIT。その後、前後の車両が次々通過する間WAITが続き、
     **613.85秒にSAFE(waited=13.80 s)**でスポーン(S5の単独確認と一致)。
   - #36: 600.05秒の最初の判定でSAFE、すぐにスポーン。
+- 実機確認(Linux機、2026-10-02、Town01・変更後の需要、`sumo_warmup_time:=600`、既定の必要距離20 m・上限60秒):
+  - #37: `[EGO SPAWN CHECK]`でWAITが続いた後、`t=613.80 ... front=sumo:in1_A.57 clearance=20.2 m rear=sumo:in1_A.58 clearance=24.7 m
+    overlap=none result=SAFE` → `[EGO SPAWN] t=613.80 s waited=13.75 s`。S4のように押されて動き出すことはなく、
+    RVizにEGOが表示され、目的地設定・Autoで走行できた(**OK**)。
+  - 実機のCARLAの車線幅は4.00 m(開発用PCでの確認では仮に3.5 mとしていた)。前後車の並びと判定の推移は開発用PCの結果とほぼ一致
+    (SAFEの時刻が0.05秒早い)。空き待ち13.75秒(シミュレーション時間)のwall-clockは約10.8秒。
+  - 未確認: タイムアウト(`ego_spawn_wait_timeout:=3`)、待ち中のCtrl+C。
 
 
 ### Step S7: ログ・記録・起動手順書
