@@ -617,7 +617,7 @@ python3 tools/carla_bbox_probe.py --all-from-vtypes \
 
 - 運用して、必要距離の上乗せでは不十分な場合に実装する(§2.6.4)。
 
-### Step S9: 実機検証
+### Step S9: 実機検証 — **完了**(2026-10-02)
 
 | # | 確認内容 | 期待結果 |
 |---|---|---|
@@ -631,6 +631,23 @@ python3 tools/carla_bbox_probe.py --all-from-vtypes \
 | 8 | 信号同期(`tls_manager=sumo`) | ウォームアップ後もSUMOとCARLAの信号が一致している |
 | 9 | `tls_manager=carla` + ウォームアップ | 起動時エラーになる |
 | 10 | 再現性 | 同じ`.sumocfg`・同じパラメータで2回実行し、EGOスポーン時刻・前後車IDが一致するか記録する |
+
+実機検証の結果(Linux機、Town01・変更後の需要、`sumo_warmup_time:=600`、既定の必要距離20 m・上限60秒):
+
+| # | 結果 | 根拠 |
+|---|---|---|
+| 1 | OK | S2: 引数なしで従来どおり起動・走行、Ctrl+Cで後始末完了 |
+| 2 | OK | wall-clock 18.4〜19.3秒(`sumo_gui:=true`)、600秒時点で40台(開発用PCの実物のSUMOと1台単位で一致) |
+| 3 | OK | `caught up: carla_spawned=40 sumo_only=0`。バス(`fusorosa`)・トレーラー(`european_hgv`)も警告なしで同じIDのブループリントでスポーン |
+| 4 | OK | #36: 600.05秒の最初の判定でSAFE、従来どおりRViz表示・Autoで走行 |
+| 5 | OK | #37: 空き待ち13.75秒でSAFE、スポーン直後に押されることなくRViz表示・Autoで走行(S3の空き判定なしでは後続車がEGO位置に重なっていた) |
+| 6 | OK | `ego_spawn_wait_timeout:=3`で`Error: test start failed: ...` → 後始末 → 終了コード1 → sumo-gui自動終了(`--quit-on-end`) → launch全体停止(`on_exit="shutdown"`) |
+| 7 | OK | EGOスポーン後の`/clock`: 0.55 → 1.70 → 2.75 → 3.85秒(ウォームアップ・空き待ちの時間を含まない) |
+| 8 | OK | ウォームアップ後もCARLAとsumo-guiの信号が一致(目視) |
+| 9 | OK | `tls_manager:=carla`で`Error: invalid parameters: sumo_warmup_time > 0 cannot be used with tls_manager='carla' ...` |
+| 10 | OK(参考) | #37の2回の実行で、空き待ちの判定の推移・SAFEの時刻(613.80秒)・前後車(`in1_A.57`/`in1_A.58`)が一致 |
+
+その他: 待ち中のCtrl+Cは`stop requested`→後始末→正常終了(S6)。Step S8(長いほうの車長で判定)はTown01では不要(S0 #4)。
 
 ---
 
