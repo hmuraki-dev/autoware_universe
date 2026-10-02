@@ -367,7 +367,7 @@ rear_clearance  = |s_rear| − L_ego/2 − L_rear/2
 | `src/autoware_carla_interface/sumo_integration/sumo_simulation.py` | `get_vehicle_ids()`/`get_person_ids()`等の読み出しメソッド追加(既存メソッドは無変更) |
 | `test/sumo_warmup_params_test.py` | **新規**(S1)。起動時検査と、launch・`carla_ros.py`のパラメータ定義の一致 |
 | `test/sumo_ego_spawn_gate_test.py` | **新規**。ギャップ判定の単体テスト(既存の`pedestrian_sync_stub_test.py`と同じく手動実行のスクリプト) |
-| `test/sumo_warmup_catchup_stub_test.py` | **新規**。キャッチアップのスタブテスト(偽のSUMO/CARLAで`spawn_all_sumo_actors_in_carla()`を検査) |
+| `test/sumo_warmup_catchup_stub_test.py` | **新規**(S3)。キャッチアップとゲートの順序のスタブテスト(偽のSUMO/CARLAで`spawn_all_sumo_actors_in_carla()`・`EgoSpawnGate`を検査) |
 | `docs/SUMO-CARLA-Autoware_co-sim_起動手順.md` | パラメータ・スポーン地点の選び方・ルートファイルの条件・記録項目 |
 | `sumo_integration/NOTICE.md` | vendorファイル(`simulation_synchronization.py`・`sumo_simulation.py`)への変更点を追記 |
 
@@ -471,13 +471,34 @@ python3 tools/carla_bbox_probe.py --all-from-vtypes \
     EGOのSUMO側の車両(`carla0`)の削除も`Connection already closed.`の警告になる(SUMOごと終了しているので実害はない)。
     ゲート処理中のCtrl+Cでも同じことが起きるため、S3で「停止要求後のTraCI切断は正常な停止として扱う」対処を入れる(§2.8)。
 
-### Step S3: WARMUPとキャッチアップ
+### Step S3: WARMUPとキャッチアップ — **実装済み**(2026-10-02)
 
 - `ego_spawn_gate.py`にWARMUPループを実装する(§2.3)。
 - `spawn_all_sumo_actors_in_carla()`と`SumoSimulation`の読み出しメソッドを実装する(§2.4)。
 - この段階では、ウォームアップ後すぐにEGOをスポーンする(ギャップ判定なし)。
 - テスト: `sumo_warmup_catchup_stub_test.py`(未登録の車両・歩行者だけがスポーンされる、CARLA由来の車両は対象外、
   ブループリントがない車両はunsubscribeされる、二重にスポーンしない)。
+- 実装内容:
+  - `SumoSimulation.get_vehicle_ids()`/`get_person_ids()`/`get_time()`(traciの薄いラッパー)。
+  - `SimulationSynchronization.spawn_all_sumo_actors_in_carla()`: 戻り値は
+    `{vehicles, vehicles_not_in_carla, pedestrians, pedestrians_not_in_carla}`の件数。
+  - `ego_spawn_gate.EgoSpawnGate`: WARMUP(`sumo.tick()`のみ、10秒ごとに進捗ログ)→ キャッチアップ →
+    **同期1ステップ(EGOなし)** → EGOスポーン。同期1ステップを挟むのは、キャッチアップでスポーンした車両は
+    (既存のスポーンと同じく)`SPAWN_OFFSET_Z`=25 m上空に物理なしで置かれ、次の同期で道路上へ移されるため。
+    挟まないと、CARLAの`try_spawn_actor`の重なり判定が効かないままEGOがスポーンされる。各段階の前に停止フラグを確認する。
+  - `carla_autoware.py`: `sumo_warmup_time > 0`のときは`load_world()`でEGOをスポーンせず、`main()`で`run_bridge()`の前に
+    `run_ego_spawn_gate()`を呼ぶ(シグナルハンドラ登録後・`try`の中)。S1の「未実装」WARNINGは削除。
+  - EGOスポーン失敗(`request_new_actor()`が`None`)は`RuntimeError: failed to spawn EGO ...`にした
+    (従来は次の行の`AttributeError`。ウォームアップ無効時も、失敗時のメッセージだけが変わる)。
+  - §2.8のSIGINT後のTraCI切断: `is_sumo_disconnect_after_stop()`。停止要求後の`FatalTraCIError`は
+    `Stopped: SUMO closed the TraCI connection after the stop request (...)`を出して後始末し、終了コード0。
+    ウォームアップ中・通常ループ中のどちらにも効く。
+  - テスト(`python3 test/sumo_warmup_catchup_stub_test.py`): キャッチアップ(未登録の車両・歩行者だけ、CARLA由来は対象外、
+    ブループリントなしはunsubscribe、2回呼んでも二重にスポーンしない、vtypes.json未登録でもブループリントIDが一致すればスポーン)、
+    ゲートの順序(WARMUP中はCARLAをtickしない、2000ステップ後に同期1ステップ→EGOスポーン、進捗ログ9行)、
+    WARMUP中の停止要求。carla・lxmlがない環境では最小限の代用モジュールを入れて実行する(Linux機では本物を使う)。
+  - 開発用PCでの確認(実物のSUMO + 偽のCARLA、Town01・変更後の需要、`sumo_warmup_time=600`): WARMUPのwall-clockは約6秒、
+    キャッチアップで40台すべてをCARLA側に登録、その後10秒間の通常同期で出発・到着も反映され、未登録の車両は0台。
 
 ### Step S4: S3の実機確認
 

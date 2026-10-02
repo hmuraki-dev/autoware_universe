@@ -6,8 +6,9 @@
 # This work is licensed under the terms of the MIT license.
 # For a copy, see <https://opensource.org/licenses/MIT>.
 #
-# Vendored into autoware_carla_interface (unmodified). See NOTICE.md in this
-# directory for details. Requires `traci`/`sumolib` on sys.path (SUMO_HOME),
+# Vendored into autoware_carla_interface with modifications (pedestrian support,
+# read-only accessors for the warmup gate). See NOTICE.md in this directory for
+# details. Requires `traci`/`sumolib` on sys.path (SUMO_HOME),
 # so this module is intentionally not imported eagerly by __init__.py.
 """ This module is responsible for the management of the sumo simulation. """
 
@@ -490,6 +491,32 @@ class SumoSimulation(object):
         extent = carla.Vector3D(length / 2.0, width / 2.0, height / 2.0)
 
         return SumoActor(type_id, vclass, transform, None, extent, color)
+
+    # Read-only accessors added for the SUMO warmup / EGO safe spawn gate (not in upstream, see
+    # NOTICE.md and docs/SUMO_CARLA_Autoware_ウォームアップ_EGO安全スポーン_実装計画_v1.0.md 2.4).
+    # Unlike spawned_actors/spawned_persons (departures of the last step only), these return
+    # everything currently in the simulation, which is what the catch-up after the warmup needs.
+
+    @staticmethod
+    def get_vehicle_ids():
+        """
+        Returns the ids of all vehicles currently in the simulation.
+        """
+        return traci.vehicle.getIDList()
+
+    @staticmethod
+    def get_person_ids():
+        """
+        Returns the ids of all persons (pedestrians) currently in the simulation.
+        """
+        return traci.person.getIDList()
+
+    @staticmethod
+    def get_time():
+        """
+        Returns the current simulation time in seconds.
+        """
+        return traci.simulation.getTime()
 
     def spawn_actor(self, type_id, color=None):
         """

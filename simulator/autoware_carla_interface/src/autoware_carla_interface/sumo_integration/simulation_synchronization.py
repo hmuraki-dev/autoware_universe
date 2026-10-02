@@ -223,6 +223,66 @@ class SimulationSynchronization(object):
 
                 self.carla.synchronize_traffic_light(landmark_id, carla_tl_state)
 
+    def spawn_all_sumo_actors_in_carla(self):
+        """
+        Spawn in carla every sumo vehicle/person that is not mirrored there yet.
+
+        Not in upstream: added for the SUMO warmup (see NOTICE.md and
+        docs/SUMO_CARLA_Autoware_ウォームアップ_EGO安全スポーン_実装計画_v1.0.md 2.4). During the
+        warmup only `self.sumo.tick()` runs, and `sync_sumo_to_carla()` only spawns what departed
+        in the current step, so everything that departed during the warmup would otherwise never
+        appear in carla. Uses the same per-actor steps as `sync_sumo_to_carla()`; the existing
+        methods are unchanged. Does not tick carla.
+
+            :return: dict with the number of vehicles/pedestrians spawned in carla and of those
+                that could not be (no matching blueprint, or spawn failure).
+        """
+        counts = {'vehicles': 0, 'vehicles_not_in_carla': 0,
+                  'pedestrians': 0, 'pedestrians_not_in_carla': 0}
+
+        carla_controlled = set(self.carla2sumo_ids.values())
+        for sumo_actor_id in self.sumo.get_vehicle_ids():
+            if sumo_actor_id in self.sumo2carla_ids or sumo_actor_id in carla_controlled:
+                continue
+            self.sumo.subscribe(sumo_actor_id)
+            sumo_actor = self.sumo.get_actor(sumo_actor_id)
+
+            carla_blueprint = BridgeHelper.get_carla_blueprint(sumo_actor, self.sync_vehicle_color)
+            if carla_blueprint is not None:
+                carla_transform = BridgeHelper.get_carla_transform(sumo_actor.transform,
+                                                                   sumo_actor.extent)
+
+                carla_actor_id = self.carla.spawn_actor(carla_blueprint, carla_transform)
+                if carla_actor_id != INVALID_ACTOR_ID:
+                    self.sumo2carla_ids[sumo_actor_id] = carla_actor_id
+                    counts['vehicles'] += 1
+                    continue
+            else:
+                self.sumo.unsubscribe(sumo_actor_id)
+            counts['vehicles_not_in_carla'] += 1
+
+        for sumo_person_id in self.sumo.get_person_ids():
+            if sumo_person_id in self.sumo2carla_ped_ids:
+                continue
+            self.sumo.subscribe_person(sumo_person_id)
+            sumo_person = self.sumo.get_person(sumo_person_id)
+
+            carla_blueprint = BridgeHelper.get_carla_blueprint(sumo_person)
+            if carla_blueprint is not None:
+                carla_transform = BridgeHelper.get_carla_pedestrian_transform(sumo_person)
+
+                carla_walker_id = self.carla.spawn_actor(carla_blueprint, carla_transform)
+                if carla_walker_id != INVALID_ACTOR_ID:
+                    self.sumo2carla_ped_ids[sumo_person_id] = carla_walker_id
+                    counts['pedestrians'] += 1
+                    continue
+                logging.error('[sync] failed to spawn carla walker for sumo pedestrian %s',
+                              sumo_person_id)
+            self.sumo.unsubscribe_person(sumo_person_id)
+            counts['pedestrians_not_in_carla'] += 1
+
+        return counts
+
     def sync_carla_to_sumo(self):
         """
         "carla-->sumo sync" half of the co-simulation step.

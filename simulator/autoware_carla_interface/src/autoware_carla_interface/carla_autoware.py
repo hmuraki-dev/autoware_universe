@@ -132,6 +132,7 @@ class InitializeInterface(object):
         self.ego_actor = None
         self.prev_tick_wall_time = 0.0
         self.bridge_loop = None
+        self.client = None
         # Set by the SIGINT/SIGTERM handler (_stop_loop). Checked by run_bridge()
         # and, from Step S3 on, by the SUMO warmup / EGO spawn gate, which runs
         # before bridge_loop exists (see
@@ -225,13 +226,6 @@ class InitializeInterface(object):
             self.spawn_point,
             self.tls_manager,
         )
-        if self.sumo_warmup_time > 0:
-            # Step S1 only adds and validates the parameters; the warmup itself
-            # is implemented from Step S3 on.
-            self.interface.logger.warning(
-                f"sumo_warmup_time={self.sumo_warmup_time} is set, but the SUMO warmup / "
-                "EGO safe spawn is not implemented yet; EGO is spawned immediately as before."
-            )
 
     def _parse_spawn_point(self):
         """Parse spawn point string and return transform with randomize flag."""
@@ -366,6 +360,15 @@ class InitializeInterface(object):
         # when `use_sumo` is False.
         self._init_sumo_integration(client)
 
+        self.client = client
+        if self.sumo_warmup_time > 0:
+            # EGO is spawned by run_ego_spawn_gate() after the SUMO warmup (see
+            # docs/SUMO_CARLA_Autoware_ウォームアップ_EGO安全スポーン_実装計画_v1.0.md 2.1).
+            self.interface.logger.info(
+                f"SUMO warmup enabled (sumo_warmup_time={self.sumo_warmup_time} s): "
+                "EGO is spawned after the warmup."
+            )
+            return
         self._spawn_ego_and_sensors(client)
 
     def _spawn_ego_and_sensors(self, client):
@@ -382,6 +385,12 @@ class InitializeInterface(object):
         self.ego_actor = CarlaDataProvider.request_new_actor(
             self.vehicle_type, spawn_point, self.agent_role_name, random_location=randomize
         )
+        if self.ego_actor is None:
+            # request_new_actor() returns None if the spawn point is occupied.
+            # (Previously this surfaced as an AttributeError on the next line.)
+            raise RuntimeError(
+                f"failed to spawn EGO ({self.vehicle_type}) at spawn_point={self.spawn_point}"
+            )
         self.interface.ego_actor = self.ego_actor  # TODO improve design
         self.interface.physics_control = self.ego_actor.get_physics_control()
 
@@ -390,6 +399,43 @@ class InitializeInterface(object):
 
         if self.use_traffic_manager:
             self._setup_traffic_manager(client)
+
+    def run_ego_spawn_gate(self):
+        """
+        SUMO warmup -> catch-up -> EGO spawn, before run_bridge() (sumo_warmup_time > 0 only).
+
+        See docs/SUMO_CARLA_Autoware_ウォームアップ_EGO安全スポーン_実装計画_v1.0.md 2.1.
+        Returns True once EGO has been spawned, False if SIGINT/SIGTERM came first
+        (run_bridge() then returns immediately because stop_requested is set).
+        """
+        from .sumo_integration.ego_spawn_gate import EgoSpawnGate
+
+        gate = EgoSpawnGate(
+            self.sumo_sync,
+            self.world,
+            self.sumo_warmup_time,
+            self.fixed_delta_seconds,
+            spawn_ego=lambda: self._spawn_ego_and_sensors(self.client),
+            stop_requested=lambda: self.stop_requested,
+            log_info=self.interface.logger.info,
+        )
+        return gate.run()
+
+    def is_sumo_disconnect_after_stop(self, error):
+        """
+        Return True if `error` is the TraCI disconnect caused by Ctrl+C.
+
+        Ctrl+C sends SIGINT to SUMO as well, so SUMO usually exits first and the
+        next TraCI call raises FatalTraCIError. Once a stop has been requested this
+        is the expected way to stop, not a failure (see
+        docs/SUMO_CARLA_Autoware_ウォームアップ_EGO安全スポーン_実装計画_v1.0.md 2.8).
+        A TraCI disconnect without a stop request is still treated as an error.
+        """
+        if not (self.stop_requested and self.use_sumo):
+            return False
+        import traci  # available whenever use_sumo is True (see _init_sumo_integration)
+
+        return isinstance(error, traci.exceptions.FatalTraCIError)
 
     def run_bridge(self):
         if self.stop_requested:
@@ -566,12 +612,16 @@ def main():
     signal.signal(signal.SIGTERM, carla_bridge._stop_loop)
 
     try:
+        if carla_bridge.sumo_warmup_time > 0:
+            carla_bridge.run_ego_spawn_gate()
         carla_bridge.run_bridge()
     except KeyboardInterrupt:
         print("\nReceived keyboard interrupt, shutting down...")
     except Exception as e:
-        print(f"\nError during bridge operation: {e}")
-        raise
+        if not carla_bridge.is_sumo_disconnect_after_stop(e):
+            print(f"\nError during bridge operation: {e}")
+            raise
+        print(f"\nStopped: SUMO closed the TraCI connection after the stop request ({e})")
     finally:
         # Ensure cleanup always happens, even on exception or signal
         print("Cleaning up CARLA resources...")

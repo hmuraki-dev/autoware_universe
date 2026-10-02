@@ -21,6 +21,10 @@ Vendored locally from `/home/divp/CARLA/Co-Simulation/Sumo/` per
   and `subscribe_person()`/`unsubscribe_person()`/`get_person()` (reusing the
   existing `SumoActor` namedtuple, `signals=None`). One-directional
   (sumo-->carla) only; no `spawn_person()`/`destroy_person()` were added.
+  Later gained read-only accessors `get_vehicle_ids()`/`get_person_ids()`/
+  `get_time()` (thin `traci` wrappers) for the SUMO warmup / EGO safe spawn
+  gate (`docs/SUMO_CARLA_Autoware_ウォームアップ_EGO安全スポーン_実装計画_v1.0.md`
+  Step S3). Existing methods are unchanged.
 - `bridge_helper.py`: only the `vtypes.json` path lookup was adjusted
   originally, since the data file was moved from `../data/vtypes.json` to
   `./data/vtypes.json` relative to this package. `get_carla_pedestrian_transform()`
@@ -54,6 +58,16 @@ Vendored locally from `/home/divp/CARLA/Co-Simulation/Sumo/` per
   `sumo2carla_ped_ids` map and a "sumo-->carla pedestrian sync" block inside
   `sync_sumo_to_carla()` (always enabled, one-directional), plus pedestrian
   actor destruction in `close()`, per the pedestrian-sync plan (task 5).
+  Later gained `spawn_all_sumo_actors_in_carla()` for the SUMO warmup (same
+  plan as above, Step S3): spawns in carla every sumo vehicle/person not
+  mirrored yet (everything that departed while only SUMO was ticked), using
+  the same per-actor steps as `sync_sumo_to_carla()`. The existing methods,
+  including `sync_sumo_to_carla()`'s departures-only spawning, are unchanged.
+
+## Files new in this package (not from upstream)
+
+- `ego_spawn_gate.py`: SUMO warmup / EGO safe spawn gate (parameter
+  validation, `EgoSpawnGate`). See the warmup plan above.
 
 ## Intentionally not vendored (v0.5 section 0.5 item 4 / Step 0 decision)
 
