@@ -549,7 +549,7 @@ python3 tools/carla_bbox_probe.py --all-from-vtypes \
   - #36: t=600.00でSAFE(前後とも車両なし)。
 
 
-### Step S6: WAIT_FOR_SAFE_GAPとタイムアウト — **実装済み**(2026-10-02、実機確認待ち)
+### Step S6: WAIT_FOR_SAFE_GAPとタイムアウト — **完了**(2026-10-02、実機確認済み)
 
 - S3の「すぐにスポーン」を、判定 → NGなら同期1ステップ → 再判定、に置き換える(§2.6.5)。
 - タイムアウト・SIGINT・SUMO異常終了時の終了処理(§2.8)。
@@ -590,7 +590,14 @@ python3 tools/carla_bbox_probe.py --all-from-vtypes \
     → sumo-gui起動時に`--quit-on-end`(「Quits the GUI when the simulation stops」)を付けた(`sumo_simulation.py`、NOTICE.mdに記録)。
     再確認(2026-10-02): `Error: test start failed: ...` → `Cleanup complete.` → `process has died [... exit code 1 ...]`の順に出て、
     sumo-guiはダイアログを出さずに閉じ、`on_exit="shutdown"`によりlaunch全体(RViz・Autoware)が終了してプロンプトに戻った(**OK**)。
-  - 未確認: 待ち中のCtrl+C。
+  - 待ち中のCtrl+C(#37、t=606.30のWAIT中): `[SUMO WARMUP] stop requested at t=606.35 s; EGO is not spawned` →
+    `Cleaning up CARLA resources...` → `Cleanup complete.` → `process has finished cleanly`(**OK**)。
+    その後`on_exit="shutdown"`により`[ERROR] [launch]: Caught exception in launch ...: Cannot shutdown a ROS adapter that is not running`
+    が1行出る。Ctrl+Cでlaunchがすでに停止処理中のところへ、必須ノードの終了による停止要求が重なったときのlaunch_ros(Humble)側の
+    メッセージで、各プロセスは停止しており実害はない(Vissim版の`on_exit="shutdown"`でも同じ条件で出る)。
+  - 参考(従来からの挙動): `tls_manager=sumo`で`[BridgeHelper] Different SUMO traffic-light states ['G', 'r'] are assigned to the same
+    CARLA landmark. CARLA state is forced to red.`のWARNINGが同期ステップごとに出る(`bridge_helper.py`、統合Step 1から)。
+    空き待ちはsleepなしで同期ステップを回すため、短時間に多数出る。本計画の変更とは無関係なので、必要なら別途間引きを検討する。
 
 
 ### Step S7: ログ・記録・起動手順書
