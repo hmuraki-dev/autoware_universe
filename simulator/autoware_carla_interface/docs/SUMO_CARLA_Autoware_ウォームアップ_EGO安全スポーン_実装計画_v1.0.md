@@ -587,7 +587,9 @@ python3 tools/carla_bbox_probe.py --all-from-vtypes \
     しかし`sumo_gui:=true`では、後始末の`traci.close()`に対してsumo-guiが「Simulation ended ... TraCI requested termination.
     Do you want to close all open files and views?」のダイアログを出し、[Yes]でも終了しないため、SUMOの終了を待つ`traci.close()`が
     戻らず、`Cleanup complete.`もノードの終了も出なかった(従来はCtrl+CでSUMOも先に終了していたため表面化していなかった)。
-    → sumo-gui起動時に`--quit-on-end`(「Quits the GUI when the simulation stops」)を付けた(`sumo_simulation.py`、NOTICE.mdに記録)。再確認待ち。
+    → sumo-gui起動時に`--quit-on-end`(「Quits the GUI when the simulation stops」)を付けた(`sumo_simulation.py`、NOTICE.mdに記録)。
+    再確認(2026-10-02): `Error: test start failed: ...` → `Cleanup complete.` → `process has died [... exit code 1 ...]`の順に出て、
+    sumo-guiはダイアログを出さずに閉じ、`on_exit="shutdown"`によりlaunch全体(RViz・Autoware)が終了してプロンプトに戻った(**OK**)。
   - 未確認: 待ち中のCtrl+C。
 
 
