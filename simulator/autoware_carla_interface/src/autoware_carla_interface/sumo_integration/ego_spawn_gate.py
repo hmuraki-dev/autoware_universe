@@ -12,6 +12,8 @@ pure parts (parameter validation, gap evaluation) can be tested anywhere. `EgoSp
 uses the SUMO/CARLA objects it is given (duck typing), so it can be tested with fakes as well.
 """
 
+import collections
+import math
 import time
 
 # Gap evaluation constants (section 2.2). Fixed values, deliberately not launch args.
@@ -74,6 +76,120 @@ def validate_warmup_params(use_sumo, sumo_warmup_time, ego_spawn_front_margin,
     if ego_spawn_wait_timeout < 1:
         raise ValueError(
             'ego_spawn_wait_timeout must be >= 1, got %r' % (ego_spawn_wait_timeout,))
+
+
+# ==================================================================================================
+# -- gap evaluation (section 2.6, Step S5) ----------------------------------------------------------
+# ==================================================================================================
+
+# One actor around the EGO spawn point, in CARLA coordinates (meters / degrees). x, y is the center
+# of the actor's footprint; length/width its full size. `source` is 'carla' (position and size
+# from the CARLA actor), 'sumo_only' (a SUMO vehicle not mirrored in CARLA: center converted from
+# SUMO, SUMO size, section 2.6.3) or 'pedestrian' (only checked for overlap, never a leader or
+# follower). `actor_id` is the display id used in the logs, e.g. "sumo:in1_A.3/carla:123".
+GapActor = collections.namedtuple('GapActor', 'actor_id x y yaw length width source')
+
+# The leader or follower found in the EGO lane: `s` is its longitudinal offset from the EGO spawn
+# point along the EGO heading (positive ahead), `clearance` the bumper-to-bumper distance.
+GapNeighbor = collections.namedtuple('GapNeighbor', 'actor s clearance')
+
+# safe: True if EGO may be spawned. front/rear: GapNeighbor or None (no vehicle in range).
+# overlaps: actors whose footprint intersects the EGO footprint at the spawn point.
+GapResult = collections.namedtuple('GapResult', 'safe front rear overlaps')
+
+
+def _heading_difference_deg(yaw_a, yaw_b):
+    """Absolute difference of two headings in degrees, in [0, 180]."""
+    return abs((yaw_a - yaw_b + 180.0) % 360.0 - 180.0)
+
+
+def _footprint_corners(x, y, yaw_deg, length, width):
+    yaw = math.radians(yaw_deg)
+    fx, fy = math.cos(yaw), math.sin(yaw)  # forward
+    rx, ry = -fy, fx  # 90 degrees from forward
+    hl, hw = length / 2.0, width / 2.0
+    return [(x + sl * hl * fx + sw * hw * rx, y + sl * hl * fy + sw * hw * ry)
+            for sl, sw in ((1, 1), (1, -1), (-1, -1), (-1, 1))]
+
+
+def _footprints_overlap(a, b):
+    """Separating axis test for two rectangles given as 4 corners each (touching = no overlap)."""
+    for rect in (a, b):
+        for i in range(4):
+            ex, ey = rect[(i + 1) % 4][0] - rect[i][0], rect[(i + 1) % 4][1] - rect[i][1]
+            axis = (-ey, ex)
+            proj_a = [px * axis[0] + py * axis[1] for px, py in a]
+            proj_b = [px * axis[0] + py * axis[1] for px, py in b]
+            if max(proj_a) <= min(proj_b) or max(proj_b) <= min(proj_a):
+                return False
+    return True
+
+
+def evaluate_spawn_gap(ego_x, ego_y, ego_yaw, ego_length, ego_width, lane_width, actors,
+                       front_margin, rear_margin, search_range=EGO_SPAWN_SEARCH_RANGE_M,
+                       heading_tolerance=EGO_SPAWN_HEADING_TOLERANCE_DEG):
+    """
+    Decide whether EGO can be spawned at (ego_x, ego_y, ego_yaw) (section 2.6).
+
+    Pure function in CARLA coordinates; assumes the spawn point is on a straight road (2.6.1).
+
+    - Leader/follower (2.6.1): among the non-pedestrian actors with |d| < lane_width / 2,
+      |s| <= search_range and a heading within heading_tolerance of the EGO heading, the nearest
+      one with s >= 0 is the leader and the nearest one with s < 0 the follower (s: longitudinal,
+      d: lateral offset in the EGO frame).
+    - Clearances (2.6.2): leader: s - ego_length/2 - length/2, follower: |s| - ego_length/2 -
+      length/2. A missing leader/follower satisfies its side.
+    - Overlap (2.6.2): any actor (any lane, any heading, pedestrians included) whose footprint
+      intersects the EGO footprint makes the result unsafe.
+
+    Safe iff no overlap, leader clearance >= front_margin and follower clearance >= rear_margin.
+
+        :return: GapResult.
+    """
+    yaw = math.radians(ego_yaw)
+    fx, fy = math.cos(yaw), math.sin(yaw)
+    ego_corners = _footprint_corners(ego_x, ego_y, ego_yaw, ego_length, ego_width)
+
+    front = rear = None
+    overlaps = []
+    for actor in actors:
+        if _footprints_overlap(ego_corners, _footprint_corners(actor.x, actor.y, actor.yaw,
+                                                               actor.length, actor.width)):
+            overlaps.append(actor)
+        if actor.source == 'pedestrian':
+            continue
+
+        dx, dy = actor.x - ego_x, actor.y - ego_y
+        s = dx * fx + dy * fy
+        d = -dx * fy + dy * fx
+        if (abs(d) >= lane_width / 2.0 or abs(s) > search_range
+                or _heading_difference_deg(actor.yaw, ego_yaw) > heading_tolerance):
+            continue
+
+        clearance = abs(s) - ego_length / 2.0 - actor.length / 2.0
+        if s >= 0.0:
+            if front is None or s < front.s:
+                front = GapNeighbor(actor, s, clearance)
+        elif rear is None or s > rear.s:
+            rear = GapNeighbor(actor, s, clearance)
+
+    safe = (not overlaps
+            and (front is None or front.clearance >= front_margin)
+            and (rear is None or rear.clearance >= rear_margin))
+    return GapResult(safe, front, rear, overlaps)
+
+
+def describe_gap_result(result):
+    """One-line summary for the [EGO SPAWN CHECK] log (section 2.9), without the time stamp."""
+    def neighbor(name, n):
+        if n is None:
+            return '%s=-' % name
+        return '%s=%s clearance=%.1f m' % (name, n.actor.actor_id, n.clearance)
+
+    overlap = ','.join(a.actor_id for a in result.overlaps) or 'none'
+    return '%s %s overlap=%s result=%s' % (neighbor('front', result.front),
+                                           neighbor('rear', result.rear), overlap,
+                                           'SAFE' if result.safe else 'WAIT')
 
 
 class EgoSpawnGate(object):

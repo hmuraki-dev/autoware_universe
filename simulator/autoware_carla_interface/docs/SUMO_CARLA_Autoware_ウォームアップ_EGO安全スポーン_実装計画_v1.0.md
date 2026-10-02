@@ -520,7 +520,7 @@ python3 tools/carla_bbox_probe.py --all-from-vtypes \
   - 未確認: バス・トレーラー(`fusorosa`/`european_hgv`)のCARLAスポーン、ROS時刻(`/clock`)、ウォームアップ中・通常走行中のCtrl+C。
 
 
-### Step S5: ギャップ判定ロジック(純粋関数 + 単体テスト)
+### Step S5: ギャップ判定ロジック(純粋関数 + 単体テスト) — **実装済み**(2026-10-02)
 
 - `evaluate_spawn_gap()`を実装する(§2.6.1〜2.6.3)。
 - テストケース(`sumo_ego_spawn_gate_test.py`):
@@ -532,6 +532,22 @@ python3 tools/carla_bbox_probe.py --all-from-vtypes \
   - EGO予定位置と重なる車両(隣の車線にはみ出し)・歩行者 → UNSAFE
   - CARLAにいないSUMO車両(SUMOの車長で判定)
   - 探索範囲外の車両は無視される
+- 実装内容(`sumo_integration/ego_spawn_gate.py`):
+  - `evaluate_spawn_gap(ego_x, ego_y, ego_yaw, ego_length, ego_width, lane_width, actors, front_margin, rear_margin)`:
+    CARLA座標の純粋関数。`actors`は`GapActor(actor_id, x, y, yaw, length, width, source)`のリスト
+    (`source`は`carla`/`sumo_only`/`pedestrian`。歩行者は重複チェックのみで前後車にはしない)。
+    戻り値は`GapResult(safe, front, rear, overlaps)`(`front`/`rear`は`GapNeighbor(actor, s, clearance)`またはNone)。
+  - 重複チェックは外形(長方形)同士の分離軸判定。接しているだけ(距離0)は重複としない。
+  - `describe_gap_result()`: §2.9の`[EGO SPAWN CHECK]`ログ1行分(時刻を除く)。
+  - 周辺アクターのリストを作る部分(CARLA/TraCIを読む)と待ちのループはS6で実装する。
+- テスト(`python3 test/sumo_ego_spawn_gate_test.py`、15項目): 上記のケースに加え、別々の必要距離、最も近い車両の選択、
+  向きの許容範囲と±180°の折り返し、EGOの向き(180°・90°・−37°)、交差点内を横切る車両の重複、範囲のちょうど境界。
+- 実データでの確認(開発用PC、実物のSUMO、Town01・変更後の需要、`sumo_warmup_time=600`、SUMO車両をすべて`sumo_only`として
+  CARLA座標へ変換、EGO 4.54 m×2.0 m、車線幅3.5 m、必要距離20 m):
+  - #37: t=600.00で後続車`in1_A.53`がEGO予定位置に**重なっていた**(クリアランス−0.6 m)→ WAIT。
+    S4の#37の症状は、EGOがこの車両の上にスポーンされたためと確定した。t=613.80(13.8秒後)に初めてSAFE。
+  - #36: t=600.00でSAFE(前後とも車両なし)。
+
 
 ### Step S6: WAIT_FOR_SAFE_GAPとタイムアウト
 
