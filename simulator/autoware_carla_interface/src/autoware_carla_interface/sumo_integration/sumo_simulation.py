@@ -335,12 +335,20 @@ class SumoSimulation(object):
             if sumo_gui is True:
                 logging.info('Remember to press the play button to start the simulation')
 
-            traci.start([sumo_binary,
+            sumo_cmd = [sumo_binary,
                 '--configuration-file', cfg_file,
                 '--step-length', str(step_length),
                 '--lateral-resolution', '0.25',
                 '--collision.check-junctions'
-            ])
+            ]
+            if sumo_gui is True:
+                # Not in upstream (see NOTICE.md): without it, sumo-gui answers traci.close() with
+                # a "Simulation ended ... close all open files and views?" dialog and keeps
+                # running even after "Yes", while traci.close() waits for the process to exit -
+                # so the co-simulation never finished its cleanup when it stopped on its own
+                # (e.g. EGO spawn gate timeout) instead of via Ctrl+C, which kills SUMO directly.
+                sumo_cmd.append('--quit-on-end')
+            traci.start(sumo_cmd)
 
         else:
             logging.info('Connection to sumo server. Host: %s Port: %s', host, port)

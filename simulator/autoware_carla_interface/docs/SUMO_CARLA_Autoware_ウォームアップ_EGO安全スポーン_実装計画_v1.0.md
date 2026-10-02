@@ -581,7 +581,13 @@ python3 tools/carla_bbox_probe.py --all-from-vtypes \
     RVizにEGOが表示され、目的地設定・Autoで走行できた(**OK**)。
   - 実機のCARLAの車線幅は4.00 m(開発用PCでの確認では仮に3.5 mとしていた)。前後車の並びと判定の推移は開発用PCの結果とほぼ一致
     (SAFEの時刻が0.05秒早い)。空き待ち13.75秒(シミュレーション時間)のwall-clockは約10.8秒。
-  - 未確認: タイムアウト(`ego_spawn_wait_timeout:=3`)、待ち中のCtrl+C。
+  - タイムアウト(`ego_spawn_wait_timeout:=3`): `Error: test start failed: no safe gap found within ego_spawn_wait_timeout=3 s ...;
+    last check at t=603.05: ... rear=sumo:in1_B.14/carla:289 clearance=6.2 m ... result=WAIT`は期待どおり出た。
+    しかし`sumo_gui:=true`では、後始末の`traci.close()`に対してsumo-guiが「Simulation ended ... TraCI requested termination.
+    Do you want to close all open files and views?」のダイアログを出し、[Yes]でも終了しないため、SUMOの終了を待つ`traci.close()`が
+    戻らず、`Cleanup complete.`もノードの終了も出なかった(従来はCtrl+CでSUMOも先に終了していたため表面化していなかった)。
+    → sumo-gui起動時に`--quit-on-end`(「Quits the GUI when the simulation stops」)を付けた(`sumo_simulation.py`、NOTICE.mdに記録)。再確認待ち。
+  - 未確認: 待ち中のCtrl+C。
 
 
 ### Step S7: ログ・記録・起動手順書

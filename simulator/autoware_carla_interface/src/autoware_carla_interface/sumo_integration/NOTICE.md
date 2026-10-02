@@ -27,6 +27,9 @@ Vendored locally from `/home/divp/CARLA/Co-Simulation/Sumo/` per
   Step S3), and `get_vehicle_footprint()`/`get_person_footprint()`/
   `get_vtype_size()` (Step S6: positions/sizes for the gap check, read without
   subscribing). Existing methods are unchanged.
+  `__init__` adds `--quit-on-end` to the command line when starting `sumo-gui`
+  (Step S6): otherwise sumo-gui answers `traci.close()` with a "Simulation
+  ended" dialog and keeps running, and `traci.close()` blocks waiting for it.
 - `bridge_helper.py`: only the `vtypes.json` path lookup was adjusted
   originally, since the data file was moved from `../data/vtypes.json` to
   `./data/vtypes.json` relative to this package. `get_carla_pedestrian_transform()`
