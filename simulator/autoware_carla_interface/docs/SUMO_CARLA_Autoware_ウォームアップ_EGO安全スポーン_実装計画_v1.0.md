@@ -359,7 +359,7 @@ rear_clearance  = |s_rear| − L_ego/2 − L_rear/2
 
 | ファイル | 変更内容 |
 |---|---|
-| `launch/autoware_carla_interface.launch.xml` | パラメータ4つ追加(argとparam) |
+| `launch/autoware_carla_interface.launch.xml` | パラメータ4つ追加(argとparam)、`autoware_carla_interface`ノードに`on_exit="shutdown"`(S6) |
 | `src/autoware_carla_interface/carla_ros.py` | パラメータ定義4つ追加 |
 | `src/autoware_carla_interface/carla_autoware.py` | パラメータ読込・検査、`_spawn_ego_and_sensors()`切り出し、`run_ego_spawn_gate()`呼び出し、停止フラグ |
 | `src/autoware_carla_interface/sumo_integration/ego_spawn_gate.py` | **新規**。状態遷移(WARMUP/WAIT/SPAWN)と`evaluate_spawn_gap()`、判定用の固定値 |
@@ -566,8 +566,9 @@ python3 tools/carla_bbox_probe.py --all-from-vtypes \
     (結果か前後車・重複車両が変わったとき、それ以外は1秒ごと)、`[EGO SPAWN] t=... waited=... spawn_point=... vehicles=...`。
   - 終了(§2.8): 上限超過は`EgoSpawnGateError`(最後の判定結果を含むメッセージ)、SAFE後のEGOスポーン失敗も`EgoSpawnGateError`。
     `main()`は`Error: test start failed: ...`の1行を出して後始末し、**終了コード1**で終える。Ctrl+Cは各ステップの前に確認し、EGOをスポーンせずに終える。
-  - launchの`on_exit`: 変更していない(`autoware_carla_interface`ノードが試験開始失敗で終了しても、Autoware側のノードは残る)。
-    launch全体を止める(`on_exit="shutdown"`)かは利用者と相談して決める(ウォームアップ無効時の挙動も変わるため)。
+  - launchの`on_exit`: 利用者の判断(2026-10-02)により、`autoware_carla_interface`ノードに`on_exit="shutdown"`を付けた。
+    試験開始失敗などでブリッジが終了するとlaunch全体が停止する(ウォームアップ無効時も、ブリッジが終了すれば全体が止まる)。
+    `test/sumo_warmup_params_test.py`で属性を検査する。
 - テスト(`python3 test/sumo_warmup_catchup_stub_test.py`、10項目): 既存3項目に加え、空き待ち(3回WAIT→同期3ステップ→スポーン)、
   タイムアウト(1秒=20ステップ後に`EgoSpawnGateError`、スポーンしない)、待ち中の停止要求、スポーン失敗、ログの間引き、
   `collect_gap_actors()`(CARLA基準・`sumo_only`の中心変換・CARLA由来の除外・歩行者)、`ego_footprint()`の3段階。
@@ -609,7 +610,7 @@ python3 tools/carla_bbox_probe.py --all-from-vtypes \
 | 3 | キャッチアップ | CARLA上の車両数 ≒ SUMO車両数(差分は`sumo_only`としてログに出る)。歩行者も同様 |
 | 4 | 空きありの地点 | ウォームアップ直後にSAFEでスポーン |
 | 5 | 空きなしの地点 | WAITが続き、空いた時点でスポーン。スポーン直後に衝突しない(`--collision.check-junctions`のSUMO側の衝突警告も確認) |
-| 6 | タイムアウト | 上限でエラー終了する。SUMOも閉じる |
+| 6 | タイムアウト | 上限でエラー終了する。SUMOも閉じる。launch全体が停止する(`on_exit="shutdown"`) |
 | 7 | ROS時刻 | `/clock`とセンサーtimestampが0付近から単調増加。Autowareが正常に動く |
 | 8 | 信号同期(`tls_manager=sumo`) | ウォームアップ後もSUMOとCARLAの信号が一致している |
 | 9 | `tls_manager=carla` + ウォームアップ | 起動時エラーになる |

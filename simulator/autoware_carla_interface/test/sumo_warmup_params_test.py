@@ -109,6 +109,8 @@ def test_launch_file():
     args = {arg.get('name'): arg.get('default') for arg in root.iter('arg')}
     nodes = [node for node in root.iter('node') if node.get('exec') == 'autoware_carla_interface']
     assert len(nodes) == 1, 'expected one autoware_carla_interface node, found %d' % len(nodes)
+    assert nodes[0].get('on_exit') == 'shutdown', \
+        'a test start failure (exit of the bridge) must stop the whole launch (section 2.8)'
     params = {param.get('name'): param.get('value') for param in nodes[0].iter('param')}
 
     for name, (default, type_name) in _EXPECTED_PARAMS.items():

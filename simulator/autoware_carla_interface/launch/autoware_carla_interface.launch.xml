@@ -60,8 +60,11 @@
     <!-- CARLA spectator camera auto-follow (see scripts/spectator_follow) -->
     <arg name="spectator_follow" default="False" description="Automatically lock the CARLA spectator camera onto the ego vehicle as soon as it spawns"/>
 
-    <!-- CARLA Interface -->
-    <node pkg="autoware_carla_interface" exec="autoware_carla_interface" name="autoware_carla_interface" output="screen">
+    <!-- CARLA Interface. on_exit="shutdown": when the bridge exits on its own (e.g. the SUMO
+         warmup EGO spawn gate fails to start the test, see
+         docs/SUMO_CARLA_Autoware_ウォームアップ_EGO安全スポーン_実装計画_v1.0.md 2.8), stop the whole
+         launch instead of leaving Autoware running without a simulator. -->
+    <node pkg="autoware_carla_interface" exec="autoware_carla_interface" name="autoware_carla_interface" output="screen" on_exit="shutdown">
       <param name="host" value="$(var host)"/>
       <param name="port" value="$(var port)"/>
       <param name="timeout" value="$(var timeout)"/>
