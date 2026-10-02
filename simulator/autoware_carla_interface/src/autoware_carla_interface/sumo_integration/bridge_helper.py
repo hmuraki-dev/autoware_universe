@@ -358,8 +358,13 @@ class BridgeHelper(object):
 
         return current_lights
 
+    # (landmark_id, sorted states) combinations already reported by
+    # get_carla_traffic_light_state(). Not in upstream: the warning used to be emitted on every
+    # synchronization step (about once per step in Town01), see NOTICE.md.
+    _warned_mixed_tl_states = set()
+
     @staticmethod
-    def get_carla_traffic_light_state(sumo_tl_states):
+    def get_carla_traffic_light_state(sumo_tl_states, landmark_id=None):
         """
         Returns CARLA traffic light state based on the SUMO traffic-light
         states associated with one CARLA landmark.
@@ -374,6 +379,10 @@ class BridgeHelper(object):
         :param sumo_tl_states:
             A set/list/tuple of SUMO signal-state characters.
             A single state character is also accepted for compatibility.
+        :param landmark_id:
+            The CARLA landmark the states belong to, only used in the log. The "forced to red"
+            warning is emitted once per landmark and state combination; repetitions are logged
+            at DEBUG level.
         """
 
         if sumo_tl_states is None:
@@ -400,12 +409,23 @@ class BridgeHelper(object):
 
         # Any other mixed combination is displayed as red.
         if len(states) > 1:
-            logging.warning(
-                '[BridgeHelper] Different SUMO traffic-light states %s '
-                'are assigned to the same CARLA landmark. '
-                'CARLA state is forced to red.',
-                sorted(states)
-            )
+            key = (landmark_id, tuple(sorted(states)))
+            if key not in BridgeHelper._warned_mixed_tl_states:
+                BridgeHelper._warned_mixed_tl_states.add(key)
+                logging.warning(
+                    '[BridgeHelper] Different SUMO traffic-light states %s '
+                    'are assigned to the same CARLA landmark %s. '
+                    'CARLA state is forced to red. '
+                    '(Logged once per landmark and state combination; '
+                    'repetitions are logged at DEBUG level.)',
+                    sorted(states), landmark_id
+                )
+            else:
+                logging.debug(
+                    '[BridgeHelper] Different SUMO traffic-light states %s '
+                    'at CARLA landmark %s: forced to red.',
+                    sorted(states), landmark_id
+                )
             return carla.TrafficLightState.Red
 
         # From here, exactly one SUMO state remains.

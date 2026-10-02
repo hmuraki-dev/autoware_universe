@@ -219,7 +219,8 @@ class SimulationSynchronization(object):
             common_landmarks = self.sumo.traffic_light_ids & self.carla.traffic_light_ids
             for landmark_id in common_landmarks:
                 sumo_tl_state = self.sumo.get_traffic_light_state(landmark_id)
-                carla_tl_state = BridgeHelper.get_carla_traffic_light_state(sumo_tl_state)
+                carla_tl_state = BridgeHelper.get_carla_traffic_light_state(sumo_tl_state,
+                                                                            landmark_id)
 
                 self.carla.synchronize_traffic_light(landmark_id, carla_tl_state)
 

@@ -38,7 +38,12 @@ Vendored locally from `/home/divp/CARLA/Co-Simulation/Sumo/` per
   front-center-bumper reference point) plus a Z correction
   (`+= sumo_person.extent.z`) to compensate for `carla.Walker`'s transform
   origin being at the vertical center of its bounding box rather than at the
-  feet.
+  feet. `get_carla_traffic_light_state()` later gained an optional
+  `landmark_id` argument (passed by `SimulationSynchronization`): its "Different
+  SUMO traffic-light states ... forced to red" WARNING, previously emitted on
+  every synchronization step, is now emitted once per landmark and state
+  combination (naming the landmark), and repetitions are logged at DEBUG level.
+  The returned CARLA states are unchanged.
 - `data/vtypes.json`: appended `walker.pedestrian.0001`-`0051` entries
   (`vClass: "pedestrian"`) to `carla_blueprints`, copied verbatim from the
   upstream fork's already-verified mapping (task 4). The original vehicle

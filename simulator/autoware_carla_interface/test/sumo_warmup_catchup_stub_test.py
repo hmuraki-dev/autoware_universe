@@ -38,46 +38,11 @@ if 'SUMO_HOME' in os.environ:
     sys.path.append(os.path.join(os.environ['SUMO_HOME'], 'tools'))
 
 
-def _install_stand_ins():
-    """Minimal carla / lxml stand-ins, only if the real modules are missing."""
-    try:
-        import carla  # noqa: F401  pylint: disable=import-outside-toplevel,unused-import
-    except ImportError:
-        carla = types.ModuleType('carla')
+# carla / lxml stand-ins for machines without them (shared with the other stub tests).
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+from stand_ins import install_stand_ins  # noqa: E402  pylint: disable=wrong-import-position
 
-        class _Vec(object):
-            def __init__(self, x=0.0, y=0.0, z=0.0):
-                self.x, self.y, self.z = x, y, z
-
-        class Rotation(object):
-            def __init__(self, pitch=0.0, yaw=0.0, roll=0.0):
-                self.pitch, self.yaw, self.roll = pitch, yaw, roll
-
-        class Transform(object):
-            def __init__(self, location=None, rotation=None):
-                self.location = location if location is not None else _Vec()
-                self.rotation = rotation if rotation is not None else Rotation()
-
-        carla.Location = carla.Vector3D = _Vec
-        carla.Rotation = Rotation
-        carla.Transform = Transform
-        carla.VehicleLightState = types.SimpleNamespace(NONE=0)
-        carla.TrafficLightState = types.SimpleNamespace(Red=0, Yellow=1, Green=2, Off=3,
-                                                        Unknown=4)
-        sys.modules['carla'] = carla
-    try:
-        import lxml.etree  # noqa: F401  pylint: disable=import-outside-toplevel,unused-import
-    except ImportError:
-        # sumo_simulation.py only needs the module to exist at import time; aliasing the standard
-        # library's ElementTree keeps sumolib (which prefers lxml when importable) working.
-        import xml.etree.ElementTree  # pylint: disable=import-outside-toplevel
-        lxml = types.ModuleType('lxml')
-        lxml.etree = xml.etree.ElementTree
-        sys.modules['lxml'] = lxml
-        sys.modules['lxml.etree'] = lxml.etree
-
-
-_install_stand_ins()
+install_stand_ins()
 
 import carla  # noqa: E402  pylint: disable=wrong-import-position,import-error
 
