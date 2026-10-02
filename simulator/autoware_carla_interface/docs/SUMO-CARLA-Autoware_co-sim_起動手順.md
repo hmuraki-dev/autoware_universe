@@ -137,6 +137,8 @@ ros2 launch autoware_launch e2e_simulator.launch.xml \
 | `ego_spawn_rear_margin` | EGOスポーン時に必要な後方車とのすき間 [m]。2.7参照 | `20.0` | `20.0` |
 | `ego_spawn_wait_timeout` | ウォームアップ後に空きを待つ上限秒数(整数)。2.7参照 | `60` | `60` |
 
+- `sumo_gui:=true`のsumo-guiは、起動後に自動でシミュレーションを開始する(`--start`)。Runボタンを押す必要はない。
+  また、co-simの終了時にはダイアログを出さずに自動で閉じる(`--quit-on-end`)。
 - `spectator_follow:=true`はCARLAスペクテーター(自由視点カメラ)をEGO車両に自動追従させる。
   カメラの距離・高さ・角度(`--distance`/`--height`/`--pitch`/`--rate`)はlaunch引数として
   公開されていないため、細かく調整したい場合はこの引数は使わず`ros2 run

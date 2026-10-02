@@ -30,6 +30,9 @@ Vendored locally from `/home/divp/CARLA/Co-Simulation/Sumo/` per
   `__init__` adds `--quit-on-end` to the command line when starting `sumo-gui`
   (Step S6): otherwise sumo-gui answers `traci.close()` with a "Simulation
   ended" dialog and keeps running, and `traci.close()` blocks waiting for it.
+  It also adds `--start` for `sumo-gui`, so the simulation starts right after
+  loading instead of waiting for the play (Run) button; the "Remember to press
+  the play button" log message was removed accordingly.
 - `bridge_helper.py`: only the `vtypes.json` path lookup was adjusted
   originally, since the data file was moved from `../data/vtypes.json` to
   `./data/vtypes.json` relative to this package. `get_carla_pedestrian_transform()`

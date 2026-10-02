@@ -332,8 +332,6 @@ class SumoSimulation(object):
 
         if host is None or port is None:
             logging.info('Starting new sumo server...')
-            if sumo_gui is True:
-                logging.info('Remember to press the play button to start the simulation')
 
             sumo_cmd = [sumo_binary,
                 '--configuration-file', cfg_file,
@@ -348,6 +346,9 @@ class SumoSimulation(object):
                 # so the co-simulation never finished its cleanup when it stopped on its own
                 # (e.g. EGO spawn gate timeout) instead of via Ctrl+C, which kills SUMO directly.
                 sumo_cmd.append('--quit-on-end')
+                # Not in upstream (see NOTICE.md): start the simulation right after loading,
+                # instead of waiting for the user to press the play (Run) button in sumo-gui.
+                sumo_cmd.append('--start')
             traci.start(sumo_cmd)
 
         else:
