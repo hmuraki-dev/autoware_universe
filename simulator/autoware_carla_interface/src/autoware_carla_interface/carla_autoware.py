@@ -402,19 +402,46 @@ class InitializeInterface(object):
 
     def run_ego_spawn_gate(self):
         """
-        SUMO warmup -> catch-up -> EGO spawn, before run_bridge() (sumo_warmup_time > 0 only).
+        SUMO warmup -> catch-up -> wait for a safe gap -> EGO spawn, before run_bridge().
 
-        See docs/SUMO_CARLA_Autoware_ウォームアップ_EGO安全スポーン_実装計画_v1.0.md 2.1.
+        Only when sumo_warmup_time > 0. See
+        docs/SUMO_CARLA_Autoware_ウォームアップ_EGO安全スポーン_実装計画_v1.0.md 2.1.
         Returns True once EGO has been spawned, False if SIGINT/SIGTERM came first
         (run_bridge() then returns immediately because stop_requested is set).
+        Raises EgoSpawnGateError if the test cannot be started (no safe gap within
+        ego_spawn_wait_timeout, or EGO could not be spawned).
         """
         from .sumo_integration.ego_spawn_gate import EgoSpawnGate
+        from .sumo_integration.ego_spawn_gate import SpawnSpot
+        from .sumo_integration.ego_spawn_gate import collect_gap_actors
+        from .sumo_integration.ego_spawn_gate import ego_footprint
+
+        # spawn_point is always fixed here (checked by validate_warmup_params()).
+        spawn_transform, _ = self._parse_spawn_point()
+        ego_length, ego_width, footprint_origin = ego_footprint(self.sumo_sim, self.vehicle_type)
+        lane_width = self.world.get_map().get_waypoint(spawn_transform.location).lane_width
+        self.interface.logger.info(
+            f"EGO spawn gate: {self.vehicle_type} footprint {ego_length:.2f} x {ego_width:.2f} m "
+            f"({footprint_origin}), lane width {lane_width:.2f} m"
+        )
 
         gate = EgoSpawnGate(
             self.sumo_sync,
             self.world,
             self.sumo_warmup_time,
             self.fixed_delta_seconds,
+            spot=SpawnSpot(
+                spawn_transform.location.x,
+                spawn_transform.location.y,
+                spawn_transform.rotation.yaw,
+                ego_length,
+                ego_width,
+                lane_width,
+            ),
+            front_margin=self.ego_spawn_front_margin,
+            rear_margin=self.ego_spawn_rear_margin,
+            wait_timeout=self.ego_spawn_wait_timeout,
+            collect_actors=lambda: collect_gap_actors(self.sumo_sync),
             spawn_ego=lambda: self._spawn_ego_and_sensors(self.client),
             stop_requested=lambda: self.stop_requested,
             log_info=self.interface.logger.info,
@@ -611,12 +638,20 @@ def main():
     signal.signal(signal.SIGINT, carla_bridge._stop_loop)
     signal.signal(signal.SIGTERM, carla_bridge._stop_loop)
 
+    # Deferred like the gate itself; ego_spawn_gate has no traci/carla dependency.
+    from .sumo_integration.ego_spawn_gate import EgoSpawnGateError
+
+    exit_code = None
     try:
         if carla_bridge.sumo_warmup_time > 0:
             carla_bridge.run_ego_spawn_gate()
         carla_bridge.run_bridge()
     except KeyboardInterrupt:
         print("\nReceived keyboard interrupt, shutting down...")
+    except EgoSpawnGateError as e:
+        # Test start failure (section 2.8): one line instead of a traceback.
+        print(f"\nError: test start failed: {e}")
+        exit_code = 1
     except Exception as e:
         if not carla_bridge.is_sumo_disconnect_after_stop(e):
             print(f"\nError during bridge operation: {e}")
@@ -627,6 +662,7 @@ def main():
         print("Cleaning up CARLA resources...")
         carla_bridge._cleanup()
         print("Cleanup complete.")
+    return exit_code
 
 
 if __name__ == "__main__":

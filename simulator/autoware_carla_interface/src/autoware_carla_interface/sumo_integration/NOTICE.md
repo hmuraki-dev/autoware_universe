@@ -24,7 +24,9 @@ Vendored locally from `/home/divp/CARLA/Co-Simulation/Sumo/` per
   Later gained read-only accessors `get_vehicle_ids()`/`get_person_ids()`/
   `get_time()` (thin `traci` wrappers) for the SUMO warmup / EGO safe spawn
   gate (`docs/SUMO_CARLA_Autoware_ウォームアップ_EGO安全スポーン_実装計画_v1.0.md`
-  Step S3). Existing methods are unchanged.
+  Step S3), and `get_vehicle_footprint()`/`get_person_footprint()`/
+  `get_vtype_size()` (Step S6: positions/sizes for the gap check, read without
+  subscribing). Existing methods are unchanged.
 - `bridge_helper.py`: only the `vtypes.json` path lookup was adjusted
   originally, since the data file was moved from `../data/vtypes.json` to
   `./data/vtypes.json` relative to this package. `get_carla_pedestrian_transform()`
@@ -67,7 +69,7 @@ Vendored locally from `/home/divp/CARLA/Co-Simulation/Sumo/` per
 ## Files new in this package (not from upstream)
 
 - `ego_spawn_gate.py`: SUMO warmup / EGO safe spawn gate (parameter
-  validation, `EgoSpawnGate`). See the warmup plan above.
+  validation, gap evaluation, `EgoSpawnGate`). See the warmup plan above.
 
 ## Intentionally not vendored (v0.5 section 0.5 item 4 / Step 0 decision)
 

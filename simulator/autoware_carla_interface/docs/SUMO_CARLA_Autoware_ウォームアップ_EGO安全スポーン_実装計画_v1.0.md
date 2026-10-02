@@ -549,11 +549,33 @@ python3 tools/carla_bbox_probe.py --all-from-vtypes \
   - #36: t=600.00でSAFE(前後とも車両なし)。
 
 
-### Step S6: WAIT_FOR_SAFE_GAPとタイムアウト
+### Step S6: WAIT_FOR_SAFE_GAPとタイムアウト — **実装済み**(2026-10-02、実機確認待ち)
 
 - S3の「すぐにスポーン」を、判定 → NGなら同期1ステップ → 再判定、に置き換える(§2.6.5)。
 - タイムアウト・SIGINT・SUMO異常終了時の終了処理(§2.8)。
 - 確認: 交通量の多い地点で「待つ → 空いたらスポーン」、上限を短くして「タイムアウトで終了」。
+- 実装内容:
+  - `EgoSpawnGate`: WARMUP → キャッチアップ → 同期1ステップ → 判定 →(WAITなら同期1ステップ → 判定 …)→ SAFEでEGOスポーン。
+    判定は`ego_spawn_wait_timeout / fixed_delta_seconds`回の待ちステップまで(最初の判定を含め+1回)。sleepなし。
+  - `collect_gap_actors(sumo_sync)`: CARLAに写したSUMO車両はCARLAアクターの位置・向き・bounding_box(`carla`)、
+    CARLAにいないSUMO車両はSUMOの前端位置を中心へ変換した位置とSUMOの寸法(`sumo_only`)、歩行者はCARLAのwalker(なければSUMO)。
+    CARLA由来の車両(carla2sumo_ids)は除く。SUMO側は購読なしで直接読む(`SumoSimulation.get_vehicle_footprint()`等を追加)。
+  - EGOの外形: `ego_footprint()`。SUMOに`vehicle_type`と同じIDの車両タイプがあればその寸法(Town01ではprius 4.51 m×2.01 m)、
+    なければ表(prius 4.51×2.01)、なければ5.0×2.2(安全側)。車線幅はCARLAの`map.get_waypoint(spawn_point).lane_width`。
+  - ログ(§2.9): `[EGO SPAWN CHECK] start: ...`(条件)、`[EGO SPAWN CHECK] t=... front=... rear=... overlap=... result=WAIT/SAFE`
+    (結果か前後車・重複車両が変わったとき、それ以外は1秒ごと)、`[EGO SPAWN] t=... waited=... spawn_point=... vehicles=...`。
+  - 終了(§2.8): 上限超過は`EgoSpawnGateError`(最後の判定結果を含むメッセージ)、SAFE後のEGOスポーン失敗も`EgoSpawnGateError`。
+    `main()`は`Error: test start failed: ...`の1行を出して後始末し、**終了コード1**で終える。Ctrl+Cは各ステップの前に確認し、EGOをスポーンせずに終える。
+  - launchの`on_exit`: 変更していない(`autoware_carla_interface`ノードが試験開始失敗で終了しても、Autoware側のノードは残る)。
+    launch全体を止める(`on_exit="shutdown"`)かは利用者と相談して決める(ウォームアップ無効時の挙動も変わるため)。
+- テスト(`python3 test/sumo_warmup_catchup_stub_test.py`、10項目): 既存3項目に加え、空き待ち(3回WAIT→同期3ステップ→スポーン)、
+  タイムアウト(1秒=20ステップ後に`EgoSpawnGateError`、スポーンしない)、待ち中の停止要求、スポーン失敗、ログの間引き、
+  `collect_gap_actors()`(CARLA基準・`sumo_only`の中心変換・CARLA由来の除外・歩行者)、`ego_footprint()`の3段階。
+- 開発用PCでの確認(実物のSUMO + 偽のCARLA、Town01・変更後の需要、`sumo_warmup_time=600`、必要距離20 m、上限60秒):
+  - #37: 600.05秒の最初の判定で後続車`in1_A.53`と重複してWAIT。その後、前後の車両が次々通過する間WAITが続き、
+    **613.85秒にSAFE(waited=13.80 s)**でスポーン(S5の単独確認と一致)。
+  - #36: 600.05秒の最初の判定でSAFE、すぐにスポーン。
+
 
 ### Step S7: ログ・記録・起動手順書
 

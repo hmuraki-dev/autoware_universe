@@ -518,6 +518,35 @@ class SumoSimulation(object):
         """
         return traci.simulation.getTime()
 
+    @staticmethod
+    def get_vehicle_footprint(actor_id):
+        """
+        Returns (x, y, angle, length, width) of a vehicle read directly (no subscription needed),
+        in sumo coordinates: (x, y) is the front-center bumper, angle the sumo heading in degrees.
+        """
+        x, y = traci.vehicle.getPosition(actor_id)
+        return (x, y, traci.vehicle.getAngle(actor_id), traci.vehicle.getLength(actor_id),
+                traci.vehicle.getWidth(actor_id))
+
+    @staticmethod
+    def get_person_footprint(person_id):
+        """
+        Returns (x, y, angle, length, width) of a person read directly (no subscription needed),
+        in sumo coordinates.
+        """
+        x, y = traci.person.getPosition(person_id)
+        return (x, y, traci.person.getAngle(person_id), traci.person.getLength(person_id),
+                traci.person.getWidth(person_id))
+
+    @staticmethod
+    def get_vtype_size(type_id):
+        """
+        Returns (length, width) of the given vehicle type, or None if sumo does not know it.
+        """
+        if type_id not in traci.vehicletype.getIDList():
+            return None
+        return traci.vehicletype.getLength(type_id), traci.vehicletype.getWidth(type_id)
+
     def spawn_actor(self, type_id, color=None):
         """
         Spawns a new actor.
