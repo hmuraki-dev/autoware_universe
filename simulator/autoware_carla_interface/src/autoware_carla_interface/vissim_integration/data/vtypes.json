@@ -17,27 +17,18 @@
         "vehicle.tesla.model3",
         "vehicle.audi.etron"
     ],
-    "200": [
+    "210": [
         "vehicle.carlamotors.carlacola"
     ],
-    "300": [],
-    "400": [],
-    "510": [],
-    "520": [],
-    "610": [
-        "vehicle.yamaha.yzf",
-        "vehicle.harley-davidson.low_rider",
-        "vehicle.kawasaki.ninja",
-        "vehicle.gazelle.omafiets",
-        "vehicle.diamondback.century",
-        "vehicle.bh.crossbike"
+    "220": [
+        "vehicle.carlamotors.european_hgv"
     ],
-    "620": [
+    "300": [
+        "vehicle.mitsubishi.fusorosa"
+    ],
+    "700": [
         "vehicle.yamaha.yzf",
         "vehicle.harley-davidson.low_rider",
-        "vehicle.kawasaki.ninja",
-        "vehicle.gazelle.omafiets",
-        "vehicle.diamondback.century",
-        "vehicle.bh.crossbike"
+        "vehicle.kawasaki.ninja"
     ]
 }
