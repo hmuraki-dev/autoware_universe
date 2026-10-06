@@ -24,7 +24,9 @@ docs/Vissim_CARLA_Autoware_ウォームアップ_EGO安全スポーン_実装計
 - PTVVissimSimulation.vehicle_ids / pedestrian_ids;
 - the safe-gap check evaluate_spawn_gap() / center_from_front() (Step V5): clearances against the
   margins, same-lane / heading / range filtering, overlap of the outlines, vehicles without a
-  CARLA counterpart, rotated and oblique headings.
+  CARLA counterpart, rotated and oblique headings;
+- BridgeHelper.get_carla_blueprint() / get_carla_pedestrian_blueprint() (Step V9 #10): the CARLA
+  model follows the vissim id, so every run of the same .inpx gets the same vehicle lengths.
 
 Needs neither ROS 2, CARLA, nor a vissim adapter: `carla`, `zmq` and `msgpack` are replaced by
 mocks, only for the duration of run() (via mock.patch.dict(sys.modules), so nothing leaks into
@@ -561,6 +563,63 @@ class _MovingFrontVehicle(object):
         return [_car(self.egsg, 'front', s, 0.0)]
 
 
+class _FakeBlueprint(object):
+    """Stands in for a carla.ActorBlueprint: only the attributes BridgeHelper touches."""
+
+    def __init__(self, blueprint_id, colors=None):
+        self.id = blueprint_id
+        self.attributes = {'role_name': None}
+        self._recommended = {}
+        if colors is not None:
+            self.attributes['color'] = None
+            self._recommended['color'] = colors
+
+    def has_attribute(self, name):
+        return name in self.attributes
+
+    def get_attribute(self, name):
+        return types.SimpleNamespace(recommended_values=self._recommended[name])
+
+    def set_attribute(self, name, value):
+        self.attributes[name] = value
+
+
+def check_blueprint_choice_follows_vissim_id(bh):
+    """Step V9 #10: the same vissim id always gets the same model and color, whatever the order."""
+    import random
+    cars = ['vehicle.car.%d' % i for i in range(16)]
+    walkers = ['walker.pedestrian.%04d' % i for i in range(1, 9)]
+    colors = ['%d,0,0' % i for i in range(10)]
+
+    class Library(object):
+        def filter(self, pattern):
+            if pattern.startswith('walker'):
+                return [_FakeBlueprint(pattern)]
+            return [_FakeBlueprint(pattern, colors)]
+
+    def choose(ids):
+        chosen = {}
+        for vissim_id in ids:
+            random.random()  # other users of the global generator must not matter
+            blueprint = bh.BridgeHelper.get_carla_blueprint(
+                types.SimpleNamespace(id=vissim_id, type=100))
+            walker = bh.BridgeHelper.get_carla_pedestrian_blueprint(
+                types.SimpleNamespace(id=vissim_id, type=100))
+            chosen[vissim_id] = (blueprint.id, blueprint.attributes['color'], walker.id)
+        return chosen
+
+    with mock.patch.object(bh.BridgeHelper, 'blueprint_library', Library()),             mock.patch.object(bh.BridgeHelper, 'vtypes', {'100': cars}),             mock.patch.object(bh.BridgeHelper, 'ptypes', {'100': walkers}):
+        ids = list(range(1, 41))
+        random.seed(1)
+        first = choose(ids)
+        random.seed(2)
+        second = choose(list(reversed(ids)))
+    assert first == second, 'the choice must depend on the vissim id only'
+    assert len(set(c[0] for c in first.values())) > 1, 'all ids got the same model'
+    assert len(set(c[1] for c in first.values())) > 1, 'all ids got the same color'
+    assert len(set(c[2] for c in first.values())) > 1, 'all ids got the same walker'
+
+
 def check_wait_safe_right_away(egsg):
     vissim = FakeVissim()
     gate, sync, log = _make_gate(egsg, vissim)
@@ -679,6 +738,7 @@ def run():
         check_vissim_only_vehicle(egsg)
         check_bounding_box_center(egsg)
         check_collect_gap_vehicles(egsg, bh)
+        check_blueprint_choice_follows_vissim_id(bh)
         check_wait_safe_right_away(egsg)
         check_wait_steps_until_safe(egsg)
         check_wait_logs_when_vehicles_change(egsg)

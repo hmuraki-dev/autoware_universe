@@ -113,8 +113,14 @@ vendoring these files instead of referencing them via an external path.
   Step V9). The existing methods are unmodified.
 - `bridge_helper.py`: vendored with the `ptypes = {}` class attribute and the
   `get_carla_pedestrian_blueprint()`/`get_carla_pedestrian_transform()` methods added, both
-  byte-for-byte identical to upstream. All pre-existing methods (`get_carla_transform()`,
-  `get_carla_velocity()`, `get_carla_blueprint()`, etc.) are unmodified.
+  byte-for-byte identical to upstream. `get_carla_blueprint()` and
+  `get_carla_pedestrian_blueprint()` pick the blueprint (and the vehicle color/driver_id) with
+  `random.Random(<vissim id>)` instead of the unseeded global `random` module, so the same vissim
+  id always gets the same CARLA model in every run (this repository only, see
+  `docs/Vissim_CARLA_Autoware_ウォームアップ_EGO安全スポーン_実装計画_v1.0.md` Step V9 #10: the
+  model's length changes the EGO spawn gap check, so a random model made the spawn time vary
+  between runs of the same `.inpx`). All other pre-existing methods (`get_carla_transform()`,
+  `get_carla_velocity()`, etc.) are unmodified.
 - `constants.py`, `data/vtypes.json`, `data/signal_mapping.json`, `data/ptypes.json`: vendored
   without modification (only this provenance header was added to `constants.py`). `data/
   ptypes.json` maps vissim pedestrianType (100=Man, 200=Woman, 300=Wheelchair User) to CARLA

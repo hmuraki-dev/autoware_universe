@@ -582,7 +582,36 @@ python3 tools/carla_bbox_probe.py vehicle.toyota.prius
 | 7 | OK | EGOスポーン後、センサーのtimestampが1.5、5.0…と0付近から始まった。Autowareは自己位置推定の初期化 → `WaitingForEngage` → `Driving` → `ArrivedGoal`まで進んだ |
 | 8 | 未確認 | `end_tick=14000`(ウォームアップ2000 tick + 検証600秒分12000 tick)と計算は正しいが、Ctrl+Cで止めたため、実際に600秒で終了するかは未確認(`vissim_sim_period`を短くして再確認する) |
 
-未実施: #5(空きなし)、#6(タイムアウト)、#9(信号同期)、#10(再現性)。
+2026-10-06 2回目(`fd69b288f`、再試行の対策後。条件は1回目と同じで`vissim_sim_period:=60`):
+
+| # | 結果 | ログ・観察 |
+|---|---|---|
+| 3 | OK | `catch-up spawn of vehicle.carlamotors.european_hgv needed 1 retry (spawned 4.0 m higher)`のあと`carla_spawned=14 vissim_only=0 ... spawn_retries=1`。1回目にCARLAに出なかった車両(トレーラー)が、やり直しでスポーンされた |
+| 4・7 | OK | 1回目と同じ(すぐにSAFE、センサー時刻は0付近から開始、Autowareは`Driving`まで進行) |
+| 8 | OK | `end_tick=3200`(2000 + 60秒×20)→`Vissim co-simulation period elapsed (3200 ticks), stopping.`→launch全体が停止 |
+| 10 | 参考 | ウォームアップ中の車両数(10秒ごと)とEGOスポーン時刻(t=100.00 s)が1回目と一致 |
+
+2026-10-06 3回目(`fd69b288f`、Vissimの各車両入力の台数を3倍、`ego_spawn_front_margin:=500.0 ego_spawn_rear_margin:=500.0 ego_spawn_wait_timeout:=5`):
+
+| # | 結果 | ログ・観察 |
+|---|---|---|
+| 2 | OK | 車両数は5→8→12→19→27→28→38→47→55→58台。台数が4倍になっても実時間は33.4秒で1回目と同じ |
+| 3 | OK | `carla_spawned=58 vissim_only=0 ... spawn_retries=1` |
+| 6 | OK | t=100.00 sから`WAIT`が続き(前方`vissim:51`は4.8 m→40.6 m、t=102.80 sに後方`vissim:59`が93.3 m地点に現れて73.0 mまで接近)、t=105.00 sに`Error: test start failed: no safe gap found within ego_spawn_wait_timeout=5 s ...`。終了コード1でlaunch全体が停止した |
+
+2026-10-06 4回目(`fd69b288f`、3回目と同じ3倍交通、`ego_spawn_front_margin:=50.0 ego_spawn_rear_margin:=50.0 ego_spawn_wait_timeout:=60`):
+
+| # | 結果 | ログ・観察 |
+|---|---|---|
+| 5 | OK | t=100.00 sから28.5秒間`WAIT`。前方`vissim:51`が42.7 mで停止(信号待ちと見られる)→後方から来た`vissim:59`がスポーン地点を通過(t=113.00〜114.00 sに`overlap=vissim:59`、t=113.55 sに前方車に入れ替わり)→`vissim:59`も34.6 mで停止→動き出して前方50.4 m・後方`vissim:73`が57.2 mになったt=128.50 sに`SAFE`でスポーン。`end_tick=3770`(2570 + 60秒×20)も正しい。Autowareは`Driving`まで進行 |
+| 10 | 一部NG | Vissim側は3回目と一致(車両数の推移、車両ID、後方車の距離93.3/91.5/82.3/73.0 m)。前方車との距離だけ3回目より常に0.9 m長い。前方車の距離はCARLA側の車長で決まり、`bridge_helper.get_carla_blueprint()`が`vtypes.json`の候補から乱数(シード固定なし)で車種を選ぶため、実行ごとに車長が変わる。後方車の距離は相手の前端位置だけで決まるので一致している。境界付近ではスポーン時刻が変わり得る |
+
+- 終了時の`republish`・`component_container_mt-64`の`exit code -11`と`Spin thread did not terminate within timeout`は、2回目(期間終了)と3回目(EGOスポーン前のエラー終了)の両方で出ている。EGOが走っていない3回目でも出るため、ウォームアップの処理ではなく、launch停止時のAutoware・ROS側の問題と見られる。
+
+- #9 信号同期: 4回目と同じ条件で、ウォームアップ後もVissimとCARLAの信号が一致していることを目視で確認した(OK)。
+- #10 対策: `get_carla_blueprint()`/`get_carla_pedestrian_blueprint()`の車種(と車両の色・driver_id)の選択を、全体の乱数ではなく`random.Random(<Vissim ID>)`で行うようにした。同じVissim IDには、実行ごと・スポーン順によらず同じ車種が割り当てられる(`NOTICE.md`に記録、`test/vissim_ego_spawn_gate_test.py`に確認を追加)。同じ条件で2回実行し、前方車の距離・EGOスポーン時刻が一致するかを再確認する。
+
+未実施: #10の再確認。
 
 ---
 
