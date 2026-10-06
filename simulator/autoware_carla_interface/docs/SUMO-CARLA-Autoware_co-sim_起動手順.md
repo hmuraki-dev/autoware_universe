@@ -94,6 +94,8 @@ source ~/autoware.1.9.0/install/setup.bash
 
 ### 2.4 SUMO/CARLA/Autoware起動(ターミナル3)
 
+#### 2.4.1 起動コマンド
+
 ```bash
 source install/setup.bash
 export ROS_DOMAIN_ID=33
@@ -109,10 +111,19 @@ ros2 launch autoware_launch e2e_simulator.launch.xml \
   tls_manager:=sumo \
   sync_vehicle_lights:=true \
   sync_vehicle_color:=true \
-  spectator_follow:=true
+  spectator_follow:=true \
+  sumo_warmup_time:=600 \
+  spawn_point:="199.95,326.97,0.30,0.0,0.0,180.0" \
+  2>&1 | tee -i /tmp/autoware_carla.log
 ```
 
-#### オプション一覧
+- 最後の3行は、ウォームアップ・EGO安全スポーン(2.4.3)を使う場合の指定である。
+  - ウォームアップを使わない場合は、`sumo_warmup_time`と`spawn_point`の行を省く(EGOは起動直後にランダムな位置へスポーンされる)。
+    `spawn_point`だけを指定すれば、ウォームアップなしで固定位置にスポーンする。
+  - `2>&1 | tee -i /tmp/autoware_carla.log`はログ保存用(2.4.5のgrepで使う)。不要なら省いてよい。
+    `-i`を付けないと、Ctrl+Cで`tee`も終了し、それ以降(終了処理)のログが残らない。
+
+#### 2.4.2 オプション一覧
 
 | オプション | 説明 | 設定例 | デフォルト値(未指定時) |
 |-----------|------|--------|--------------------------|
@@ -132,10 +143,10 @@ ros2 launch autoware_launch e2e_simulator.launch.xml \
 | `spectator_follow` | EGO車両(role_name=`ego_vehicle_role_name`)にCARLAスペクテーターを自動追従させる | `true` | `false` |
 | `spawn_point` | EGOのスポーン位置(CARLA座標、`x,y,z,roll,pitch,yaw`) | `"199.95,326.97,0.30,0.0,0.0,180.0"` | `None`(ランダム) |
 | `vehicle_type` | EGOのCARLAブループリント | `vehicle.toyota.prius` | `vehicle.toyota.prius` |
-| `sumo_warmup_time` | SUMOだけを先に進める秒数(整数)。0で無効。2.7参照 | `600` | `0`(無効) |
-| `ego_spawn_front_margin` | EGOスポーン時に必要な前方車とのすき間 [m]。2.7参照 | `20.0` | `20.0` |
-| `ego_spawn_rear_margin` | EGOスポーン時に必要な後方車とのすき間 [m]。2.7参照 | `20.0` | `20.0` |
-| `ego_spawn_wait_timeout` | ウォームアップ後に空きを待つ上限秒数(整数)。2.7参照 | `60` | `60` |
+| `sumo_warmup_time` | SUMOだけを先に進める秒数(整数)。0で無効。2.4.3参照 | `600` | `0`(無効) |
+| `ego_spawn_front_margin` | EGOスポーン時に必要な前方車とのすき間 [m]。2.4.3参照 | `20.0` | `20.0` |
+| `ego_spawn_rear_margin` | EGOスポーン時に必要な後方車とのすき間 [m]。2.4.3参照 | `20.0` | `20.0` |
+| `ego_spawn_wait_timeout` | ウォームアップ後に空きを待つ上限秒数(整数)。2.4.3参照 | `60` | `60` |
 
 - `sumo_gui:=true`のsumo-guiは、起動後に自動でシミュレーションを開始する(`--start`)。Runボタンを押す必要はない。
   また、co-simの終了時にはダイアログを出さずに自動で閉じる(`--quit-on-end`)。
@@ -145,93 +156,20 @@ ros2 launch autoware_launch e2e_simulator.launch.xml \
   autoware_carla_interface spectator_follow --distance ... --height ...`のように別ターミナルで
   手動起動すること。
 
-### 2.5 [appendix] 処理時間計測
-
-```bash
-ros2 launch autoware_launch e2e_simulator.launch.xml \
-  simulator_type:=carla \
-  map_path:=$HOME/autoware_map/Town01 \
-  :
-  :
-  2>&1 | tee -i /tmp/autoware_carla.log
- ```
-- `2>&1 | tee -i /tmp/autoware_carla.log` でターミナルログをautoware_carla.logに保存
-- `-i`を付けること。付けないと、Ctrl+Cで`tee`も終了し、それ以降(終了処理)のログが残らない
-
-```bash
-grep "MAIN_LOOP_PERIOD" /tmp/autoware_carla.log
-```
-- 例えば、ログに[MAIN_LOOP_PERIOD]タグをつけている場合は、上記のコマンドで対象ログを抽出できます。
-
-### 2.6 歩行者(Pedestrian)同期について
-
-上記のco-sim起動(2.4)には、SUMO側の歩行者(`traci.person`)をCARLA側の`walker.pedestrian.*`
-アクターとして反映する歩行者同期が組み込まれている。
-
-- **常時有効(CLI引数・launch引数は無い)**: 車両同期(`sync_vehicle_lights`等)と異なり、
-  歩行者同期のON/OFFを切り替える起動オプションは存在しない。SUMO設定(`sumo_cfg_file`)側に
-  歩行者(`personFlow`/`person`)のルート・ネットワークが定義されていれば、追加設定なしに
-  自動的に同期される。
-- **sumo→carla の一方向のみ**: CARLA側でspawnした歩行者をSUMOへ送り返す機能(carla→sumo)は
-  実装していない。あくまでSUMOが管理する歩行者をCARLA上に可視化・追従させるための機能である。
-- **Z座標補正**: `carla.Walker`アクターのtransform原点はbounding boxの垂直中心にあり、
-  SUMOが返す座標は地面(足元)基準のため、そのまま反映すると歩行者が地面に埋まって見える。
-  この差分を吸収するため、SUMOの`VAR_HEIGHT`の半分(`sumo_person.extent.z`)をZ座標に
-  加算する補正を行っている(`BridgeHelper.get_carla_pedestrian_transform()`)。
-- **ログについて**: 歩行者のspawn/update/destroyは`logging.debug()`で出力しているが、本パッケージは
-  Pythonの`logging`モジュールに対して`basicConfig`等でレベル設定を行っていないため、
-  デフォルト状態では表示されない(ターミナルにはWARNING以上、例えば未対応vclassのため
-  blueprintが見つからなかった場合の警告のみが表示される)。spawn/update/destroyの詳細を
-  確認したい場合は、`autoware_carla_interface`起動前に`python3 -c "import logging;
-  logging.basicConfig(level=logging.DEBUG)"`相当の設定を追加する、または該当箇所に
-  一時的なデバッグ出力を追加すること。
-- 歩行者用のCARLA walkerブレンプリントは`sumo_integration/data/vtypes.json`の
-  `carla_blueprints`に`walker.pedestrian.0001`〜`0051`(`vClass: "pedestrian"`)として
-  登録済みであり、追加設定は不要。
-
-### 2.7 ウォームアップ・EGO安全スポーン
+#### 2.4.3 ウォームアップ・EGO安全スポーン
 
 SUMOだけを先に所定時間進めて交通流を作ってから、EGOのスポーン位置の前後が空いたタイミングでEGOをスポーンする機能。
+`sumo_warmup_time`に1以上を指定すると有効になり、指定しない(既定の0)場合は従来と同じ動作になる。
 設計は`docs/SUMO_CARLA_Autoware_ウォームアップ_EGO安全スポーン_実装計画_v1.0.md`を参照。
-
-#### 2.7.1 起動例
-
-2.4のコマンドに`sumo_warmup_time`と`spawn_point`を追加する。
-
-```bash
-ros2 launch autoware_launch e2e_simulator.launch.xml \
-  simulator_type:=carla \
-  map_path:=$HOME/autoware_map/Town01 \
-  vehicle_model:=sample_vehicle \
-  sensor_model:=carla_sensor_kit \
-  use_sumo:=true \
-  sumo_gui:=true \
-  sumo_cfg_file:=/home/divp/CARLA/Co-Simulation/Sumo/examples/Town01.sumocfg \
-  tls_manager:=sumo \
-  sync_vehicle_lights:=true \
-  sync_vehicle_color:=true \
-  spectator_follow:=true \
-  sumo_warmup_time:=600 \
-  spawn_point:="199.95,326.97,0.30,0.0,0.0,180.0" \
-  2>&1 | tee -i /tmp/autoware_carla.log
-```
 
 - 起動の流れ: Autoware起動 → SUMOだけを`sumo_warmup_time`秒進める(CARLAは止まったまま) →
   その間にSUMOに現れた車両をCARLAへまとめてスポーン → EGOのスポーン位置の前後の空きを判定 →
   空いていなければSUMO・CARLAを1ステップずつ進めて再判定 → 空いたらEGOをスポーン → 通常のco-sim。
+- 空きの判定: 同じ車線の前方車・後方車とのすき間(バンパー間の距離)が、それぞれ`ego_spawn_front_margin`・
+  `ego_spawn_rear_margin`以上で、かつEGOの予定位置に重なる車両・歩行者がいなければスポーンする。
 - EGOがスポーンされるまでは、CARLA上にEGOはおらず、RVizにもEGOは表示されない。
   ログに`[EGO SPAWN]`が出て、RVizにEGOが表示されてから、目的地を設定してAutoを押す(目的地の設定方法は従来と同じ)。
 - ROSの時刻(`/clock`)はEGOのスポーン時点から0付近で始まる。ウォームアップ・空き待ちの時間は含まれない。
-- `sumo_warmup_time`を指定しない(既定の0)場合は、従来と同じ動作になる。
-
-#### 2.7.2 パラメータと制約
-
-| パラメータ | 内容 | 既定値 |
-|---|---|---|
-| `sumo_warmup_time` | SUMOだけを先に進める秒数(整数)。0で無効 | `0` |
-| `ego_spawn_front_margin` | EGO前端と前方車後端の必要距離 [m] | `20.0` |
-| `ego_spawn_rear_margin` | EGO後端と後方車前端の必要距離 [m] | `20.0` |
-| `ego_spawn_wait_timeout` | ウォームアップ後に空きを待つ上限秒数(シミュレーション時間、整数) | `60` |
 
 `sumo_warmup_time`に1以上を指定したときは、次を満たさないと起動時に
 `Error: invalid parameters: ...`の1行を出して終了する。
@@ -241,10 +179,13 @@ ros2 launch autoware_launch e2e_simulator.launch.xml \
 - `tls_manager`が`sumo`または`none`であること(`carla`ではウォームアップ中にSUMOの信号が消えたままになるため使えない)
 - 必要距離が0以上、`ego_spawn_wait_timeout`が1以上であること
 
-`e2e_simulator.launch.xml`から指定する場合も、上の例のようにコマンドラインに並べればノードまで届く
-(`autoware_launch`側の変更は不要。届いているかは2.7.4の`[EGO SPAWN CHECK] start:`の行の値で確認できる)。
+`ego_spawn_front_margin`・`ego_spawn_rear_margin`・`ego_spawn_wait_timeout`は、Vissim-CARLA-Autoware co-simの
+ウォームアップ(`vissim_warmup_time`)と共通のパラメータである。
+`autoware_launch`の`e2e_simulator.launch.xml`には、`sumo_warmup_time`を含む4つの引数の宣言・受け渡しを追加している
+(`ros2 launch autoware_launch e2e_simulator.launch.xml --show-args`で確認できる)。
+なお、宣言がなくてもコマンドラインで指定した値はノードまで届く。届いているかは2.4.5の`[EGO SPAWN CHECK] start:`の行の値で確認できる。
 
-#### 2.7.3 スポーン地点の選び方
+#### 2.4.4 スポーン地点の選び方
 
 空きの判定は「スポーン地点が直線区間にある」ことを前提にしている(曲線では前後車の判定がずれる)。
 また、SUMO車両が通る車線でないと、空き待ちの確認にならない。
@@ -289,7 +230,7 @@ Town01(`rou/Town01.rou.xml`、入力2か所×600台/h)で確認済みの地点:
 - `sumo_warmup_time:=600`・既定の必要距離での実績: #37は空き待ち13.75秒(シミュレーション時間)でスポーン、#36は待ちなし。
 - `spawn_point`のzにはCARLAの道路の高さ(Town01ではほぼ0〜0.3)を入れる。コード側で+2 mしてスポーンする。
 
-#### 2.7.4 ログの見方
+#### 2.4.5 ログの見方
 
 ```bash
 grep -nE "SUMO WARMUP|EGO SPAWN|EGO spawn gate" /tmp/autoware_carla.log
@@ -310,7 +251,7 @@ grep -nE "SUMO WARMUP|EGO SPAWN|EGO spawn gate" /tmp/autoware_carla.log
 待ち時間上限、`spawn_point`、上の`[SUMO WARMUP] completed`・`[EGO SPAWN CHECK]`(最後のSAFE)・`[EGO SPAWN]`の行。
 同じ`.sumocfg`・同じパラメータなら、SUMOの車両の動きは同じになる(開発用PCとLinux機で一致を確認済み)。
 
-#### 2.7.5 試験開始失敗と終了
+#### 2.4.6 試験開始失敗と終了
 
 - `ego_spawn_wait_timeout`秒待っても空かない場合や、空いた後にEGOのスポーンに失敗した場合は、
   `Error: test start failed: ...`(最後の判定結果を含む)を出して後始末し、`autoware_carla_interface`が終了コード1で終了する。
@@ -320,3 +261,47 @@ grep -nE "SUMO WARMUP|EGO SPAWN|EGO spawn gate" /tmp/autoware_carla.log
 - ウォームアップ中・空き待ち中にCtrl+Cを押すと、EGOをスポーンせずに後始末して終了する。
 - Ctrl+Cで終了したときに、最後に`[ERROR] [launch]: Caught exception in launch ...: Cannot shutdown a ROS adapter that is not running`
   が1行出ることがあるが、launch側のメッセージで実害はない。
+
+### 2.5 [appendix] 処理時間計測
+
+```bash
+ros2 launch autoware_launch e2e_simulator.launch.xml \
+  simulator_type:=carla \
+  map_path:=$HOME/autoware_map/Town01 \
+  :
+  :
+  2>&1 | tee -i /tmp/autoware_carla.log
+ ```
+- `2>&1 | tee -i /tmp/autoware_carla.log` でターミナルログをautoware_carla.logに保存
+- `-i`を付けること。付けないと、Ctrl+Cで`tee`も終了し、それ以降(終了処理)のログが残らない
+
+```bash
+grep "MAIN_LOOP_PERIOD" /tmp/autoware_carla.log
+```
+- 例えば、ログに[MAIN_LOOP_PERIOD]タグをつけている場合は、上記のコマンドで対象ログを抽出できます。
+
+### 2.6 歩行者(Pedestrian)同期について
+
+上記のco-sim起動(2.4)には、SUMO側の歩行者(`traci.person`)をCARLA側の`walker.pedestrian.*`
+アクターとして反映する歩行者同期が組み込まれている。
+
+- **常時有効(CLI引数・launch引数は無い)**: 車両同期(`sync_vehicle_lights`等)と異なり、
+  歩行者同期のON/OFFを切り替える起動オプションは存在しない。SUMO設定(`sumo_cfg_file`)側に
+  歩行者(`personFlow`/`person`)のルート・ネットワークが定義されていれば、追加設定なしに
+  自動的に同期される。
+- **sumo→carla の一方向のみ**: CARLA側でspawnした歩行者をSUMOへ送り返す機能(carla→sumo)は
+  実装していない。あくまでSUMOが管理する歩行者をCARLA上に可視化・追従させるための機能である。
+- **Z座標補正**: `carla.Walker`アクターのtransform原点はbounding boxの垂直中心にあり、
+  SUMOが返す座標は地面(足元)基準のため、そのまま反映すると歩行者が地面に埋まって見える。
+  この差分を吸収するため、SUMOの`VAR_HEIGHT`の半分(`sumo_person.extent.z`)をZ座標に
+  加算する補正を行っている(`BridgeHelper.get_carla_pedestrian_transform()`)。
+- **ログについて**: 歩行者のspawn/update/destroyは`logging.debug()`で出力しているが、本パッケージは
+  Pythonの`logging`モジュールに対して`basicConfig`等でレベル設定を行っていないため、
+  デフォルト状態では表示されない(ターミナルにはWARNING以上、例えば未対応vclassのため
+  blueprintが見つからなかった場合の警告のみが表示される)。spawn/update/destroyの詳細を
+  確認したい場合は、`autoware_carla_interface`起動前に`python3 -c "import logging;
+  logging.basicConfig(level=logging.DEBUG)"`相当の設定を追加する、または該当箇所に
+  一時的なデバッグ出力を追加すること。
+- 歩行者用のCARLA walkerブレンプリントは`sumo_integration/data/vtypes.json`の
+  `carla_blueprints`に`walker.pedestrian.0001`〜`0051`(`vClass: "pedestrian"`)として
+  登録済みであり、追加設定は不要。
