@@ -117,13 +117,13 @@ ros2 launch autoware_launch e2e_simulator.launch.xml \
   2>&1 | tee -i /tmp/autoware_carla.log
 ```
 
-- 最後の3行は、ウォームアップ・EGO安全スポーン(2.4.3)を使う場合の指定である。
+- 最後の3行は、ウォームアップ・EGO安全スポーン(2.4.2)を使う場合の指定である。
   - ウォームアップを使わない場合は、`sumo_warmup_time`と`spawn_point`の行を省く(EGOは起動直後にランダムな位置へスポーンされる)。
     `spawn_point`だけを指定すれば、ウォームアップなしで固定位置にスポーンする。
-  - `2>&1 | tee -i /tmp/autoware_carla.log`はログ保存用(2.4.5のgrepで使う)。不要なら省いてよい。
+  - `2>&1 | tee -i /tmp/autoware_carla.log`はログ保存用(2.4.4のgrepで使う)。不要なら省いてよい。
     `-i`を付けないと、Ctrl+Cで`tee`も終了し、それ以降(終了処理)のログが残らない。
 
-#### 2.4.2 オプション一覧
+##### オプション一覧
 
 | オプション | 説明 | 設定例 | デフォルト値(未指定時) |
 |-----------|------|--------|--------------------------|
@@ -143,10 +143,10 @@ ros2 launch autoware_launch e2e_simulator.launch.xml \
 | `spectator_follow` | EGO車両(role_name=`ego_vehicle_role_name`)にCARLAスペクテーターを自動追従させる | `true` | `false` |
 | `spawn_point` | EGOのスポーン位置(CARLA座標、`x,y,z,roll,pitch,yaw`) | `"199.95,326.97,0.30,0.0,0.0,180.0"` | `None`(ランダム) |
 | `vehicle_type` | EGOのCARLAブループリント | `vehicle.toyota.prius` | `vehicle.toyota.prius` |
-| `sumo_warmup_time` | SUMOだけを先に進める秒数(整数)。0で無効。2.4.3参照 | `600` | `0`(無効) |
-| `ego_spawn_front_margin` | EGOスポーン時に必要な前方車とのすき間 [m]。2.4.3参照 | `20.0` | `20.0` |
-| `ego_spawn_rear_margin` | EGOスポーン時に必要な後方車とのすき間 [m]。2.4.3参照 | `20.0` | `20.0` |
-| `ego_spawn_wait_timeout` | ウォームアップ後に空きを待つ上限秒数(整数)。2.4.3参照 | `60` | `60` |
+| `sumo_warmup_time` | SUMOだけを先に進める秒数(整数)。0で無効。2.4.2参照 | `600` | `0`(無効) |
+| `ego_spawn_front_margin` | EGOスポーン時に必要な前方車とのすき間 [m]。2.4.2参照 | `20.0` | `20.0` |
+| `ego_spawn_rear_margin` | EGOスポーン時に必要な後方車とのすき間 [m]。2.4.2参照 | `20.0` | `20.0` |
+| `ego_spawn_wait_timeout` | ウォームアップ後に空きを待つ上限秒数(整数)。2.4.2参照 | `60` | `60` |
 
 - `sumo_gui:=true`のsumo-guiは、起動後に自動でシミュレーションを開始する(`--start`)。Runボタンを押す必要はない。
   また、co-simの終了時にはダイアログを出さずに自動で閉じる(`--quit-on-end`)。
@@ -156,7 +156,7 @@ ros2 launch autoware_launch e2e_simulator.launch.xml \
   autoware_carla_interface spectator_follow --distance ... --height ...`のように別ターミナルで
   手動起動すること。
 
-#### 2.4.3 ウォームアップ・EGO安全スポーン
+#### 2.4.2 ウォームアップ・EGO安全スポーン
 
 SUMOだけを先に所定時間進めて交通流を作ってから、EGOのスポーン位置の前後が空いたタイミングでEGOをスポーンする機能。
 `sumo_warmup_time`に1以上を指定すると有効になり、指定しない(既定の0)場合は従来と同じ動作になる。
@@ -183,9 +183,9 @@ SUMOだけを先に所定時間進めて交通流を作ってから、EGOのス�
 ウォームアップ(`vissim_warmup_time`)と共通のパラメータである。
 `autoware_launch`の`e2e_simulator.launch.xml`には、`sumo_warmup_time`を含む4つの引数の宣言・受け渡しを追加している
 (`ros2 launch autoware_launch e2e_simulator.launch.xml --show-args`で確認できる)。
-なお、宣言がなくてもコマンドラインで指定した値はノードまで届く。届いているかは2.4.5の`[EGO SPAWN CHECK] start:`の行の値で確認できる。
+なお、宣言がなくてもコマンドラインで指定した値はノードまで届く。届いているかは2.4.4の`[EGO SPAWN CHECK] start:`の行の値で確認できる。
 
-#### 2.4.4 スポーン地点の選び方
+#### 2.4.3 スポーン地点の選び方
 
 空きの判定は「スポーン地点が直線区間にある」ことを前提にしている(曲線では前後車の判定がずれる)。
 また、SUMO車両が通る車線でないと、空き待ちの確認にならない。
@@ -230,7 +230,7 @@ Town01(`rou/Town01.rou.xml`、入力2か所×600台/h)で確認済みの地点:
 - `sumo_warmup_time:=600`・既定の必要距離での実績: #37は空き待ち13.75秒(シミュレーション時間)でスポーン、#36は待ちなし。
 - `spawn_point`のzにはCARLAの道路の高さ(Town01ではほぼ0〜0.3)を入れる。コード側で+2 mしてスポーンする。
 
-#### 2.4.5 ログの見方
+#### 2.4.4 ログの見方
 
 ```bash
 grep -nE "SUMO WARMUP|EGO SPAWN|EGO spawn gate" /tmp/autoware_carla.log
@@ -251,7 +251,7 @@ grep -nE "SUMO WARMUP|EGO SPAWN|EGO spawn gate" /tmp/autoware_carla.log
 待ち時間上限、`spawn_point`、上の`[SUMO WARMUP] completed`・`[EGO SPAWN CHECK]`(最後のSAFE)・`[EGO SPAWN]`の行。
 同じ`.sumocfg`・同じパラメータなら、SUMOの車両の動きは同じになる(開発用PCとLinux機で一致を確認済み)。
 
-#### 2.4.6 試験開始失敗と終了
+#### 2.4.5 試験開始失敗と終了
 
 - `ego_spawn_wait_timeout`秒待っても空かない場合や、空いた後にEGOのスポーンに失敗した場合は、
   `Error: test start failed: ...`(最後の判定結果を含む)を出して後始末し、`autoware_carla_interface`が終了コード1で終了する。
