@@ -27,6 +27,7 @@ from .modules.carla_data_provider import CarlaDataProvider
 from .modules.carla_data_provider import GameTime
 from .modules.carla_wrapper import SensorReceivedNoData
 from .modules.carla_wrapper import SensorWrapper
+from .vissim_integration.ego_spawn_gate import EgoSpawnGateError
 
 
 class SensorLoop(object):
@@ -102,6 +103,12 @@ class InitializeInterface(object):
         self.sensor_wrapper = None
         self.ego_actor = None
         self.prev_tick_wall_time = 0.0
+        self.bridge_loop = None
+        # Set by _stop_loop() (SIGINT/SIGTERM); also seen by the Vissim warmup, which runs before
+        # bridge_loop exists.
+        self._stop_requested = False
+        # Kept by load_world() for the EGO spawn after the Vissim warmup.
+        self._client = None
 
         # Parameter for Initializing Carla World
         self.local_host = self.param_["host"]
@@ -247,6 +254,10 @@ class InitializeInterface(object):
                 "the EGO is going to be spawned"
             )
 
+    def _vissim_warmup_enabled(self):
+        """Whether the Vissim warmup / EGO safe spawn is used (use_vissim and a warmup time)."""
+        return self.use_vissim and self.vissim_warmup_time > 0
+
     def _vissim_warmup_periods(self):
         """
         Returns (warmup_time, wait_timeout): the seconds Vissim may run before the co-simulation
@@ -254,7 +265,7 @@ class InitializeInterface(object):
         while the warmup is disabled, whatever ego_spawn_wait_timeout holds, so that the Vissim
         simulation period stays exactly as before.
         """
-        if self.vissim_warmup_time > 0:
+        if self._vissim_warmup_enabled():
             return self.vissim_warmup_time, self.ego_spawn_wait_timeout
         return 0, 0
 
@@ -387,7 +398,12 @@ class InitializeInterface(object):
 
         self._init_vissim_integration(client)
 
-        self._spawn_ego_and_sensors(client)
+        if self._vissim_warmup_enabled():
+            # The EGO is spawned after the Vissim warmup instead (see run_bridge() and docs/
+            # Vissim_CARLA_Autoware_ウォームアップ_EGO安全スポーン_実装計画_v1.0.md section 2.1).
+            self._client = client
+        else:
+            self._spawn_ego_and_sensors(client)
 
     def _spawn_ego_and_sensors(self, client):
         """
@@ -404,6 +420,11 @@ class InitializeInterface(object):
         self.ego_actor = CarlaDataProvider.request_new_actor(
             self.vehicle_type, spawn_point, self.agent_role_name, random_location=randomize
         )
+        if self.ego_actor is None:
+            raise EgoSpawnGateError(
+                f"failed to spawn the EGO vehicle ({self.vehicle_type}) at spawn_point "
+                f"{self.spawn_point!r} (see the CarlaDataProvider warning above)"
+            )
         self.interface.ego_actor = self.ego_actor  # TODO improve design
         self.interface.physics_control = self.ego_actor.get_physics_control()
 
@@ -413,7 +434,48 @@ class InitializeInterface(object):
         if self.use_traffic_manager:
             self._setup_traffic_manager(client)
 
+    def _run_vissim_warmup(self):
+        """
+        Runs the Vissim warmup, spawns the vissim actors that entered the network meanwhile in
+        CARLA, then spawns the EGO and starts the co-simulation period (see docs/
+        Vissim_CARLA_Autoware_ウォームアップ_EGO安全スポーン_実装計画_v1.0.md sections 2.1-2.7).
+
+        Runs before the regular loop, without ticking GameTime/CarlaDataProvider and without
+        publishing anything, so ROS time only starts once the regular loop does. The EGO is
+        registered into Vissim by the regular loop's auto-adopt, as without the warmup.
+
+            :return: True if the regular loop may start, False if a stop was requested.
+            :raises EgoSpawnGateError: if the test cannot be started (see EgoSpawnGate).
+        """
+        from .vissim_integration.ego_spawn_gate import EgoSpawnGate
+
+        gate = EgoSpawnGate(
+            self.vissim_sync,
+            self.vissim_warmup_time,
+            self.fixed_delta_seconds,
+            self.vissim_max_consecutive_failures,
+            should_stop=lambda: self._stop_requested,
+        )
+        if not gate.warmup():
+            return False
+        gate.catch_up()
+        if self._stop_requested:
+            return False
+
+        self._spawn_ego_and_sensors(self._client)
+        self.vissim_sim.start_period()
+        location = self.ego_actor.get_location()
+        print(
+            f"[EGO SPAWN] t={gate.sim_time:.2f} s spawn_point={self.spawn_point} "
+            f"location=({location.x:.2f}, {location.y:.2f}, {location.z:.2f}) "
+            f"vehicles={len(self.vissim_sim.vehicle_ids)} end_tick={self.vissim_sim.end_tick}"
+        )
+        return True
+
     def run_bridge(self):
+        if self._vissim_warmup_enabled() and not self._run_vissim_warmup():
+            return
+
         self.bridge_loop = SensorLoop()
         self.bridge_loop.sensor = self.sensor_wrapper
         self.bridge_loop.ego_actor = self.ego_actor
@@ -438,7 +500,9 @@ class InitializeInterface(object):
                 self.bridge_loop._tick_sensor(timestamp)
 
     def _stop_loop(self, sign, frame):
-        self.bridge_loop._stop_loop()
+        self._stop_requested = True
+        if self.bridge_loop is not None:
+            self.bridge_loop._stop_loop()
 
     def _cleanup(self):
         """
@@ -570,10 +634,17 @@ def main():
     signal.signal(signal.SIGINT, carla_bridge._stop_loop)
     signal.signal(signal.SIGTERM, carla_bridge._stop_loop)
 
+    exit_code = 0
     try:
         carla_bridge.run_bridge()
     except KeyboardInterrupt:
         print("\nReceived keyboard interrupt, shutting down...")
+    except EgoSpawnGateError as e:
+        # The test could not be started (Vissim warmup / EGO safe spawn, see docs/
+        # Vissim_CARLA_Autoware_ウォームアップ_EGO安全スポーン_実装計画_v1.0.md section 2.8): an
+        # expected outcome rather than a bug, so no traceback, but a non-zero exit code.
+        print(f"Error: test start failed: {e}")
+        exit_code = 1
     except Exception as e:
         print(f"\nError during bridge operation: {e}")
         raise
@@ -582,6 +653,8 @@ def main():
         print("Cleaning up CARLA resources...")
         carla_bridge._cleanup()
         print("Cleanup complete.")
+    if exit_code:
+        sys.exit(exit_code)
 
 
 if __name__ == "__main__":

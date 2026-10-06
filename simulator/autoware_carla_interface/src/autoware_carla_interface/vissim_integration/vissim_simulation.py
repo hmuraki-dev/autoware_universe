@@ -550,6 +550,22 @@ class PTVVissimSimulation(object):
         return self._vissim_pedestrians[pedestrian_id]
 
     @property
+    def vehicle_ids(self):
+        """
+        Returns the set of vissim VehicleIDs of the traffic vehicles seen in the last tick() (all
+        of them, unlike spawned_vehicles, which only holds those new in that tick).
+        """
+        return set(self._vissim_vehicles.keys())
+
+    @property
+    def pedestrian_ids(self):
+        """
+        Returns the set of vissim PedestrianIDs seen in the last tick() (all of them, unlike
+        spawned_pedestrians, which only holds those new in that tick).
+        """
+        return set(self._vissim_pedestrians.keys())
+
+    @property
     def signal_ids(self):
         """
         Returns the set of (ControllerID, SignalGroupID) pairs seen in the last tick().

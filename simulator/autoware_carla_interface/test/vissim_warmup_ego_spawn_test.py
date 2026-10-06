@@ -20,7 +20,11 @@ docs/Vissim_CARLA_Autoware_ウォームアップ_EGO安全スポーン_実装計
 - load_world() initializes the Vissim integration and then spawns the EGO (with its sensors and,
   if enabled, the Traffic Manager NPCs) through _spawn_ego_and_sensors(), in that order, as it did
   before the EGO spawn was split out of it;
-- _spawn_ego_and_sensors() itself: fixed or random spawn point, sensors, Traffic Manager.
+- _spawn_ego_and_sensors() itself: fixed or random spawn point, sensors, Traffic Manager, and a
+  failed EGO spawn;
+- with the Vissim warmup (Step V4): load_world() leaves the EGO spawn to run_bridge(), which runs
+  the warmup and the catch-up spawn, spawns the EGO, starts the co-simulation period and only then
+  the regular loop; stop requests during the warmup; the exit code of a failed test start.
 
 Needs neither ROS 2, CARLA, nor a vissim adapter: `carla`, `zmq`, `msgpack` and the ROS-dependent
 `carla_ros`/`modules.*` modules are replaced by mocks, only for the duration of run() (via
@@ -163,6 +167,162 @@ def check_traffic_manager_after_sensors(ca):
     ], order.mock_calls
 
 
+def check_ego_spawn_failure_raises(ca):
+    interface = _make_interface(ca, spawn_point=_SPAWN_POINT)
+    ca.CarlaDataProvider.request_new_actor.return_value = None
+    try:
+        interface._spawn_ego_and_sensors(mock.MagicMock())
+    except ca.EgoSpawnGateError as e:
+        assert 'failed to spawn the EGO vehicle' in str(e), e
+    else:
+        raise AssertionError('expected EgoSpawnGateError')
+    finally:
+        ca.CarlaDataProvider.request_new_actor.return_value = mock.DEFAULT
+    ca.SensorWrapper.assert_not_called()
+
+
+# -- Vissim warmup (Step V4) --------------------------------------------------------------------------
+
+_WARMUP = {'use_vissim': True, 'vissim_warmup_time': 100, 'spawn_point': _SPAWN_POINT}
+
+_GATE_CLASS = 'autoware_carla_interface.vissim_integration.ego_spawn_gate.EgoSpawnGate'
+
+
+class _FakeLocation(object):
+    x, y, z = 229.8, -2.0, 0.5
+
+
+def _make_warmup_interface(ca, **overrides):
+    """An interface past load_world() with the warmup enabled (vissim objects mocked)."""
+    interface = _make_interface(ca, **dict(_WARMUP, **overrides))
+    interface._client = mock.MagicMock(name='client')
+    interface.vissim_sync = mock.MagicMock(name='vissim_sync')
+    interface.vissim_sim = mock.MagicMock(name='vissim_sim')
+    interface.vissim_sim.vehicle_ids = {1, 2, 3}
+    interface.vissim_sim.end_tick = 3200
+    return interface
+
+
+def _never_running_sensor_loop(ca):
+    class _NeverRunningSensorLoop(ca.SensorLoop):
+        # run_bridge() sets running = True and then loops while it is true; ignoring the
+        # assignment makes run_bridge() return right after wiring up the loop.
+        running = property(lambda self: False, lambda self, value: None)
+    return _NeverRunningSensorLoop
+
+
+def check_load_world_defers_ego_with_warmup(ca):
+    interface = _make_interface(ca, **_WARMUP)
+    with mock.patch.object(ca.time, 'sleep'), \
+            mock.patch.object(interface, '_init_vissim_integration') as init_vissim, \
+            mock.patch.object(interface, '_spawn_ego_and_sensors') as spawn:
+        interface.load_world()
+    client = ca.carla.Client.return_value
+    init_vissim.assert_called_once_with(client)
+    spawn.assert_not_called()
+    assert interface._client is client
+
+
+def check_run_bridge_warms_up_then_spawns_ego(ca):
+    interface = _make_warmup_interface(ca)
+    order = mock.MagicMock()
+    order.attach_mock(interface.vissim_sim.start_period, 'start_period')
+
+    def spawn(client):
+        order._spawn_ego_and_sensors(client)
+        interface.ego_actor = mock.MagicMock(name='ego')
+        interface.ego_actor.get_location.return_value = _FakeLocation()
+
+    with mock.patch(_GATE_CLASS) as gate_cls, \
+            mock.patch.object(interface, '_spawn_ego_and_sensors', side_effect=spawn), \
+            mock.patch.object(ca, 'SensorLoop', _never_running_sensor_loop(ca)):
+        gate = gate_cls.return_value
+        def warmup():
+            order.warmup()
+            return True
+
+        gate.warmup.side_effect = warmup
+        gate.catch_up.side_effect = lambda: order.catch_up()
+        gate.sim_time = 107.4
+        interface.run_bridge()
+
+    args, kwargs = gate_cls.call_args
+    assert args == (interface.vissim_sync, 100, 0.05, 3), args
+    assert kwargs['should_stop']() is False
+    interface._stop_requested = True
+    assert kwargs['should_stop']() is True
+
+    assert order.mock_calls == [
+        mock.call.warmup(),
+        mock.call.catch_up(),
+        mock.call._spawn_ego_and_sensors(interface._client),
+        mock.call.start_period(),
+    ], order.mock_calls
+    # The regular loop then starts with the EGO spawned after the warmup.
+    assert interface.bridge_loop is not None
+    assert interface.bridge_loop.ego_actor is interface.ego_actor
+    assert interface.bridge_loop.vissim_sync is interface.vissim_sync
+
+
+def check_run_bridge_stopped_during_warmup(ca):
+    interface = _make_warmup_interface(ca)
+    with mock.patch(_GATE_CLASS) as gate_cls, \
+            mock.patch.object(interface, '_spawn_ego_and_sensors') as spawn:
+        gate_cls.return_value.warmup.return_value = False
+        interface.run_bridge()
+    gate_cls.return_value.catch_up.assert_not_called()
+    spawn.assert_not_called()
+    interface.vissim_sim.start_period.assert_not_called()
+    assert interface.bridge_loop is None
+
+
+def check_run_bridge_stopped_during_catch_up(ca):
+    interface = _make_warmup_interface(ca)
+
+    def catch_up():
+        interface._stop_loop(None, None)
+
+    with mock.patch(_GATE_CLASS) as gate_cls, \
+            mock.patch.object(interface, '_spawn_ego_and_sensors') as spawn:
+        gate_cls.return_value.warmup.return_value = True
+        gate_cls.return_value.catch_up.side_effect = catch_up
+        interface.run_bridge()
+    spawn.assert_not_called()
+    assert interface.bridge_loop is None
+
+
+def check_run_bridge_without_warmup_skips_gate(ca):
+    interface = _make_interface(ca, use_vissim=True)  # warmup disabled
+    interface.vissim_sync = mock.MagicMock()
+    with mock.patch(_GATE_CLASS) as gate_cls, \
+            mock.patch.object(ca, 'SensorLoop', _never_running_sensor_loop(ca)):
+        interface.run_bridge()
+    gate_cls.assert_not_called()
+    assert interface.bridge_loop is not None
+
+
+def check_stop_loop_before_bridge_loop(ca):
+    interface = _make_interface(ca)
+    assert interface.bridge_loop is None and interface._stop_requested is False
+    interface._stop_loop(None, None)  # e.g. SIGINT during the warmup: must not raise
+    assert interface._stop_requested is True
+
+
+def check_main_exits_non_zero_when_test_start_fails(ca):
+    bridge = mock.MagicMock()
+    bridge.run_bridge.side_effect = ca.EgoSpawnGateError('no safe gap')
+    with mock.patch.object(ca, 'InitializeInterface', return_value=bridge), \
+            mock.patch.object(ca.signal, 'signal'), \
+            mock.patch.object(ca.sys.stdout, 'reconfigure', create=True):
+        try:
+            ca.main()
+        except SystemExit as e:
+            assert e.code == 1, e.code
+        else:
+            raise AssertionError('expected SystemExit(1)')
+    bridge._cleanup.assert_called_once_with()
+
+
 # ==================================================================================================
 # -- entry point -------------------------------------------------------------------------------------
 # ==================================================================================================
@@ -177,6 +337,14 @@ def run():
         check_spawn_at_fixed_spawn_point(ca)
         check_spawn_at_random_spawn_point(ca)
         check_traffic_manager_after_sensors(ca)
+        check_ego_spawn_failure_raises(ca)
+        check_load_world_defers_ego_with_warmup(ca)
+        check_run_bridge_warms_up_then_spawns_ego(ca)
+        check_run_bridge_stopped_during_warmup(ca)
+        check_run_bridge_stopped_during_catch_up(ca)
+        check_run_bridge_without_warmup_skips_gate(ca)
+        check_stop_loop_before_bridge_loop(ca)
+        check_main_exits_non_zero_when_test_start_fails(ca)
     print('All EGO spawn checks passed.')
 
 

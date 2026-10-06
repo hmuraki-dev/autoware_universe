@@ -3,7 +3,8 @@
 The files in this directory (`constants.py`, `vissim_simulation.py`, `rpc_protocol.py`,
 `bridge_helper.py`, `carla_simulation.py`, `simulation_synchronization.py`, `data/vtypes.json`,
 `data/signal_mapping.json`, `data/ptypes.json`) are vendored from CARLA's official Vissim-CARLA
-co-simulation bridge:
+co-simulation bridge (`ego_spawn_gate.py` is not: it is specific to this repository - see
+`docs/Vissim_CARLA_Autoware_ウォームアップ_EGO安全スポーン_実装計画_v1.0.md`):
 
 - Upstream location (this workspace's reference checkout):
   `/home/divp/CARLA/Co-Simulation/PTV-Vissim/vissim_integration/` and
@@ -76,7 +77,8 @@ vendoring these files instead of referencing them via an external path.
   `_period_start_tick + _period_ticks` (replacing the fixed `_end_tick`) together with the new
   `start_period()` method, which moves the start of the co-simulation period to the current
   `tick_count`. Without a warmup `start_period()` is never called and `end_tick` is identical to
-  upstream.
+  upstream. Step V4 added the read-only `vehicle_ids`/`pedestrian_ids` properties (all vissim
+  vehicles/pedestrians seen in the last `tick()`, used by the catch-up spawn after the warmup).
 - `simulation_synchronization.py`: extracted from the upstream `run_synchronization.py`, keeping
   only the `SimulationSynchronization` class definition (the CLI entry point / standalone
   `while True:` loop / pacing logic in `run_synchronization.py` are intentionally not vendored,
@@ -100,7 +102,11 @@ vendoring these files instead of referencing them via an external path.
   `vissim2carla_ids` is a CARLA actor id, so the vissim-side call was a silent no-op and NPCs that
   left the vissim network were never removed from CARLA. (The same fix was later applied upstream
   as well, in `feature/vissim_windows` commit `8b90182`, so this is no longer a deviation in
-  behavior.)
+  behavior.) Vissim warmup / EGO safe spawn (this repository only, see
+  `docs/Vissim_CARLA_Autoware_ウォームアップ_EGO安全スポーン_実装計画_v1.0.md` Step V4): the new
+  `spawn_all_vissim_actors_in_carla()` method spawns in CARLA every vissim vehicle/pedestrian not
+  mirrored yet (same steps as the spawn blocks of `sync_vissim_to_carla()`), called once after the
+  warmup. The existing methods are unmodified.
 - `bridge_helper.py`: vendored with the `ptypes = {}` class attribute and the
   `get_carla_pedestrian_blueprint()`/`get_carla_pedestrian_transform()` methods added, both
   byte-for-byte identical to upstream. All pre-existing methods (`get_carla_transform()`,

@@ -308,6 +308,63 @@ class SimulationSynchronization(object):
                 for opendrive_id in opendrive_ids:
                     self.carla.synchronize_traffic_light(opendrive_id, carla_state)
 
+    def spawn_all_vissim_actors_in_carla(self):
+        """
+        Spawns in CARLA every vissim vehicle and pedestrian currently in the vissim network that is
+        not mirrored in CARLA yet, then returns how many were spawned.
+
+        Used once after the Vissim warmup (see docs/
+        Vissim_CARLA_Autoware_ウォームアップ_EGO安全スポーン_実装計画_v1.0.md section 2.4): during
+        the warmup only vissim is ticked, and sync_vissim_to_carla() only spawns the actors that
+        appeared in the latest vissim tick, so everything that entered the network during the
+        warmup would otherwise never show up in CARLA. Uses the same steps as
+        sync_vissim_to_carla()'s spawn blocks (blueprint, transform, spawn); like them, it does
+        not retry actors that cannot be spawned (unknown type, spawn failure). Does not tick CARLA.
+
+            :return: dict with 'vehicles' / 'pedestrians' (spawned now) and
+                'vehicles_not_spawned' / 'pedestrians_not_spawned' (sets of vissim ids left
+                without a CARLA counterpart).
+        """
+        vehicles_to_spawn = (self.vissim.vehicle_ids - set(self.vissim2carla_ids.keys()) -
+                             set(self.carla2vissim_ids.values()))
+        vehicles_not_spawned = set()
+        for vissim_actor_id in vehicles_to_spawn:
+            vissim_actor = self.vissim.get_actor(vissim_actor_id)
+
+            carla_blueprint = BridgeHelper.get_carla_blueprint(vissim_actor)
+            carla_actor_id = INVALID_ACTOR_ID
+            if carla_blueprint is not None:
+                carla_transform = BridgeHelper.get_carla_transform(vissim_actor.get_transform())
+                carla_actor_id = self.carla.spawn_actor(carla_blueprint, carla_transform)
+
+            if carla_actor_id != INVALID_ACTOR_ID:
+                self.vissim2carla_ids[vissim_actor_id] = carla_actor_id
+            else:
+                vehicles_not_spawned.add(vissim_actor_id)
+
+        pedestrians_to_spawn = self.vissim.pedestrian_ids - set(self.vissim2carla_ped_ids.keys())
+        pedestrians_not_spawned = set()
+        for vissim_pedestrian_id in pedestrians_to_spawn:
+            vissim_pedestrian = self.vissim.get_pedestrian(vissim_pedestrian_id)
+
+            carla_blueprint = BridgeHelper.get_carla_pedestrian_blueprint(vissim_pedestrian)
+            carla_walker_id = INVALID_ACTOR_ID
+            if carla_blueprint is not None:
+                carla_transform = BridgeHelper.get_carla_pedestrian_transform(vissim_pedestrian)
+                carla_walker_id = self.carla.spawn_actor(carla_blueprint, carla_transform)
+
+            if carla_walker_id != INVALID_ACTOR_ID:
+                self.vissim2carla_ped_ids[vissim_pedestrian_id] = carla_walker_id
+            else:
+                pedestrians_not_spawned.add(vissim_pedestrian_id)
+
+        return {
+            'vehicles': len(vehicles_to_spawn) - len(vehicles_not_spawned),
+            'vehicles_not_spawned': vehicles_not_spawned,
+            'pedestrians': len(pedestrians_to_spawn) - len(pedestrians_not_spawned),
+            'pedestrians_not_spawned': pedestrians_not_spawned,
+        }
+
     def sync_carla_to_vissim(self):
         """
         CARLA -> Vissim sync: refreshes CARLA's spawned/destroyed actor diff (without ticking

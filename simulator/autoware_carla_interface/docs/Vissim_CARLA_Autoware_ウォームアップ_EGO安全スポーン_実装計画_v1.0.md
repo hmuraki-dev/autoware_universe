@@ -409,7 +409,7 @@ python3 tools/carla_bbox_probe.py vehicle.toyota.prius
   `vissim_adapter_stub_test.py`(ウォームアップ時のconnectの期間・`start_period()`)にケースを追加。
   開発用PCで、`vissim_pedestrian_sync_stub_test.py`以外の全テストの通過を確認(`vissim_adapter_stub_test.py`は簡易な代替`carla`モジュールで実行)。
   `vissim_pedestrian_sync_stub_test.py`はLinux機で確認する。
-- `start_period()`の呼び出し(EGOスポーン時)はStep V7で行う。
+- `start_period()`の呼び出し(EGOスポーン時)は、Step V4で入れた(V4の確認項目「検証時間が`vissim_sim_period`どおり」に必要なため)。
 
 ### Step V3: EGOスポーン処理の切り出し(動作変更なし)
 
@@ -434,6 +434,29 @@ python3 tools/carla_bbox_probe.py vehicle.toyota.prius
 - 確認: ウォームアップ後、CARLA上にVissim車両・歩行者が揃って現れること。EGOがVissimへ登録され、
   通常co-simに移ること。ROS時刻が0付近から始まること。検証時間が`vissim_sim_period`どおりであること。
   Autowareが、センサーデータがウォームアップ分遅れて届き始めても正常に起動・初期化できること(V0 #5から移動)。
+
+**実施結果(2026-10-06)**: 実装完了(実機確認は未実施)。
+- `vissim_integration/ego_spawn_gate.py`(新規、vendorではない): `EgoSpawnGate`(`warmup()`/`catch_up()`)と`EgoSpawnGateError`。
+  carla/zmqをimportしないので、単体でテストできる。
+  - `warmup()`: 現在の`tick_count`から`vissim_warmup_time × sim_res`回、`vissim.tick()`だけを呼ぶ(CARLAはtickしない、sleepなし)。
+    10秒(Vissim時間)ごとに進捗を出す。停止要求で`False`を返す。連続失敗が`vissim_max_consecutive_failures`に達したら`EgoSpawnGateError`。
+  - `catch_up()`: `spawn_all_vissim_actors_in_carla()` → `world.tick()` → `update_actor_diff()`。CARLAに出せなかったVissim車両のIDをログに出す。
+- `simulation_synchronization.py`: `spawn_all_vissim_actors_in_carla()`を追加(既存メソッドは無変更)。
+  `vissim_simulation.py`: `vehicle_ids`/`pedestrian_ids`プロパティを追加。どちらもNOTICE.mdに記録。
+- `carla_autoware.py`:
+  - ウォームアップ有効時、`load_world()`はEGOをスポーンせず、`client`を保持するだけにする。
+  - `run_bridge()`の先頭で`_run_vissim_warmup()`を実行: `warmup()` → `catch_up()` → `_spawn_ego_and_sensors()` → `vissim_sim.start_period()`
+    → `[EGO SPAWN]`ログ → 通常ループ。この段階ではギャップ判定なし(Step V6で追加)。
+  - `_stop_loop()`(SIGINT/SIGTERM)は`_stop_requested`を立てる。`bridge_loop`がまだない(ウォームアップ中)ときも例外にならない。
+  - `_spawn_ego_and_sensors()`でEGOのスポーンに失敗したら(`request_new_actor`がNone)、`EgoSpawnGateError`にする
+    (従来は`None.get_physics_control()`の`AttributeError`で落ちていた。ウォームアップ無効時も落ちる点は同じで、メッセージだけが分かりやすくなる)。
+  - `main()`: `EgoSpawnGateError`は試験開始失敗として、トレースバックなしで`Error: test start failed: ...`を出し、後始末のあと終了コード1で終わる。
+- テスト: `test/vissim_ego_spawn_gate_test.py`(新規)、`test/vissim_warmup_ego_spawn_test.py`(ウォームアップの流れ・停止・終了コードを追加)。
+  開発用PCで全8テストの通過を確認(`carla`が必要な2本は簡易な代替`carla`モジュールで実行)。
+- **実機で確認したい懸念**: キャッチアップでは、ウォームアップ中に溜まった車両を一度にスポーンする。スポーン位置は既存と同じく
+  「Vissimの前端位置を中心とみなし、25 m持ち上げた位置」なので、信号待ちの車列のように前後が詰まった車両同士は、CARLAの外形が
+  重なってスポーンに失敗する可能性がある(失敗した車両はCARLAに出ず、`vissim_only`としてログに出る)。V9 #3で件数を確認し、
+  多ければ対策(例: 1台ずつ高さをずらしてスポーンし、直後に正しい位置へ移す)を検討する。
 
 ### Step V5: ギャップ判定ロジック(純粋関数 + 単体テスト)
 
