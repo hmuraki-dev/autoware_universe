@@ -321,6 +321,11 @@ class SimulationSynchronization(object):
         sync_vissim_to_carla()'s spawn blocks (blueprint, transform, spawn); like them, it does
         not retry actors that cannot be spawned (unknown type, spawn failure). Does not tick CARLA.
 
+        Like sync_vissim_to_carla(), the actors just spawned are then moved to their actual
+        position right away, before CARLA is ticked: they are spawned lifted by
+        CARLA_SPAWN_OFFSET_Z, and vehicles at vissim's front-center-bumper position, which only
+        becomes the actor's center once corrected with the actor's own bounding box.
+
             :return: dict with 'vehicles' / 'pedestrians' (spawned now) and
                 'vehicles_not_spawned' / 'pedestrians_not_spawned' (sets of vissim ids left
                 without a CARLA counterpart).
@@ -328,6 +333,7 @@ class SimulationSynchronization(object):
         vehicles_to_spawn = (self.vissim.vehicle_ids - set(self.vissim2carla_ids.keys()) -
                              set(self.carla2vissim_ids.values()))
         vehicles_not_spawned = set()
+        vehicles_spawned = []
         for vissim_actor_id in vehicles_to_spawn:
             vissim_actor = self.vissim.get_actor(vissim_actor_id)
 
@@ -339,11 +345,26 @@ class SimulationSynchronization(object):
 
             if carla_actor_id != INVALID_ACTOR_ID:
                 self.vissim2carla_ids[vissim_actor_id] = carla_actor_id
+                vehicles_spawned.append(vissim_actor_id)
             else:
                 vehicles_not_spawned.add(vissim_actor_id)
 
+        # Same update as sync_vissim_to_carla()'s "Updating vissim controlled vehicles in carla",
+        # for the vehicles just spawned.
+        for vissim_actor_id in vehicles_spawned:
+            carla_actor_id = self.vissim2carla_ids[vissim_actor_id]
+
+            vissim_actor = self.vissim.get_actor(vissim_actor_id)
+            carla_actor = self.carla.get_actor(carla_actor_id)
+
+            carla_transform = BridgeHelper.get_carla_transform(vissim_actor.get_transform(),
+                                                               carla_actor.bounding_box.extent)
+            carla_velocity = BridgeHelper.get_carla_velocity(vissim_actor.get_velocity())
+            self.carla.synchronize_vehicle(carla_actor_id, carla_transform, carla_velocity)
+
         pedestrians_to_spawn = self.vissim.pedestrian_ids - set(self.vissim2carla_ped_ids.keys())
         pedestrians_not_spawned = set()
+        pedestrians_spawned = []
         for vissim_pedestrian_id in pedestrians_to_spawn:
             vissim_pedestrian = self.vissim.get_pedestrian(vissim_pedestrian_id)
 
@@ -355,8 +376,20 @@ class SimulationSynchronization(object):
 
             if carla_walker_id != INVALID_ACTOR_ID:
                 self.vissim2carla_ped_ids[vissim_pedestrian_id] = carla_walker_id
+                pedestrians_spawned.append(vissim_pedestrian_id)
             else:
                 pedestrians_not_spawned.add(vissim_pedestrian_id)
+
+        # Same update as sync_vissim_to_carla()'s "Updating vissim pedestrians in carla", for the
+        # pedestrians just spawned.
+        for vissim_pedestrian_id in pedestrians_spawned:
+            carla_walker_id = self.vissim2carla_ped_ids[vissim_pedestrian_id]
+
+            vissim_pedestrian = self.vissim.get_pedestrian(vissim_pedestrian_id)
+
+            carla_transform = BridgeHelper.get_carla_pedestrian_transform(vissim_pedestrian)
+            carla_velocity = BridgeHelper.get_carla_velocity(vissim_pedestrian.get_velocity())
+            self.carla.synchronize_pedestrian(carla_walker_id, carla_transform, carla_velocity)
 
         return {
             'vehicles': len(vehicles_to_spawn) - len(vehicles_not_spawned),

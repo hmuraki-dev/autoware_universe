@@ -105,8 +105,9 @@ vendoring these files instead of referencing them via an external path.
   behavior.) Vissim warmup / EGO safe spawn (this repository only, see
   `docs/Vissim_CARLA_Autoware_ウォームアップ_EGO安全スポーン_実装計画_v1.0.md` Step V4): the new
   `spawn_all_vissim_actors_in_carla()` method spawns in CARLA every vissim vehicle/pedestrian not
-  mirrored yet (same steps as the spawn blocks of `sync_vissim_to_carla()`), called once after the
-  warmup. The existing methods are unmodified.
+  mirrored yet and moves them to their actual position right away (same steps as the spawn and
+  update blocks of `sync_vissim_to_carla()`), called once after the warmup. The existing methods
+  are unmodified.
 - `bridge_helper.py`: vendored with the `ptypes = {}` class attribute and the
   `get_carla_pedestrian_blueprint()`/`get_carla_pedestrian_transform()` methods added, both
   byte-for-byte identical to upstream. All pre-existing methods (`get_carla_transform()`,

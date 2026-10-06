@@ -180,8 +180,10 @@ def _make_sync(ss, vehicle_ids, pedestrian_ids):
     sync.vissim.vehicle_ids = set(vehicle_ids)
     sync.vissim.pedestrian_ids = set(pedestrian_ids)
     sync.vissim.get_actor.side_effect = lambda i: types.SimpleNamespace(
-        id=i, type='v%d' % i, get_transform=mock.MagicMock())
-    sync.vissim.get_pedestrian.side_effect = lambda i: types.SimpleNamespace(id=i, type='p%d' % i)
+        id=i, type='v%d' % i, get_transform=lambda: 'vissim-tf-%d' % i,
+        get_velocity=lambda: 'vissim-vel-%d' % i)
+    sync.vissim.get_pedestrian.side_effect = lambda i: types.SimpleNamespace(
+        id=i, type='p%d' % i, get_velocity=lambda: 'vissim-ped-vel-%d' % i)
     sync.carla = mock.MagicMock()
     sync.vissim2carla_ids = {}
     sync.carla2vissim_ids = {}
@@ -201,19 +203,49 @@ def check_spawn_all_vissim_actors(ss):
     def spawn(blueprint, transform):
         return ss.INVALID_ACTOR_ID if blueprint == 'bp-5' else 1000 + int(blueprint[3:])
 
+    def carla_transform(vissim_transform, extent=None):
+        # Tags the result with whether it was corrected with the CARLA bounding box (center) or
+        # not (vissim's front-center-bumper position, as used for spawning).
+        return (vissim_transform, 'center' if extent is not None else 'front', extent)
+
+    def carla_actor(carla_actor_id):
+        return types.SimpleNamespace(
+            bounding_box=types.SimpleNamespace(extent='extent-%d' % carla_actor_id))
+
     with mock.patch.object(ss.BridgeHelper, 'get_carla_blueprint', side_effect=blueprint_for), \
-            mock.patch.object(ss.BridgeHelper, 'get_carla_transform'), \
+            mock.patch.object(ss.BridgeHelper, 'get_carla_transform',
+                              side_effect=carla_transform), \
+            mock.patch.object(ss.BridgeHelper, 'get_carla_velocity',
+                              side_effect=lambda v: 'carla-' + v), \
             mock.patch.object(ss.BridgeHelper, 'get_carla_pedestrian_blueprint',
                               return_value='walker'), \
-            mock.patch.object(ss.BridgeHelper, 'get_carla_pedestrian_transform'):
+            mock.patch.object(ss.BridgeHelper, 'get_carla_pedestrian_transform',
+                              side_effect=lambda p: 'ped-tf-%d' % p.id):
         sync.carla.spawn_actor.side_effect = lambda bp, tf: (
             1101 if bp == 'walker' else spawn(bp, tf))
+        sync.carla.get_actor.side_effect = carla_actor
         result = sync.spawn_all_vissim_actors_in_carla()
 
     assert sync.vissim2carla_ids == {1: 501, 2: 1002, 3: 1003}, sync.vissim2carla_ids
     assert sync.vissim2carla_ped_ids == {100: 700, 101: 1101}, sync.vissim2carla_ped_ids
     assert result == {'vehicles': 2, 'vehicles_not_spawned': {4, 5}, 'pedestrians': 1,
                       'pedestrians_not_spawned': set()}, result
+
+    # Vehicles are spawned at vissim's front-center-bumper position...
+    spawned_at = {tf[0]: tf[1] for _, tf in
+                  (c.args for c in sync.carla.spawn_actor.call_args_list) if tf != 'ped-tf-101'}
+    assert spawned_at == {'vissim-tf-2': 'front', 'vissim-tf-3': 'front',
+                          'vissim-tf-5': 'front'}, spawned_at
+    # ...then, before CARLA is ticked, moved to their center position using their own bounding
+    # box - only those actually spawned (not 1: already mirrored, not 4/5: not spawned).
+    synchronized = sorted(c.args for c in sync.carla.synchronize_vehicle.call_args_list)
+    assert synchronized == [
+        (1002, ('vissim-tf-2', 'center', 'extent-1002'), 'carla-vissim-vel-2'),
+        (1003, ('vissim-tf-3', 'center', 'extent-1003'), 'carla-vissim-vel-3'),
+    ], synchronized
+    # Pedestrians likewise (spawned lifted by CARLA_SPAWN_OFFSET_Z, then moved to the ground).
+    sync.carla.synchronize_pedestrian.assert_called_once_with(1101, 'ped-tf-101',
+                                                             'carla-vissim-ped-vel-101')
     # Does not tick CARLA itself (the gate does, after it).
     sync.carla.tick.assert_not_called()
     sync.carla.update_actor_diff.assert_not_called()

@@ -191,7 +191,10 @@ launch arg / ROS paramとして追加する(`autoware_carla_interface.launch.xml
   - 今いる全Vissim車両のうち、`vissim2carla_ids`にも`carla2vissim_ids`の値にもない車両を、
     既存の`sync_vissim_to_carla()`のスポーン処理と同じ手順(`get_carla_blueprint` → `get_carla_transform` →
     `carla.spawn_actor`)でスポーンする。歩行者も同様。
-  - 位置は前端基準のままスポーンされるが、次の同期ステップで既存の更新処理が中心基準へ補正する(既存と同じ挙動)。
+  - スポーン位置は既存と同じく「Vissimの前端位置を中心とみなし、25 m持ち上げた位置」。スポーン直後(CARLAをtickする前)に、
+    既存の`sync_vissim_to_carla()`の更新処理と同じ手順で、CARLA車両の`bounding_box.extent`を使って中心基準の正しい位置へ移す
+    (歩行者も地面の高さへ移す)。既存の同期でも、スポーンと同じ呼び出しの中で補正されるため、ずれた位置のフレームは出ない。
+    これに合わせる(2026-10-06修正。当初は補正を次の同期ステップに任せていたが、その間のCARLA上の位置がギャップ判定に使えないため)。
 - 既存の`sync_vissim_to_carla()`のスポーン条件(差分のみ)は**変えない**。変えると、スポーンに失敗した車両の
   再試行が毎tick発生し、通常co-simの挙動とログが変わるため。
 - 呼んだ後に`world.tick()` → `carla.update_actor_diff()`を1回行い、CARLA側の差分管理を最新にする
@@ -442,6 +445,7 @@ python3 tools/carla_bbox_probe.py vehicle.toyota.prius
     10秒(Vissim時間)ごとに進捗を出す。停止要求で`False`を返す。連続失敗が`vissim_max_consecutive_failures`に達したら`EgoSpawnGateError`。
   - `catch_up()`: `spawn_all_vissim_actors_in_carla()` → `world.tick()` → `update_actor_diff()`。CARLAに出せなかったVissim車両のIDをログに出す。
 - `simulation_synchronization.py`: `spawn_all_vissim_actors_in_carla()`を追加(既存メソッドは無変更)。
+  スポーンした車両・歩行者は、CARLAをtickする前に正しい位置(車両は中心基準)へ移す(§2.4。2026-10-06の追加修正)。
   `vissim_simulation.py`: `vehicle_ids`/`pedestrian_ids`プロパティを追加。どちらもNOTICE.mdに記録。
 - `carla_autoware.py`:
   - ウォームアップ有効時、`load_world()`はEGOをスポーンせず、`client`を保持するだけにする。
@@ -526,6 +530,7 @@ python3 tools/carla_bbox_probe.py vehicle.toyota.prius
 | 5 | Autowareがセンサー開始の遅れに耐えるか | Step V4へ移動 | |
 | 6 | 交通流が安定するまでの時間 | 実機計測待ち | |
 | 7 | DSIでEGOを登録する際の重複チェック・位置補正の有無 | 未確認(公開情報なし) | ギャップ判定で事前に防ぐので、実装の前提にはしない |
+| 8 | CARLA→Vissimの位置補正の高さ(z)の符号 | 未確認 | `bridge_helper.get_vissim_transform()`は中心→前端の補正で`z - sin(pitch)·extent.x`としている。上り坂(pitch正)なら前端の方が高いので`+`が正しい可能性がある(上流と同じコード。CARLAのpitchの符号の向きも要確認)。平坦なTown01では影響はほぼない(5°の坂で約0.4 m) |
 
 **3-1. vtypes.json(コミット`7438613f6`、2026-10-05変更後)**
 
