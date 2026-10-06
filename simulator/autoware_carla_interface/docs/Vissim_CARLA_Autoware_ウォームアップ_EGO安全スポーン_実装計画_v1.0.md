@@ -611,7 +611,9 @@ python3 tools/carla_bbox_probe.py vehicle.toyota.prius
 - #9 信号同期: 4回目と同じ条件で、ウォームアップ後もVissimとCARLAの信号が一致していることを目視で確認した(OK)。
 - #10 対策: `get_carla_blueprint()`/`get_carla_pedestrian_blueprint()`の車種(と車両の色・driver_id)の選択を、全体の乱数ではなく`random.Random(<Vissim ID>)`で行うようにした。同じVissim IDには、実行ごと・スポーン順によらず同じ車種が割り当てられる(`NOTICE.md`に記録、`test/vissim_ego_spawn_gate_test.py`に確認を追加)。同じ条件で2回実行し、前方車の距離・EGOスポーン時刻が一致するかを再確認する。
 
-未実施: #10の再確認。
+- #10 再確認(`a4a08948d`、4回目と同じ条件で2回実行): 前方車`vissim:51`の距離、EGOスポーン時刻、`end_tick`が2回で一致した(OK)。
+
+Step V9の確認項目#1〜#10はすべて完了。
 
 ---
 
