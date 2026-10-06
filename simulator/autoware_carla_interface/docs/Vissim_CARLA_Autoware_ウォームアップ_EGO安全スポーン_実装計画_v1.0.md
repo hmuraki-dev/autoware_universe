@@ -196,6 +196,9 @@ launch arg / ROS paramとして追加する(`autoware_carla_interface.launch.xml
     既存の`sync_vissim_to_carla()`の更新処理と同じ手順で、CARLA車両の`bounding_box.extent`を使って中心基準の正しい位置へ移す
     (歩行者も地面の高さへ移す)。既存の同期でも、スポーンと同じ呼び出しの中で補正されるため、ずれた位置のフレームは出ない。
     これに合わせる(2026-10-06修正。当初は補正を次の同期ステップに任せていたが、その間のCARLA上の位置がギャップ判定に使えないため)。
+- スポーン位置が干渉して失敗した場合(信号待ちの車列など、前後が詰まった車両同士は、同じ高さに持ち上げられて外形が重なる)は、
+  4 m(`CATCH_UP_SPAWN_LIFT_STEP_M`)ずつ高くして最大10回(`CATCH_UP_SPAWN_RETRIES`)スポーンし直す。CARLAの干渉判定は
+  スポーンの瞬間だけなので、直後に正しい位置へ移しても問題ない(2026-10-06追加。Step V9の実機確認で1台が干渉によりCARLAに出なかったため)。
 - 既存の`sync_vissim_to_carla()`のスポーン条件(差分のみ)は**変えない**。変えると、スポーンに失敗した車両の
   再試行が毎tick発生し、通常co-simの挙動とログが変わるため。
 - 呼んだ後に`world.tick()` → `carla.update_actor_diff()`を1回行い、CARLA側の差分管理を最新にする
@@ -562,6 +565,24 @@ python3 tools/carla_bbox_probe.py vehicle.toyota.prius
 | 8 | 期間 | EGOスポーン後、ちょうど`vissim_sim_period`秒で停止する |
 | 9 | 信号同期 | ウォームアップ後もVissimとCARLAの信号が一致している |
 | 10 | 再現性 | 同じ`.inpx`・同じパラメータで2回実行し、EGOスポーン時刻・前後車IDが一致するか記録する |
+
+**実施記録**
+
+2026-10-06(`feat/vissim-warmup` `36ba8d1f0`、Linux機 DIVP-WS03 + Vissim 2026のWindows PC、Town01 2026-10-05変更版):
+
+- 単体テスト: Linux機(本物の`carla`モジュール)で全8本が通過。
+- #1 ウォームアップ無効: 従来どおり動作することを目視で確認。
+- ウォームアップ100秒・`spawn_point:="229.8,-2.0,0.3,0.0,0.0,180.0"`(Town01のスポーン地点No.149、road 1の西向き、直線区間の中央):
+
+| # | 結果 | ログ・観察 |
+|---|---|---|
+| 2 | OK | Vissim 100秒を実時間33.4秒で処理(約3倍速、1 tickあたり約17 ms。V0 #2の計測値としても使える)。車両数は0→4→5→7→7→8→12→12→12→14台と100秒時点でもまだ増加中で、交通流が安定するにはウォームアップ時間が足りない可能性がある(V0 #6で要計測) |
+| 3 | **NG → 対策済み** | `carla_spawned=13 vissim_only=1`。Vissim車両ID 12が`Spawn failed because of collision at spawn position`でCARLAに出ず、既存の同期では再試行されないため、Vissimからいなくなるまで見えないままになる。§2.4の再試行(高さをずらしてスポーンし直す)を追加した。再確認が必要 |
+| 4 | OK | `t=100.00 s front=none rear=none overlap=none result=SAFE`(前後100 m以内の同じ車線に車両なし)で即スポーン。EGO外形はprius 4.51 m × 2.01 m、車線幅4.00 m(road 1, lane -1) |
+| 7 | OK | EGOスポーン後、センサーのtimestampが1.5、5.0…と0付近から始まった。Autowareは自己位置推定の初期化 → `WaitingForEngage` → `Driving` → `ArrivedGoal`まで進んだ |
+| 8 | 未確認 | `end_tick=14000`(ウォームアップ2000 tick + 検証600秒分12000 tick)と計算は正しいが、Ctrl+Cで止めたため、実際に600秒で終了するかは未確認(`vissim_sim_period`を短くして再確認する) |
+
+未実施: #5(空きなし)、#6(タイムアウト)、#9(信号同期)、#10(再現性)。
 
 ---
 

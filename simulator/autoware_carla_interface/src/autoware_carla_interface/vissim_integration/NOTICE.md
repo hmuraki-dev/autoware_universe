@@ -106,8 +106,11 @@ vendoring these files instead of referencing them via an external path.
   `docs/Vissim_CARLA_Autoware_ウォームアップ_EGO安全スポーン_実装計画_v1.0.md` Step V4): the new
   `spawn_all_vissim_actors_in_carla()` method spawns in CARLA every vissim vehicle/pedestrian not
   mirrored yet and moves them to their actual position right away (same steps as the spawn and
-  update blocks of `sync_vissim_to_carla()`), called once after the warmup. The existing methods
-  are unmodified.
+  update blocks of `sync_vissim_to_carla()`), called once after the warmup. Unlike
+  `sync_vissim_to_carla()`, a failed spawn there is retried higher up
+  (`CATCH_UP_SPAWN_RETRIES`/`CATCH_UP_SPAWN_LIFT_STEP_M`, `_spawn_retrying_higher()`), since
+  neighbors in a queue collide at their spawn positions when spawned all at once (observed in
+  Step V9). The existing methods are unmodified.
 - `bridge_helper.py`: vendored with the `ptypes = {}` class attribute and the
   `get_carla_pedestrian_blueprint()`/`get_carla_pedestrian_transform()` methods added, both
   byte-for-byte identical to upstream. All pre-existing methods (`get_carla_transform()`,

@@ -157,7 +157,7 @@ def check_catch_up_spawns_then_ticks_carla(egsg):
     gate, sync, log = _make_gate(egsg, vissim)
     sync.spawn_all_vissim_actors_in_carla.return_value = {
         'vehicles': 83, 'vehicles_not_spawned': {7, 3}, 'pedestrians': 4,
-        'pedestrians_not_spawned': set()}
+        'pedestrians_not_spawned': set(), 'spawn_retries': 5}
 
     order = mock.MagicMock()
     order.attach_mock(sync.spawn_all_vissim_actors_in_carla, 'spawn_all')
@@ -169,7 +169,7 @@ def check_catch_up_spawns_then_ticks_carla(egsg):
     assert order.mock_calls == [mock.call.spawn_all(), mock.call.world_tick(),
                                 mock.call.update_actor_diff()], order.mock_calls
     assert log[0] == ('[VISSIM WARMUP] caught up: carla_spawned=83 vissim_only=2 pedestrians=4 '
-                      'pedestrians_vissim_only=0'), log[0]
+                      'pedestrians_vissim_only=0 spawn_retries=5'), log[0]
     assert log[1] == '[VISSIM WARMUP] vissim vehicle(s) without a CARLA counterpart: [3, 7]', log
 
 
@@ -195,22 +195,41 @@ def _make_sync(ss, vehicle_ids, pedestrian_ids):
     return sync
 
 
+def _transform(tag, kind, extent=None, z=0.0):
+    """A CARLA transform stand-in, tagged with the vissim pose it came from and its kind."""
+    return types.SimpleNamespace(location=types.SimpleNamespace(x=1.0, y=2.0, z=z),
+                                 rotation='rot', tag=tag, kind=kind, extent=extent)
+
+
+def _with_simple_carla_transforms(ss):
+    """carla.Transform/Location (used for the retries' lifted transforms) as namespaces."""
+    return mock.patch.multiple(
+        ss.carla,
+        Location=lambda x, y, z: types.SimpleNamespace(x=x, y=y, z=z),
+        Transform=lambda location, rotation: types.SimpleNamespace(
+            location=location, rotation=rotation, tag=None, kind='lifted', extent=None))
+
+
 def check_spawn_all_vissim_actors(ss):
-    sync = _make_sync(ss, vehicle_ids={1, 2, 3, 4, 5, 6}, pedestrian_ids={100, 101})
+    sync = _make_sync(ss, vehicle_ids={1, 2, 3, 4, 5, 6, 7}, pedestrian_ids={100, 101})
     sync.vissim2carla_ids = {1: 501}  # already mirrored
     sync.carla2vissim_ids = {900: 6}  # carla-origin (EGO) in vissim: never mirrored back
     sync.vissim2carla_ped_ids = {100: 700}
 
-    def blueprint_for(vissim_actor):
-        return None if vissim_actor.id == 4 else 'bp-%d' % vissim_actor.id  # 4: unknown type
+    def blueprint_for(vissim_actor):  # 4: unknown type
+        return None if vissim_actor.id == 4 else types.SimpleNamespace(id='bp-%d' % vissim_actor.id)
+
+    attempts = {}  # blueprint id -> heights (above vissim's) of the spawns tried
 
     def spawn(blueprint, transform):
-        return ss.INVALID_ACTOR_ID if blueprint == 'bp-5' else 1000 + int(blueprint[3:])
-
-    def carla_transform(vissim_transform, extent=None):
-        # Tags the result with whether it was corrected with the CARLA bounding box (center) or
-        # not (vissim's front-center-bumper position, as used for spawning).
-        return (vissim_transform, 'center' if extent is not None else 'front', extent)
+        attempts.setdefault(blueprint.id, []).append(transform.location.z)
+        if blueprint.id == 'walker':
+            return 1101
+        if blueprint.id == 'bp-5':  # collides wherever it goes
+            return ss.INVALID_ACTOR_ID
+        if blueprint.id == 'bp-7' and len(attempts['bp-7']) <= 2:  # collides twice
+            return ss.INVALID_ACTOR_ID
+        return 1000 + int(blueprint.id[3:])
 
     def carla_actor(carla_actor_id):
         return types.SimpleNamespace(
@@ -218,38 +237,51 @@ def check_spawn_all_vissim_actors(ss):
 
     with mock.patch.object(ss.BridgeHelper, 'get_carla_blueprint', side_effect=blueprint_for), \
             mock.patch.object(ss.BridgeHelper, 'get_carla_transform',
-                              side_effect=carla_transform), \
+                              side_effect=lambda tf, extent=None: _transform(
+                                  tf, 'center' if extent is not None else 'front', extent)), \
             mock.patch.object(ss.BridgeHelper, 'get_carla_velocity',
                               side_effect=lambda v: 'carla-' + v), \
             mock.patch.object(ss.BridgeHelper, 'get_carla_pedestrian_blueprint',
-                              return_value='walker'), \
+                              return_value=types.SimpleNamespace(id='walker')), \
             mock.patch.object(ss.BridgeHelper, 'get_carla_pedestrian_transform',
-                              side_effect=lambda p: 'ped-tf-%d' % p.id):
-        sync.carla.spawn_actor.side_effect = lambda bp, tf: (
-            1101 if bp == 'walker' else spawn(bp, tf))
+                              side_effect=lambda p: _transform('ped-%d' % p.id, 'ped')), \
+            _with_simple_carla_transforms(ss), mock.patch.object(ss.logging, 'warning') as warn:
+        sync.carla.spawn_actor.side_effect = spawn
         sync.carla.get_actor.side_effect = carla_actor
         result = sync.spawn_all_vissim_actors_in_carla()
 
-    assert sync.vissim2carla_ids == {1: 501, 2: 1002, 3: 1003}, sync.vissim2carla_ids
+    assert sync.vissim2carla_ids == {1: 501, 2: 1002, 3: 1003, 7: 1007}, sync.vissim2carla_ids
     assert sync.vissim2carla_ped_ids == {100: 700, 101: 1101}, sync.vissim2carla_ped_ids
-    assert result == {'vehicles': 2, 'vehicles_not_spawned': {4, 5}, 'pedestrians': 1,
-                      'pedestrians_not_spawned': set()}, result
+    # 7: 2 retries; 5: all 10 retries, then given up.
+    assert result == {'vehicles': 3, 'vehicles_not_spawned': {4, 5}, 'pedestrians': 1,
+                      'pedestrians_not_spawned': set(), 'spawn_retries': 12}, result
 
-    # Vehicles are spawned at vissim's front-center-bumper position...
-    spawned_at = {tf[0]: tf[1] for _, tf in
-                  (c.args for c in sync.carla.spawn_actor.call_args_list) if tf != 'ped-tf-101'}
-    assert spawned_at == {'vissim-tf-2': 'front', 'vissim-tf-3': 'front',
-                          'vissim-tf-5': 'front'}, spawned_at
-    # ...then, before CARLA is ticked, moved to their center position using their own bounding
-    # box - only those actually spawned (not 1: already mirrored, not 4/5: not spawned).
-    synchronized = sorted(c.args for c in sync.carla.synchronize_vehicle.call_args_list)
+    # First at vissim's front-center-bumper position (spawn_actor() itself adds
+    # CARLA_SPAWN_OFFSET_Z), then 4 m higher at each retry.
+    assert attempts['bp-2'] == [0.0] and attempts['bp-3'] == [0.0], attempts
+    assert attempts['bp-7'] == [0.0, 4.0, 8.0], attempts
+    assert attempts['bp-5'] == [4.0 * k for k in range(11)], attempts
+    first = [c.args[1] for c in sync.carla.spawn_actor.call_args_list
+             if c.args[0].id != 'walker' and c.args[1].kind != 'lifted']
+    assert sorted(t.tag for t in first) == ['vissim-tf-2', 'vissim-tf-3', 'vissim-tf-5',
+                                            'vissim-tf-7'], first
+    assert all(t.kind == 'front' for t in first), first
+    assert sorted(c.args[1:3] for c in warn.call_args_list) == [('bp-5', 10), ('bp-7', 2)], \
+        warn.call_args_list
+
+    # Then, before CARLA is ticked, moved to their center position using their own bounding box
+    # - only those actually spawned (not 1: already mirrored, not 4/5: not spawned), retried or not.
+    synchronized = sorted((c.args[0], c.args[1].tag, c.args[1].kind, c.args[1].extent, c.args[2])
+                          for c in sync.carla.synchronize_vehicle.call_args_list)
     assert synchronized == [
-        (1002, ('vissim-tf-2', 'center', 'extent-1002'), 'carla-vissim-vel-2'),
-        (1003, ('vissim-tf-3', 'center', 'extent-1003'), 'carla-vissim-vel-3'),
+        (1002, 'vissim-tf-2', 'center', 'extent-1002', 'carla-vissim-vel-2'),
+        (1003, 'vissim-tf-3', 'center', 'extent-1003', 'carla-vissim-vel-3'),
+        (1007, 'vissim-tf-7', 'center', 'extent-1007', 'carla-vissim-vel-7'),
     ], synchronized
     # Pedestrians likewise (spawned lifted by CARLA_SPAWN_OFFSET_Z, then moved to the ground).
-    sync.carla.synchronize_pedestrian.assert_called_once_with(1101, 'ped-tf-101',
-                                                             'carla-vissim-ped-vel-101')
+    (walker_id, walker_tf, walker_vel), = (c.args for c in
+                                           sync.carla.synchronize_pedestrian.call_args_list)
+    assert (walker_id, walker_tf.tag, walker_vel) == (1101, 'ped-101', 'carla-vissim-ped-vel-101')
     # Does not tick CARLA itself (the gate does, after it).
     sync.carla.tick.assert_not_called()
     sync.carla.update_actor_diff.assert_not_called()
@@ -263,7 +295,7 @@ def check_spawn_all_with_nothing_new(ss):
     get_blueprint.assert_not_called()
     sync.carla.spawn_actor.assert_not_called()
     assert result == {'vehicles': 0, 'vehicles_not_spawned': set(), 'pedestrians': 0,
-                      'pedestrians_not_spawned': set()}, result
+                      'pedestrians_not_spawned': set(), 'spawn_retries': 0}, result
 
 
 def check_vissim_actor_id_accessors(vs):

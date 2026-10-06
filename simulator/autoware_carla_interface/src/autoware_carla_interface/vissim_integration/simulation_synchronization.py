@@ -28,6 +28,14 @@ import carla
 from .bridge_helper import BridgeHelper
 from .constants import INVALID_ACTOR_ID
 
+# Catch-up spawn after the Vissim warmup (see spawn_all_vissim_actors_in_carla()): an actor whose
+# spawn fails (e.g. "collision at spawn position" with a neighbor in a queue, both lifted by the
+# same CARLA_SPAWN_OFFSET_Z) is spawned again this much higher each time, up to this many times.
+# CARLA only checks collisions at spawn time, and the actor is moved to its actual position right
+# after, so the extra height never shows. Specific to this repository (not in upstream).
+CATCH_UP_SPAWN_RETRIES = 10
+CATCH_UP_SPAWN_LIFT_STEP_M = 4.0
+
 # ==================================================================================================
 # -- synchronization_loop --------------------------------------------------------------------------
 # ==================================================================================================
@@ -318,30 +326,38 @@ class SimulationSynchronization(object):
         the warmup only vissim is ticked, and sync_vissim_to_carla() only spawns the actors that
         appeared in the latest vissim tick, so everything that entered the network during the
         warmup would otherwise never show up in CARLA. Uses the same steps as
-        sync_vissim_to_carla()'s spawn blocks (blueprint, transform, spawn); like them, it does
-        not retry actors that cannot be spawned (unknown type, spawn failure). Does not tick CARLA.
+        sync_vissim_to_carla()'s spawn blocks (blueprint, transform, spawn), with one difference:
+        all the actors accumulated during the warmup are spawned at once, so neighbors in a queue
+        (e.g. at a red light) can collide with each other at their spawn positions; a failed spawn
+        is therefore retried higher up (CATCH_UP_SPAWN_RETRIES / CATCH_UP_SPAWN_LIFT_STEP_M).
+        Actors that still cannot be spawned (unknown type, or every retry failed) are left
+        without a CARLA counterpart, as in sync_vissim_to_carla(). Does not tick CARLA.
 
         Like sync_vissim_to_carla(), the actors just spawned are then moved to their actual
         position right away, before CARLA is ticked: they are spawned lifted by
-        CARLA_SPAWN_OFFSET_Z, and vehicles at vissim's front-center-bumper position, which only
-        becomes the actor's center once corrected with the actor's own bounding box.
+        CARLA_SPAWN_OFFSET_Z (plus the retries' extra height), and vehicles at vissim's
+        front-center-bumper position, which only becomes the actor's center once corrected with
+        the actor's own bounding box.
 
-            :return: dict with 'vehicles' / 'pedestrians' (spawned now) and
+            :return: dict with 'vehicles' / 'pedestrians' (spawned now),
                 'vehicles_not_spawned' / 'pedestrians_not_spawned' (sets of vissim ids left
-                without a CARLA counterpart).
+                without a CARLA counterpart) and 'spawn_retries' (number of retried spawns).
         """
+        spawn_retries = 0
         vehicles_to_spawn = (self.vissim.vehicle_ids - set(self.vissim2carla_ids.keys()) -
                              set(self.carla2vissim_ids.values()))
         vehicles_not_spawned = set()
         vehicles_spawned = []
-        for vissim_actor_id in vehicles_to_spawn:
+        for vissim_actor_id in sorted(vehicles_to_spawn):
             vissim_actor = self.vissim.get_actor(vissim_actor_id)
 
             carla_blueprint = BridgeHelper.get_carla_blueprint(vissim_actor)
             carla_actor_id = INVALID_ACTOR_ID
             if carla_blueprint is not None:
                 carla_transform = BridgeHelper.get_carla_transform(vissim_actor.get_transform())
-                carla_actor_id = self.carla.spawn_actor(carla_blueprint, carla_transform)
+                carla_actor_id, retries = self._spawn_retrying_higher(carla_blueprint,
+                                                                     carla_transform)
+                spawn_retries += retries
 
             if carla_actor_id != INVALID_ACTOR_ID:
                 self.vissim2carla_ids[vissim_actor_id] = carla_actor_id
@@ -365,14 +381,16 @@ class SimulationSynchronization(object):
         pedestrians_to_spawn = self.vissim.pedestrian_ids - set(self.vissim2carla_ped_ids.keys())
         pedestrians_not_spawned = set()
         pedestrians_spawned = []
-        for vissim_pedestrian_id in pedestrians_to_spawn:
+        for vissim_pedestrian_id in sorted(pedestrians_to_spawn):
             vissim_pedestrian = self.vissim.get_pedestrian(vissim_pedestrian_id)
 
             carla_blueprint = BridgeHelper.get_carla_pedestrian_blueprint(vissim_pedestrian)
             carla_walker_id = INVALID_ACTOR_ID
             if carla_blueprint is not None:
                 carla_transform = BridgeHelper.get_carla_pedestrian_transform(vissim_pedestrian)
-                carla_walker_id = self.carla.spawn_actor(carla_blueprint, carla_transform)
+                carla_walker_id, retries = self._spawn_retrying_higher(carla_blueprint,
+                                                                      carla_transform)
+                spawn_retries += retries
 
             if carla_walker_id != INVALID_ACTOR_ID:
                 self.vissim2carla_ped_ids[vissim_pedestrian_id] = carla_walker_id
@@ -396,7 +414,32 @@ class SimulationSynchronization(object):
             'vehicles_not_spawned': vehicles_not_spawned,
             'pedestrians': len(pedestrians_to_spawn) - len(pedestrians_not_spawned),
             'pedestrians_not_spawned': pedestrians_not_spawned,
+            'spawn_retries': spawn_retries,
         }
+
+    def _spawn_retrying_higher(self, blueprint, transform):
+        """
+        Spawns an actor for spawn_all_vissim_actors_in_carla(); if the spawn fails, tries again
+        CATCH_UP_SPAWN_LIFT_STEP_M higher each time, up to CATCH_UP_SPAWN_RETRIES times.
+
+            :return: (carla actor id or INVALID_ACTOR_ID, number of retries made).
+        """
+        carla_actor_id = self.carla.spawn_actor(blueprint, transform)
+        retries = 0
+        while carla_actor_id == INVALID_ACTOR_ID and retries < CATCH_UP_SPAWN_RETRIES:
+            retries += 1
+            lifted = carla.Transform(
+                carla.Location(transform.location.x, transform.location.y,
+                               transform.location.z + retries * CATCH_UP_SPAWN_LIFT_STEP_M),
+                transform.rotation)
+            carla_actor_id = self.carla.spawn_actor(blueprint, lifted)
+        if retries:
+            logging.warning(
+                '[sync] catch-up spawn of %s needed %d retr%s (%s)', blueprint.id, retries,
+                'y' if retries == 1 else 'ies',
+                'spawned %.1f m higher' % (retries * CATCH_UP_SPAWN_LIFT_STEP_M)
+                if carla_actor_id != INVALID_ACTOR_ID else 'gave up')
+        return carla_actor_id, retries
 
     def sync_carla_to_vissim(self):
         """

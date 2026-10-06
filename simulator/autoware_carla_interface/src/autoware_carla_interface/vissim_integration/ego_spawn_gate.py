@@ -287,9 +287,10 @@ class EgoSpawnGate(object):
         self._carla.world.tick()
         self._carla.update_actor_diff()
         self._log('[VISSIM WARMUP] caught up: carla_spawned=%d vissim_only=%d pedestrians=%d '
-                  'pedestrians_vissim_only=%d' %
+                  'pedestrians_vissim_only=%d spawn_retries=%d' %
                   (result['vehicles'], len(result['vehicles_not_spawned']),
-                   result['pedestrians'], len(result['pedestrians_not_spawned'])))
+                   result['pedestrians'], len(result['pedestrians_not_spawned']),
+                   result.get('spawn_retries', 0)))
         if result['vehicles_not_spawned']:
             self._log('[VISSIM WARMUP] vissim vehicle(s) without a CARLA counterpart: %s' %
                       sorted(result['vehicles_not_spawned']))

@@ -348,13 +348,17 @@ ros2 launch autoware_launch e2e_simulator.launch.xml \
 [VISSIM WARMUP] start: warmup_time=100 s (2000 ticks)                                                        ← ②
 [VISSIM WARMUP] t=10.0 s vehicles=12 pedestrians=0 (wall 2.1 s)                                             (10秒ごと)
 [VISSIM WARMUP] completed: t=100.0 s vehicles=85 pedestrians=4 (wall 19.8 s)
-[VISSIM WARMUP] caught up: carla_spawned=83 vissim_only=2 pedestrians=4 pedestrians_vissim_only=0          ← ③
+[VISSIM WARMUP] caught up: carla_spawned=83 vissim_only=2 pedestrians=4 pedestrians_vissim_only=0 spawn_retries=3   ← ③
 [EGO SPAWN CHECK] t=100.00 s front=vissim:123/carla:456 clearance=8.4 m rear=... overlap=none result=WAIT   ← ④
 [EGO SPAWN CHECK] t=107.40 s front=vissim:125/carla:470 clearance=27.3 m rear=... overlap=none result=SAFE
 [EGO SPAWN] t=107.40 s spawn_point=... location=(...) vehicles=87 end_tick=14148 front=... result=SAFE      ← ⑤
 ```
 
-- `vissim_only`はCARLAにスポーンできなかったVissim車両の数。多い場合は、vtypes.jsonの登録漏れ、またはスポーン位置の干渉を疑う。
+- `vissim_only`はCARLAにスポーンできなかったVissim車両の数。多い場合は、vtypes.jsonの登録漏れを疑う。
+- ③では、信号待ちの車列のように前後が詰まった車両同士がスポーン位置で干渉することがある。その場合は高さをずらして最大10回スポーンし直す
+  (`spawn_retries`はその回数)。このとき`ERROR:root:Spawn carla actor failed. Spawn failed because of collision at spawn position`が出るが、
+  直後の`WARNING:root:[sync] catch-up spawn of ... needed N retries (spawned ... m higher)`が出ていれば、スポーンし直して成功している
+  (`gave up`の場合は失敗で、その車両は`vissim_only`に数えられる)。
 - `[EGO SPAWN CHECK]`の判定ログは、最初・結果や前後車が変わったとき・1秒(Vissim時間)ごと・SAFEのときに出る。
 - `t=`はVissimの時刻(秒)。`end_tick`はco-simを終了するVissimのtick数。
 
