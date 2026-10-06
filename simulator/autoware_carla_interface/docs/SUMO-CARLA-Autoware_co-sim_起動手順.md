@@ -111,19 +111,11 @@ ros2 launch autoware_launch e2e_simulator.launch.xml \
   tls_manager:=sumo \
   sync_vehicle_lights:=true \
   sync_vehicle_color:=true \
-  spectator_follow:=true \
   sumo_warmup_time:=600 \
   spawn_point:="199.95,326.97,0.30,0.0,0.0,180.0" \
+  spectator_follow:=true \
   2>&1 | tee -i /tmp/autoware_carla.log
 ```
-
-- 最後の3行は、ウォームアップ・EGO安全スポーン(2.4.2)を使う場合の指定である。
-  - ウォームアップを使わない場合は、`sumo_warmup_time`と`spawn_point`の行を省く(EGOは起動直後にランダムな位置へスポーンされる)。
-    `spawn_point`だけを指定すれば、ウォームアップなしで固定位置にスポーンする。
-  - `2>&1 | tee -i /tmp/autoware_carla.log`はログ保存用(2.4.4のgrepで使う)。不要なら省いてよい。
-    `-i`を付けないと、Ctrl+Cで`tee`も終了し、それ以降(終了処理)のログが残らない。
-
-##### オプション一覧
 
 | オプション | 説明 | 設定例 | デフォルト値(未指定時) |
 |-----------|------|--------|--------------------------|
@@ -155,6 +147,10 @@ ros2 launch autoware_launch e2e_simulator.launch.xml \
   公開されていないため、細かく調整したい場合はこの引数は使わず`ros2 run
   autoware_carla_interface spectator_follow --distance ... --height ...`のように別ターミナルで
   手動起動すること。
+- ウォームアップを使わない場合は、`sumo_warmup_time`と`spawn_point`の行を省く(EGOは起動直後にランダムな位置へスポーンされる)。
+  `spawn_point`だけを指定すれば、ウォームアップなしで固定位置にスポーンする。
+- `2>&1 | tee -i /tmp/autoware_carla.log`はログ保存用(2.4.4のgrepで使う)。不要なら省いてよい。
+  `-i`を付けないと、Ctrl+Cで`tee`も終了し、それ以降(終了処理)のログが残らない。
 
 #### 2.4.2 ウォームアップ・EGO安全スポーン
 
