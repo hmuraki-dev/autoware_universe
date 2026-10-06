@@ -138,14 +138,16 @@ def _start_adapter(adapter):
     return '127.0.0.1', endpoint_holder['port'], stop_event
 
 
-def _make_client(host, port, simulator_vehicles=5, rpc_timeout_ms=2000, sim_period=600):
+def _make_client(host, port, simulator_vehicles=5, rpc_timeout_ms=2000, sim_period=600,
+                 **extra_args):
     client_args = types.SimpleNamespace(simulator_vehicles=simulator_vehicles,
                                         step_length=0.05,
                                         vissim_adapter_host=host,
                                         vissim_adapter_port=port,
                                         vissim_connect_timeout_ms=2000,
                                         vissim_rpc_timeout_ms=rpc_timeout_ms,
-                                        sim_period=sim_period)
+                                        sim_period=sim_period,
+                                        **extra_args)
     return PTVVissimSimulation(client_args)
 
 
@@ -314,6 +316,34 @@ def check_connect_sends_sim_period_and_resolution():
         stop_event.set()
 
 
+def check_connect_sends_period_extended_by_warmup():
+    """
+    docs/Vissim_CARLA_Autoware_ウォームアップ_EGO安全スポーン_実装計画_v1.0.md Step V2: with a
+    warmup, the period written into the Vissim network file also covers the warmup time and the
+    spawn wait timeout, and the co-simulation period (end_tick) only starts at start_period().
+    """
+    adapter = FakeAdapter()
+    host, port, stop_event = _start_adapter(adapter)
+    client = _make_client(host, port, sim_period=60, warmup_time=100, wait_timeout=30)
+
+    try:
+        assert adapter.connect_requests == [{
+            'step_length': 0.05,
+            'simulator_vehicles': 5,
+            'sim_period': 200,  # 100 + 30 + 60 + 10 s margin
+            'sim_res': 20,
+        }], adapter.connect_requests
+        assert client.end_tick == 1200  # not started yet: counted from tick 0
+
+        for _ in range(3):
+            client.tick()
+        client.start_period()
+        assert client.end_tick == 3 + 1200, client.end_tick
+    finally:
+        client.close()
+        stop_event.set()
+
+
 # ==================================================================================================
 # -- entry point -------------------------------------------------------------------------------------
 # ==================================================================================================
@@ -325,6 +355,7 @@ def run():
     check_signals_and_pedestrians_pass_through()
     check_timeout_triggers_reconnect()
     check_connect_sends_sim_period_and_resolution()
+    check_connect_sends_period_extended_by_warmup()
     print('All vissim_adapter loopback checks passed.')
 
 

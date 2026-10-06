@@ -394,6 +394,23 @@ python3 tools/carla_bbox_probe.py vehicle.toyota.prius
   ウォームアップ無効時は従来どおり起動時に確定する。
 - テスト: `vissim_sim_period_test.py`に、warmup/timeoutあり・なし、最大期間超過のケースを追加。
 
+**実施結果(2026-10-06)**: 完了。
+- `get_vissim_sim_params(step_length, sim_period, warmup_time=0, wait_timeout=0)`: 省略可能な引数として追加。
+  `simPeriod = warmup_time + wait_timeout + sim_period + 10`。両方0(既定)なら上流と同じ結果。
+  warmup_time/wait_timeoutは0以上のint(boolは不可)。合計が最大期間(2678400秒)を超えたらエラー。
+- `PTVVissimSimulation`: `args.warmup_time`/`args.wait_timeout`を`getattr(..., 0)`で読む(上流形式のargsもそのまま動く)。
+  `end_tick = _period_start_tick + _period_ticks`とし、`start_period()`(引数なし。現在の`tick_count`から期間を開始)を追加。
+  計画の`start_measurement(tick_count)`から名前と引数を変更した。ウォームアップ無効時は呼ばないので、`end_tick`は従来と同じ。
+- `carla_autoware.py`: `_vissim_warmup_periods()`を追加し、ウォームアップ有効時だけ(warmup_time, wait_timeout)を、無効時は(0, 0)を
+  期間検査と`PTVVissimSimulation`へ渡す(無効時は`ego_spawn_wait_timeout`の値によらず期間が従来と同じ)。
+  期間検査が値を使うため、起動時検査の順序を`_check_vissim_warmup_params()` → `_check_vissim_sim_period_params()`に変更。
+- vendorファイル`vissim_simulation.py`の変更点を`vissim_integration/NOTICE.md`に追記。
+- テスト: `vissim_sim_period_test.py`(期間計算・起動時検査・引数の受け渡し・`end_tick`/`start_period()`)と
+  `vissim_adapter_stub_test.py`(ウォームアップ時のconnectの期間・`start_period()`)にケースを追加。
+  開発用PCで、`vissim_pedestrian_sync_stub_test.py`以外の全テストの通過を確認(`vissim_adapter_stub_test.py`は簡易な代替`carla`モジュールで実行)。
+  `vissim_pedestrian_sync_stub_test.py`はLinux機で確認する。
+- `start_period()`の呼び出し(EGOスポーン時)はStep V7で行う。
+
 ### Step V3: EGOスポーン処理の切り出し(動作変更なし)
 
 - `load_world()`のEGOスポーン・センサー設定・Traffic Manager設定を`_spawn_ego_and_sensors()`へ移す。

@@ -21,7 +21,11 @@ docs/Vissim_CARLA_Autoware_シミュレーション期間管理_実装計画_v1.
   vissim_max_consecutive_failures (use_vissim only), and sim_period being passed on to
   PTVVissimSimulation;
 - SensorLoop stopping once the co-simulation period has elapsed, or after too many consecutive
-  failed vissim adapter ticks - and never stopping on its own without Vissim.
+  failed vissim adapter ticks - and never stopping on its own without Vissim;
+- the period extension for the Vissim warmup / EGO safe spawn (see
+  docs/Vissim_CARLA_Autoware_ウォームアップ_EGO安全スポーン_実装計画_v1.0.md Step V2):
+  get_vissim_sim_params()'s warmup_time/wait_timeout, their startup validation and propagation to
+  PTVVissimSimulation, and end_tick/start_period().
 
 Needs neither ROS 2, CARLA, nor a vissim adapter: `carla`, `zmq`, `msgpack` and the ROS-dependent
 `carla_ros`/`modules.*` modules are replaced by mocks, only for the duration of run() (via
@@ -147,6 +151,93 @@ def check_sim_period_passed_to_vissim_simulation(ca):
     assert vissim_args.step_length == 0.05, vars(vissim_args)
 
 
+def check_sim_params_with_warmup():
+    # docs/Vissim_CARLA_Autoware_ウォームアップ_EGO安全スポーン_実装計画_v1.0.md Step V2: the
+    # warmup time and the spawn wait timeout extend the period written into the network file.
+    from autoware_carla_interface.vissim_integration.vissim_simulation import \
+        get_vissim_sim_params
+
+    # Without them (the upstream call signature), the result is unchanged: period + 10 s margin.
+    assert get_vissim_sim_params(0.05, 600) == (610, 20)
+    assert get_vissim_sim_params(0.05, 600, 0, 0) == (610, 20)
+    assert get_vissim_sim_params(0.05, 600, 100, 60) == (770, 20)
+    assert get_vissim_sim_params(0.1, 600, warmup_time=300) == (910, 10)
+    # The total may reach Vissim's 2678400 s maximum, but not exceed it.
+    assert get_vissim_sim_params(0.05, 2678300, 60, 30) == (2678400, 20)
+
+    for args in [
+            (0.05, 600, -1, 0),
+            (0.05, 600, 0, -1),
+            (0.05, 600, 1.5, 0),  # not an int
+            (0.05, 600, True, 0),  # bool is not accepted as an int
+            (0.05, 600, 0, None),
+            (0.05, 2678300, 60, 31),  # total exceeds the maximum
+    ]:
+        try:
+            get_vissim_sim_params(*args)
+        except ValueError:
+            continue
+        raise AssertionError('expected ValueError for %r' % (args, ))
+
+
+def check_startup_validation_with_warmup(ca):
+    warmup = {'vissim_warmup_time': 100, 'spawn_point': '229.8,-2.0,0.3,0.0,0.0,180.0'}
+    _make_interface(ca, **warmup)  # 100 + 60 + 600 + 10 s: valid
+    # The total period exceeds Vissim's maximum only because of the warmup and the wait timeout.
+    try:
+        _make_interface(ca, vissim_sim_period=2678300, ego_spawn_wait_timeout=31,
+                        **dict(warmup, vissim_warmup_time=60))
+    except ValueError:
+        pass
+    else:
+        raise AssertionError('expected ValueError for a total period above the maximum')
+    # Without the warmup, the wait timeout does not extend the period: the same values are valid.
+    _make_interface(ca, vissim_sim_period=2678300, ego_spawn_wait_timeout=1000)
+
+
+def check_warmup_passed_to_vissim_simulation(ca):
+    package = 'autoware_carla_interface.vissim_integration'
+
+    def vissim_args_for(**overrides):
+        interface = _make_interface(ca, **overrides)
+        with mock.patch(package + '.vissim_simulation.PTVVissimSimulation') as vissim_cls, \
+                mock.patch(package + '.carla_simulation.CarlaSimulation'), \
+                mock.patch(package + '.simulation_synchronization.SimulationSynchronization'):
+            interface._init_vissim_integration(mock.MagicMock())
+        return vissim_cls.call_args[0][0]
+
+    vissim_args = vissim_args_for(vissim_warmup_time=100, ego_spawn_wait_timeout=45,
+                                  spawn_point='229.8,-2.0,0.3,0.0,0.0,180.0')
+    assert (vissim_args.warmup_time, vissim_args.wait_timeout) == (100, 45), vars(vissim_args)
+    # Warmup disabled: neither extends the period, whatever ego_spawn_wait_timeout holds.
+    vissim_args = vissim_args_for(vissim_warmup_time=0, ego_spawn_wait_timeout=45)
+    assert (vissim_args.warmup_time, vissim_args.wait_timeout) == (0, 0), vars(vissim_args)
+
+
+def check_end_tick_and_start_period():
+    from autoware_carla_interface.vissim_integration.vissim_simulation import \
+        PTVVissimSimulation
+
+    # Bypasses __init__ (which connects to the vissim adapter): only the period bookkeeping it
+    # sets up is needed here - 60 s at 20 ticks per second.
+    vissim = PTVVissimSimulation.__new__(PTVVissimSimulation)
+    vissim._period_ticks = 60 * 20
+    vissim._period_start_tick = 0
+    vissim._tick_count = 0
+
+    # Without start_period() (no warmup), the period starts at tick 0, as before.
+    assert vissim.end_tick == 1200
+    vissim._tick_count = 500
+    assert vissim.end_tick == 1200
+
+    # After a warmup, the period starts when start_period() is called.
+    vissim._tick_count = 2345
+    vissim.start_period()
+    assert vissim.end_tick == 2345 + 1200
+    vissim._tick_count = 3000
+    assert vissim.end_tick == 3545
+
+
 def check_sensor_loop_stops_when_period_elapsed(ca):
     vissim = types.SimpleNamespace(tick_count=0, end_tick=5, consecutive_failures=0)
     loop = _make_sensor_loop(ca, vissim)
@@ -209,6 +300,10 @@ def run():
         check_startup_validation_rejects_invalid_params(ca)
         check_startup_validation_is_noop_without_vissim(ca)
         check_sim_period_passed_to_vissim_simulation(ca)
+        check_sim_params_with_warmup()
+        check_startup_validation_with_warmup(ca)
+        check_warmup_passed_to_vissim_simulation(ca)
+        check_end_tick_and_start_period()
         check_sensor_loop_stops_when_period_elapsed(ca)
         check_sensor_loop_stops_after_consecutive_failures(ca)
         check_sensor_loop_without_vissim_never_stops(ca)

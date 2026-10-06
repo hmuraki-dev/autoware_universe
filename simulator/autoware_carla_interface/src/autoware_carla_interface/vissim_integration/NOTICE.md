@@ -67,6 +67,16 @@ vendoring these files instead of referencing them via an external path.
   payload), the `end_tick`/`consecutive_failures` properties, and `_record_failed_tick()` - the
   function/method bodies were copied verbatim from upstream, with no new deviations - see
   `docs/Vissim_CARLA_Autoware_シミュレーション期間管理_実装計画_v1.0.md` Step V4.
+  Vissim warmup / EGO safe spawn (this repository only, not upstream - see
+  `docs/Vissim_CARLA_Autoware_ウォームアップ_EGO安全スポーン_実装計画_v1.0.md` Step V2):
+  `get_vissim_sim_params()` gained the optional `warmup_time`/`wait_timeout` arguments (added to
+  the period written into the network file; both default to 0, which keeps the upstream result),
+  `PTVVissimSimulation.__init__` reads them as optional `args.warmup_time`/`args.wait_timeout`
+  (`getattr(..., 0)`, so upstream-style args objects keep working), and `end_tick` is now
+  `_period_start_tick + _period_ticks` (replacing the fixed `_end_tick`) together with the new
+  `start_period()` method, which moves the start of the co-simulation period to the current
+  `tick_count`. Without a warmup `start_period()` is never called and `end_tick` is identical to
+  upstream.
 - `simulation_synchronization.py`: extracted from the upstream `run_synchronization.py`, keeping
   only the `SimulationSynchronization` class definition (the CLI entry point / standalone
   `while True:` loop / pacing logic in `run_synchronization.py` are intentionally not vendored,

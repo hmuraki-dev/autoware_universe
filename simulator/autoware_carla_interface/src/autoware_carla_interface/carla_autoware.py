@@ -145,8 +145,10 @@ class InitializeInterface(object):
         self.vissim_sync = None
 
         self._check_vissim_traffic_manager_exclusivity()
-        self._check_vissim_sim_period_params()
+        # The warmup parameters are checked first: the period check below adds the warmup time
+        # and the spawn wait timeout to the period written into the Vissim network file.
         self._check_vissim_warmup_params()
+        self._check_vissim_sim_period_params()
 
     def _check_vissim_traffic_manager_exclusivity(self):
         """
@@ -181,7 +183,10 @@ class InitializeInterface(object):
         (shared with the upstream CARLA repository's orchestrator, so that both validate
         identically): `vissim_sim_period` must be a positive int within Vissim's limits, and
         `fixed_delta_seconds` must be 1/N seconds with N a valid Vissim simulation resolution
-        (1-20) - the resolution written into the Vissim network file is derived from it.
+        (1-20) - the resolution written into the Vissim network file is derived from it. With the
+        warmup enabled, the warmup time and the spawn wait timeout are added to the period
+        written into the network file, and the total must be within Vissim's limits as well (see
+        docs/Vissim_CARLA_Autoware_ウォームアップ_EGO安全スポーン_実装計画_v1.0.md section 2.5).
 
             :raises ValueError: if any of the parameters is invalid.
         """
@@ -190,7 +195,8 @@ class InitializeInterface(object):
 
         from .vissim_integration.vissim_simulation import get_vissim_sim_params
 
-        get_vissim_sim_params(self.fixed_delta_seconds, self.vissim_sim_period)
+        get_vissim_sim_params(self.fixed_delta_seconds, self.vissim_sim_period,
+                              *self._vissim_warmup_periods())
         if self.vissim_max_consecutive_failures < 1:
             raise ValueError(
                 "vissim_max_consecutive_failures must be >= 1, got "
@@ -240,6 +246,17 @@ class InitializeInterface(object):
                 f"yaw), got {self.spawn_point!r}: the EGO safe-spawn check needs to know where "
                 "the EGO is going to be spawned"
             )
+
+    def _vissim_warmup_periods(self):
+        """
+        Returns (warmup_time, wait_timeout): the seconds Vissim may run before the co-simulation
+        period starts, i.e. the warmup and, at most, the wait for a safe EGO spawn gap. Both are 0
+        while the warmup is disabled, whatever ego_spawn_wait_timeout holds, so that the Vissim
+        simulation period stays exactly as before.
+        """
+        if self.vissim_warmup_time > 0:
+            return self.vissim_warmup_time, self.ego_spawn_wait_timeout
+        return 0, 0
 
     def _parse_spawn_point(self):
         """Parse spawn point string and return transform with randomize flag."""
@@ -318,7 +335,10 @@ class InitializeInterface(object):
         # docs/Vissim_CARLA_Autoware_Windowsリモート化_実装計画_v1.0.md. sim_period is sent to the
         # adapter (plus a margin), which writes it - together with the resolution derived from
         # step_length - into the Vissim network file; see docs/
-        # Vissim_CARLA_Autoware_シミュレーション期間管理_実装計画_v1.0.md.
+        # Vissim_CARLA_Autoware_シミュレーション期間管理_実装計画_v1.0.md. With the warmup enabled,
+        # warmup_time/wait_timeout extend that period so that Vissim cannot end before the test
+        # does (see docs/Vissim_CARLA_Autoware_ウォームアップ_EGO安全スポーン_実装計画_v1.0.md).
+        warmup_time, wait_timeout = self._vissim_warmup_periods()
         vissim_args = SimpleNamespace(
             simulator_vehicles=self.vissim_simulator_vehicles,
             vissim_adapter_host=self.vissim_adapter_host,
@@ -328,6 +348,8 @@ class InitializeInterface(object):
             step_length=self.fixed_delta_seconds,
             sync_traffic_lights=self.sync_traffic_lights,
             sim_period=self.vissim_sim_period,
+            warmup_time=warmup_time,
+            wait_timeout=wait_timeout,
         )
 
         self.vissim_carla_sim = CarlaSimulation(client, self.world)
