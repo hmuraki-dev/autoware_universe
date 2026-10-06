@@ -240,7 +240,8 @@ def check_run_bridge_warms_up_then_spawns_ego(ca):
 
     with mock.patch(_GATE_CLASS) as gate_cls, \
             mock.patch.object(interface, '_spawn_ego_and_sensors', side_effect=spawn), \
-            mock.patch.object(ca, 'SensorLoop', _never_running_sensor_loop(ca)):
+            mock.patch.object(ca, 'SensorLoop', _never_running_sensor_loop(ca)), \
+            mock.patch('builtins.print') as print_:
         gate = gate_cls.return_value
 
         def warmup():
@@ -258,6 +259,18 @@ def check_run_bridge_warms_up_then_spawns_ego(ca):
         gate.wait_for_safe_gap.side_effect = wait_for_safe_gap
         gate.sim_time = 107.4
         interface.run_bridge()
+
+    # The record of the test: the safe-gap check's settings first, the EGO spawn last.
+    lines = [c.args[0] for c in print_.call_args_list]
+    assert lines[0] == (
+        '[EGO SPAWN CHECK] config: warmup_time=100 s front_margin=25.0 m rear_margin=15.0 m '
+        'wait_timeout=45 s search_range=100.0 m heading_tolerance=45.0 deg '
+        'vissim_only_size=12.2x2.6 m vehicle_type=vehicle.toyota.prius '
+        'spawn_point=229.8,-2.0,0.3,0.0,0.0,180.0'), lines[0]
+    assert lines[-1] == (
+        '[EGO SPAWN] t=107.40 s spawn_point=229.8,-2.0,0.3,0.0,0.0,180.0 '
+        'location=(229.80, -2.00, 0.50) vehicles=3 end_tick=3200 '
+        'front=none rear=none overlap=none result=SAFE'), lines[-1]
 
     args, kwargs = gate_cls.call_args
     assert args == (interface.vissim_sync, 100, 0.05, 3), args

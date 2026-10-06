@@ -448,8 +448,21 @@ class InitializeInterface(object):
             :return: True if the regular loop may start, False if a stop was requested.
             :raises EgoSpawnGateError: if the test cannot be started (see EgoSpawnGate).
         """
+        from .vissim_integration import ego_spawn_gate
         from .vissim_integration.ego_spawn_gate import EgoSpawnGate
 
+        # Logged for the test record: everything the safe-gap check depends on.
+        print(
+            f"[EGO SPAWN CHECK] config: warmup_time={self.vissim_warmup_time} s "
+            f"front_margin={self.ego_spawn_front_margin:.1f} m "
+            f"rear_margin={self.ego_spawn_rear_margin:.1f} m "
+            f"wait_timeout={self.ego_spawn_wait_timeout} s "
+            f"search_range={ego_spawn_gate.EGO_SPAWN_SEARCH_RANGE_M:.1f} m "
+            f"heading_tolerance={ego_spawn_gate.EGO_SPAWN_HEADING_TOLERANCE_DEG:.1f} deg "
+            f"vissim_only_size={ego_spawn_gate.EGO_SPAWN_UNKNOWN_VEHICLE_LENGTH_M:.1f}x"
+            f"{ego_spawn_gate.EGO_SPAWN_UNKNOWN_VEHICLE_WIDTH_M:.1f} m "
+            f"vehicle_type={self.vehicle_type} spawn_point={self.spawn_point}"
+        )
         # Measured first, so that a bad vehicle_type fails before the (possibly long) warmup.
         ego_pose = self._ego_spawn_pose()
 
