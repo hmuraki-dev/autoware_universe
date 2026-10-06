@@ -162,10 +162,14 @@ launch arg / ROS paramとして追加する(`autoware_carla_interface.launch.xml
 | `ego_spawn_rear_margin` | double(m) | `20.0` | EGO後端と後方車前端の必要距離 |
 | `ego_spawn_wait_timeout` | int(秒) | `60` | 空き待ちの上限。超えたら試験開始失敗。1以上必須 |
 
-起動時の検査(`_check_vissim_sim_period_params()`に追加):
+起動時の検査(`_check_vissim_warmup_params()`。`_check_vissim_sim_period_params()`の直後に呼ぶ):
 - `vissim_warmup_time > 0`は`use_vissim=True`のときだけ有効。
-- `vissim_warmup_time > 0`のときは`spawn_point`の指定を必須にする(ランダムスポーンでは判定する位置が決まらない)。
+- `vissim_warmup_time`は0以上。
+- `vissim_warmup_time > 0`のときだけ、次も検査する(ウォームアップを使わない起動には影響させない)。
+  - `ego_spawn_wait_timeout`は1以上、`ego_spawn_front_margin`/`ego_spawn_rear_margin`は0以上。
+  - `spawn_point`の指定を必須にする(6つの数値。ランダムスポーンでは判定する位置が決まらない)。
 - `vissim_warmup_time + ego_spawn_wait_timeout + vissim_sim_period + 余裕10秒` がVissimの最大期間以下であること(§2.5)。
+  → `get_vissim_sim_params()`の期間計算と一緒にStep V2で追加する。
 
 判定用の固定値(`constants.py`に置く。launch argにはしない):
 
@@ -374,11 +378,18 @@ python3 tools/carla_bbox_probe.py vehicle.toyota.prius
 
 - launch arg / ROS param 4つを追加し、`carla_autoware.py`で読み込み、§2.2の起動時検査を追加する。
 - `vissim_warmup_time=0`では何もしない。
-- テスト: `vissim_launch_params_test.py`(2つのnode定義の一致)、起動時検査の異常系。
+- テスト: `vissim_launch_params_test.py`(2つのnode定義の一致)、起動時検査の異常系(`test/vissim_warmup_params_test.py`、新規)。
+
+**実施結果(2026-10-06)**: 完了。変更ファイルは`carla_ros.py`(パラメータ表)・`launch/autoware_carla_interface.launch.xml`(arg・2つのnode定義)・
+`carla_autoware.py`(読み込み・`_check_vissim_warmup_params()`)・`test/vissim_sim_period_test.py`(パラメータ追加への追従)・
+`test/vissim_warmup_params_test.py`(新規)。開発用PCで`vissim_launch_params_test.py`・`vissim_rpc_protocol_test.py`・
+`vissim_sim_period_test.py`・`vissim_warmup_params_test.py`の通過を確認。`carla`モジュールが必要な`vissim_adapter_stub_test.py`・
+`vissim_pedestrian_sync_stub_test.py`はLinux機で確認する。期間合計の検査はStep V2へ移した。
 
 ### Step V2: シミュレーション期間の拡張
 
 - `get_vissim_sim_params()`に`warmup_time`/`wait_timeout`を追加し、`simPeriod`を§2.5のとおり計算する。
+  期間合計がVissimの最大期間を超える場合は起動時エラーにする(Step V1から移した検査)。
 - `PTVVissimSimulation`の`end_tick`を「確定メソッド(`start_measurement(tick_count)`など)で後から設定」できるようにする。
   ウォームアップ無効時は従来どおり起動時に確定する。
 - テスト: `vissim_sim_period_test.py`に、warmup/timeoutあり・なし、最大期間超過のケースを追加。

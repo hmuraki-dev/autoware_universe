@@ -34,6 +34,13 @@
          fixed_delta_seconds (which must be 1/N s with N in [1, 20] when use_vissim is true). -->
     <arg name="vissim_sim_period" default="600" description="Co-simulation period (s). Once elapsed, the co-simulation stops, closes Vissim and shuts down this whole launch (use_vissim only)"/>
     <arg name="vissim_max_consecutive_failures" default="3" description="Stop the co-simulation (and this whole launch) after this many consecutive failed vissim adapter ticks (use_vissim only)"/>
+    <!-- Vissim warmup / EGO safe spawn (see docs/Vissim_CARLA_Autoware_ウォームアップ_EGO安全スポーン_実装計画_v1.0.md).
+         vissim_warmup_time=0 (default) disables it: the EGO is spawned at startup as before.
+         The margins are doubles: write them with a decimal point (e.g. 25.0, not 25). -->
+    <arg name="vissim_warmup_time" default="0" description="Run Vissim alone for this many seconds before spawning the EGO; 0 disables the warmup (use_vissim only, requires spawn_point)"/>
+    <arg name="ego_spawn_front_margin" default="20.0" description="Minimum gap (m) between the EGO's front and the rear of the vehicle ahead of its spawn point (use_vissim with warmup only)"/>
+    <arg name="ego_spawn_rear_margin" default="20.0" description="Minimum gap (m) between the EGO's rear and the front of the vehicle behind its spawn point (use_vissim with warmup only)"/>
+    <arg name="ego_spawn_wait_timeout" default="60" description="Give up (fail to start the test) if no safe gap appears within this many seconds after the warmup (use_vissim with warmup only)"/>
 
     <!-- CARLA spectator camera auto-follow (see scripts/spectator_follow) -->
     <arg name="spectator_follow" default="False" description="Automatically lock the CARLA spectator camera onto the ego vehicle as soon as it spawns"/>
@@ -89,6 +96,10 @@
       <param name="sync_traffic_lights" value="$(var sync_traffic_lights)"/>
       <param name="vissim_sim_period" value="$(var vissim_sim_period)"/>
       <param name="vissim_max_consecutive_failures" value="$(var vissim_max_consecutive_failures)"/>
+      <param name="vissim_warmup_time" value="$(var vissim_warmup_time)"/>
+      <param name="ego_spawn_front_margin" value="$(var ego_spawn_front_margin)"/>
+      <param name="ego_spawn_rear_margin" value="$(var ego_spawn_rear_margin)"/>
+      <param name="ego_spawn_wait_timeout" value="$(var ego_spawn_wait_timeout)"/>
     </node>
     <node pkg="autoware_carla_interface" exec="autoware_carla_interface" name="autoware_carla_interface" output="screen" if="$(var use_vissim)" on_exit="shutdown">
       <param name="host" value="$(var host)"/>
@@ -113,6 +124,10 @@
       <param name="sync_traffic_lights" value="$(var sync_traffic_lights)"/>
       <param name="vissim_sim_period" value="$(var vissim_sim_period)"/>
       <param name="vissim_max_consecutive_failures" value="$(var vissim_max_consecutive_failures)"/>
+      <param name="vissim_warmup_time" value="$(var vissim_warmup_time)"/>
+      <param name="ego_spawn_front_margin" value="$(var ego_spawn_front_margin)"/>
+      <param name="ego_spawn_rear_margin" value="$(var ego_spawn_rear_margin)"/>
+      <param name="ego_spawn_wait_timeout" value="$(var ego_spawn_wait_timeout)"/>
     </node>
 
     <!-- Keeps the CARLA spectator (free) camera locked onto the ego vehicle (role_name=

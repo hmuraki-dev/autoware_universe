@@ -70,6 +70,10 @@ _BASE_PARAMS = {
     'sync_traffic_lights': False,
     'vissim_sim_period': 600,
     'vissim_max_consecutive_failures': 3,
+    'vissim_warmup_time': 0,
+    'ego_spawn_front_margin': 20.0,
+    'ego_spawn_rear_margin': 20.0,
+    'ego_spawn_wait_timeout': 60,
 }
 
 # ==================================================================================================

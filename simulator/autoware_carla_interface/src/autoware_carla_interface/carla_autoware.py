@@ -134,12 +134,19 @@ class InitializeInterface(object):
         # See docs/Vissim_CARLA_Autoware_シミュレーション期間管理_実装計画_v1.0.md.
         self.vissim_sim_period = self.param_["vissim_sim_period"]
         self.vissim_max_consecutive_failures = self.param_["vissim_max_consecutive_failures"]
+        # See docs/Vissim_CARLA_Autoware_ウォームアップ_EGO安全スポーン_実装計画_v1.0.md.
+        # vissim_warmup_time=0 (default) disables the warmup / EGO safe spawn entirely.
+        self.vissim_warmup_time = self.param_["vissim_warmup_time"]
+        self.ego_spawn_front_margin = self.param_["ego_spawn_front_margin"]
+        self.ego_spawn_rear_margin = self.param_["ego_spawn_rear_margin"]
+        self.ego_spawn_wait_timeout = self.param_["ego_spawn_wait_timeout"]
         self.vissim_carla_sim = None
         self.vissim_sim = None
         self.vissim_sync = None
 
         self._check_vissim_traffic_manager_exclusivity()
         self._check_vissim_sim_period_params()
+        self._check_vissim_warmup_params()
 
     def _check_vissim_traffic_manager_exclusivity(self):
         """
@@ -188,6 +195,50 @@ class InitializeInterface(object):
             raise ValueError(
                 "vissim_max_consecutive_failures must be >= 1, got "
                 f"{self.vissim_max_consecutive_failures}"
+            )
+
+    def _check_vissim_warmup_params(self):
+        """
+        Validates the Vissim warmup / EGO safe spawn parameters at startup (see docs/
+        Vissim_CARLA_Autoware_ウォームアップ_EGO安全スポーン_実装計画_v1.0.md section 2.2). No-op
+        when `use_vissim` is False, and the spawn-related parameters are only checked when the
+        warmup is enabled (`vissim_warmup_time` > 0), so that launches not using the warmup keep
+        working whatever they hold.
+
+        A fixed `spawn_point` is required with the warmup: the safe-gap check needs to know
+        where the EGO is going to be spawned, which a random spawn point does not tell.
+
+            :raises ValueError: if any of the parameters is invalid.
+        """
+        if not self.use_vissim:
+            return
+
+        if self.vissim_warmup_time < 0:
+            raise ValueError(
+                "vissim_warmup_time must be >= 0 (0 disables the warmup), got "
+                f"{self.vissim_warmup_time}"
+            )
+        if self.vissim_warmup_time == 0:
+            return
+
+        if self.ego_spawn_wait_timeout < 1:
+            raise ValueError(
+                f"ego_spawn_wait_timeout must be >= 1, got {self.ego_spawn_wait_timeout}"
+            )
+        for name in ("ego_spawn_front_margin", "ego_spawn_rear_margin"):
+            if getattr(self, name) < 0.0:
+                raise ValueError(f"{name} must be >= 0, got {getattr(self, name)}")
+
+        point_items = self.spawn_point.split(",")
+        try:
+            [float(item) for item in point_items]
+        except ValueError:
+            point_items = None
+        if point_items is None or len(point_items) != 6:
+            raise ValueError(
+                "vissim_warmup_time > 0 requires a fixed spawn_point (x, y, z, roll, pitch, "
+                f"yaw), got {self.spawn_point!r}: the EGO safe-spawn check needs to know where "
+                "the EGO is going to be spawned"
             )
 
     def _parse_spawn_point(self):
