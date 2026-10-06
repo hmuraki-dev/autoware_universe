@@ -417,6 +417,15 @@ python3 tools/carla_bbox_probe.py vehicle.toyota.prius
 - ウォームアップ無効時は`load_world()`から呼び、現状と同じ順序・同じ動作にする。
 - 確認: ウォームアップ無効で実機co-simが従来どおり動くこと。
 
+**実施結果(2026-10-06)**: 実装完了(実機確認は未実施)。
+- `load_world()`の末尾(EGOスポーン・センサー設定・Traffic Manager設定)を`_spawn_ego_and_sensors(client)`へ移し、
+  `load_world()`からは`_init_vissim_integration(client)`の直後に呼ぶ。処理内容・順序は変更なし。
+- この時点では、ウォームアップ有効時も`load_world()`からすぐにEGOをスポーンする(ウォームアップ有効時に後回しにするのはStep V4)。
+- テスト: `test/vissim_warmup_ego_spawn_test.py`(新規。呼び出し順、固定/ランダムのスポーン位置、センサー、Traffic Manager)。
+- 等価性の確認: 変更前(HEAD)と変更後で、`load_world()`がモック(`carla`・`CarlaDataProvider`・`SensorWrapper`)に対して行う
+  呼び出しの列を、Traffic Managerの有無 × スポーン位置の指定あり/ランダムの4通りで記録し、完全に一致することを確認した。
+- 実機(Linux機)で、ウォームアップ無効のco-simが従来どおり動くことの確認が残っている。
+
 ### Step V4: WARMUPとキャッチアップ
 
 - `ego_spawn_gate.py`にWARMUPループを実装する(§2.3)。

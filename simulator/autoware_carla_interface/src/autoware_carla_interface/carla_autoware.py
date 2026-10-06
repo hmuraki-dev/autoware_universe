@@ -387,6 +387,19 @@ class InitializeInterface(object):
 
         self._init_vissim_integration(client)
 
+        self._spawn_ego_and_sensors(client)
+
+    def _spawn_ego_and_sensors(self, client):
+        """
+        Spawns the EGO vehicle at `spawn_point` (random if not given), attaches the sensors, and
+        spawns the Traffic Manager NPCs if enabled.
+
+        Split out of load_world() (see docs/
+        Vissim_CARLA_Autoware_ウォームアップ_EGO安全スポーン_実装計画_v1.0.md Step V3) so that, with
+        the Vissim warmup, the EGO can be spawned only once Vissim has warmed up and a safe gap is
+        found. Without the warmup it is still called from load_world(), right after the Vissim
+        integration is initialized, exactly as before.
+        """
         spawn_point, randomize = self._parse_spawn_point()
         self.ego_actor = CarlaDataProvider.request_new_actor(
             self.vehicle_type, spawn_point, self.agent_role_name, random_location=randomize
