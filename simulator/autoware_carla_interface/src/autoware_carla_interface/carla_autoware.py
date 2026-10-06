@@ -14,6 +14,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+import math
 import random
 import signal
 import sys
@@ -27,6 +28,7 @@ from .modules.carla_data_provider import CarlaDataProvider
 from .modules.carla_data_provider import GameTime
 from .modules.carla_wrapper import SensorReceivedNoData
 from .modules.carla_wrapper import SensorWrapper
+from .vissim_integration.ego_spawn_gate import EgoSpawnGateError
 
 
 class SensorLoop(object):
@@ -102,6 +104,12 @@ class InitializeInterface(object):
         self.sensor_wrapper = None
         self.ego_actor = None
         self.prev_tick_wall_time = 0.0
+        self.bridge_loop = None
+        # Set by _stop_loop() (SIGINT/SIGTERM); also seen by the Vissim warmup, which runs before
+        # bridge_loop exists.
+        self._stop_requested = False
+        # Kept by load_world() for the EGO spawn after the Vissim warmup.
+        self._client = None
 
         # Parameter for Initializing Carla World
         self.local_host = self.param_["host"]
@@ -134,11 +142,20 @@ class InitializeInterface(object):
         # See docs/Vissim_CARLA_Autoware_シミュレーション期間管理_実装計画_v1.0.md.
         self.vissim_sim_period = self.param_["vissim_sim_period"]
         self.vissim_max_consecutive_failures = self.param_["vissim_max_consecutive_failures"]
+        # See docs/Vissim_CARLA_Autoware_ウォームアップ_EGO安全スポーン_実装計画_v1.0.md.
+        # vissim_warmup_time=0 (default) disables the warmup / EGO safe spawn entirely.
+        self.vissim_warmup_time = self.param_["vissim_warmup_time"]
+        self.ego_spawn_front_margin = self.param_["ego_spawn_front_margin"]
+        self.ego_spawn_rear_margin = self.param_["ego_spawn_rear_margin"]
+        self.ego_spawn_wait_timeout = self.param_["ego_spawn_wait_timeout"]
         self.vissim_carla_sim = None
         self.vissim_sim = None
         self.vissim_sync = None
 
         self._check_vissim_traffic_manager_exclusivity()
+        # The warmup parameters are checked first: the period check below adds the warmup time
+        # and the spawn wait timeout to the period written into the Vissim network file.
+        self._check_vissim_warmup_params()
         self._check_vissim_sim_period_params()
 
     def _check_vissim_traffic_manager_exclusivity(self):
@@ -174,7 +191,10 @@ class InitializeInterface(object):
         (shared with the upstream CARLA repository's orchestrator, so that both validate
         identically): `vissim_sim_period` must be a positive int within Vissim's limits, and
         `fixed_delta_seconds` must be 1/N seconds with N a valid Vissim simulation resolution
-        (1-20) - the resolution written into the Vissim network file is derived from it.
+        (1-20) - the resolution written into the Vissim network file is derived from it. With the
+        warmup enabled, the warmup time and the spawn wait timeout are added to the period
+        written into the network file, and the total must be within Vissim's limits as well (see
+        docs/Vissim_CARLA_Autoware_ウォームアップ_EGO安全スポーン_実装計画_v1.0.md section 2.5).
 
             :raises ValueError: if any of the parameters is invalid.
         """
@@ -183,12 +203,72 @@ class InitializeInterface(object):
 
         from .vissim_integration.vissim_simulation import get_vissim_sim_params
 
-        get_vissim_sim_params(self.fixed_delta_seconds, self.vissim_sim_period)
+        get_vissim_sim_params(self.fixed_delta_seconds, self.vissim_sim_period,
+                              *self._vissim_warmup_periods())
         if self.vissim_max_consecutive_failures < 1:
             raise ValueError(
                 "vissim_max_consecutive_failures must be >= 1, got "
                 f"{self.vissim_max_consecutive_failures}"
             )
+
+    def _check_vissim_warmup_params(self):
+        """
+        Validates the Vissim warmup / EGO safe spawn parameters at startup (see docs/
+        Vissim_CARLA_Autoware_ウォームアップ_EGO安全スポーン_実装計画_v1.0.md section 2.2). No-op
+        when `use_vissim` is False, and the spawn-related parameters are only checked when the
+        warmup is enabled (`vissim_warmup_time` > 0), so that launches not using the warmup keep
+        working whatever they hold.
+
+        A fixed `spawn_point` is required with the warmup: the safe-gap check needs to know
+        where the EGO is going to be spawned, which a random spawn point does not tell.
+
+            :raises ValueError: if any of the parameters is invalid.
+        """
+        if not self.use_vissim:
+            return
+
+        if self.vissim_warmup_time < 0:
+            raise ValueError(
+                "vissim_warmup_time must be >= 0 (0 disables the warmup), got "
+                f"{self.vissim_warmup_time}"
+            )
+        if self.vissim_warmup_time == 0:
+            return
+
+        if self.ego_spawn_wait_timeout < 1:
+            raise ValueError(
+                f"ego_spawn_wait_timeout must be >= 1, got {self.ego_spawn_wait_timeout}"
+            )
+        for name in ("ego_spawn_front_margin", "ego_spawn_rear_margin"):
+            if getattr(self, name) < 0.0:
+                raise ValueError(f"{name} must be >= 0, got {getattr(self, name)}")
+
+        point_items = self.spawn_point.split(",")
+        try:
+            [float(item) for item in point_items]
+        except ValueError:
+            point_items = None
+        if point_items is None or len(point_items) != 6:
+            raise ValueError(
+                "vissim_warmup_time > 0 requires a fixed spawn_point (x, y, z, roll, pitch, "
+                f"yaw), got {self.spawn_point!r}: the EGO safe-spawn check needs to know where "
+                "the EGO is going to be spawned"
+            )
+
+    def _vissim_warmup_enabled(self):
+        """Whether the Vissim warmup / EGO safe spawn is used (use_vissim and a warmup time)."""
+        return self.use_vissim and self.vissim_warmup_time > 0
+
+    def _vissim_warmup_periods(self):
+        """
+        Returns (warmup_time, wait_timeout): the seconds Vissim may run before the co-simulation
+        period starts, i.e. the warmup and, at most, the wait for a safe EGO spawn gap. Both are 0
+        while the warmup is disabled, whatever ego_spawn_wait_timeout holds, so that the Vissim
+        simulation period stays exactly as before.
+        """
+        if self._vissim_warmup_enabled():
+            return self.vissim_warmup_time, self.ego_spawn_wait_timeout
+        return 0, 0
 
     def _parse_spawn_point(self):
         """Parse spawn point string and return transform with randomize flag."""
@@ -267,7 +347,10 @@ class InitializeInterface(object):
         # docs/Vissim_CARLA_Autoware_Windowsリモート化_実装計画_v1.0.md. sim_period is sent to the
         # adapter (plus a margin), which writes it - together with the resolution derived from
         # step_length - into the Vissim network file; see docs/
-        # Vissim_CARLA_Autoware_シミュレーション期間管理_実装計画_v1.0.md.
+        # Vissim_CARLA_Autoware_シミュレーション期間管理_実装計画_v1.0.md. With the warmup enabled,
+        # warmup_time/wait_timeout extend that period so that Vissim cannot end before the test
+        # does (see docs/Vissim_CARLA_Autoware_ウォームアップ_EGO安全スポーン_実装計画_v1.0.md).
+        warmup_time, wait_timeout = self._vissim_warmup_periods()
         vissim_args = SimpleNamespace(
             simulator_vehicles=self.vissim_simulator_vehicles,
             vissim_adapter_host=self.vissim_adapter_host,
@@ -277,6 +360,8 @@ class InitializeInterface(object):
             step_length=self.fixed_delta_seconds,
             sync_traffic_lights=self.sync_traffic_lights,
             sim_period=self.vissim_sim_period,
+            warmup_time=warmup_time,
+            wait_timeout=wait_timeout,
         )
 
         self.vissim_carla_sim = CarlaSimulation(client, self.world)
@@ -314,10 +399,33 @@ class InitializeInterface(object):
 
         self._init_vissim_integration(client)
 
+        if self._vissim_warmup_enabled():
+            # The EGO is spawned after the Vissim warmup instead (see run_bridge() and docs/
+            # Vissim_CARLA_Autoware_ウォームアップ_EGO安全スポーン_実装計画_v1.0.md section 2.1).
+            self._client = client
+        else:
+            self._spawn_ego_and_sensors(client)
+
+    def _spawn_ego_and_sensors(self, client):
+        """
+        Spawns the EGO vehicle at `spawn_point` (random if not given), attaches the sensors, and
+        spawns the Traffic Manager NPCs if enabled.
+
+        Split out of load_world() (see docs/
+        Vissim_CARLA_Autoware_ウォームアップ_EGO安全スポーン_実装計画_v1.0.md Step V3) so that, with
+        the Vissim warmup, the EGO can be spawned only once Vissim has warmed up and a safe gap is
+        found. Without the warmup it is still called from load_world(), right after the Vissim
+        integration is initialized, exactly as before.
+        """
         spawn_point, randomize = self._parse_spawn_point()
         self.ego_actor = CarlaDataProvider.request_new_actor(
             self.vehicle_type, spawn_point, self.agent_role_name, random_location=randomize
         )
+        if self.ego_actor is None:
+            raise EgoSpawnGateError(
+                f"failed to spawn the EGO vehicle ({self.vehicle_type}) at spawn_point "
+                f"{self.spawn_point!r} (see the CarlaDataProvider warning above)"
+            )
         self.interface.ego_actor = self.ego_actor  # TODO improve design
         self.interface.physics_control = self.ego_actor.get_physics_control()
 
@@ -327,7 +435,151 @@ class InitializeInterface(object):
         if self.use_traffic_manager:
             self._setup_traffic_manager(client)
 
+    def _run_vissim_warmup(self):
+        """
+        Runs the Vissim warmup, spawns the vissim actors that entered the network meanwhile in
+        CARLA, then spawns the EGO and starts the co-simulation period (see docs/
+        Vissim_CARLA_Autoware_ウォームアップ_EGO安全スポーン_実装計画_v1.0.md sections 2.1-2.7).
+
+        Runs before the regular loop, without ticking GameTime/CarlaDataProvider and without
+        publishing anything, so ROS time only starts once the regular loop does. The EGO is
+        registered into Vissim by the regular loop's auto-adopt, as without the warmup.
+
+            :return: True if the regular loop may start, False if a stop was requested.
+            :raises EgoSpawnGateError: if the test cannot be started (see EgoSpawnGate).
+        """
+        from .vissim_integration import ego_spawn_gate
+        from .vissim_integration.ego_spawn_gate import EgoSpawnGate
+
+        # Logged for the test record: everything the safe-gap check depends on.
+        print(
+            f"[EGO SPAWN CHECK] config: warmup_time={self.vissim_warmup_time} s "
+            f"front_margin={self.ego_spawn_front_margin:.1f} m "
+            f"rear_margin={self.ego_spawn_rear_margin:.1f} m "
+            f"wait_timeout={self.ego_spawn_wait_timeout} s "
+            f"search_range={ego_spawn_gate.EGO_SPAWN_SEARCH_RANGE_M:.1f} m "
+            f"heading_tolerance={ego_spawn_gate.EGO_SPAWN_HEADING_TOLERANCE_DEG:.1f} deg "
+            f"vissim_only_size={ego_spawn_gate.EGO_SPAWN_UNKNOWN_VEHICLE_LENGTH_M:.1f}x"
+            f"{ego_spawn_gate.EGO_SPAWN_UNKNOWN_VEHICLE_WIDTH_M:.1f} m "
+            f"vehicle_type={self.vehicle_type} spawn_point={self.spawn_point}"
+        )
+        # Measured first, so that a bad vehicle_type fails before the (possibly long) warmup.
+        ego_pose = self._ego_spawn_pose()
+
+        gate = EgoSpawnGate(
+            self.vissim_sync,
+            self.vissim_warmup_time,
+            self.fixed_delta_seconds,
+            self.vissim_max_consecutive_failures,
+            should_stop=lambda: self._stop_requested,
+        )
+        if not gate.warmup():
+            return False
+        gate.catch_up()
+        if self._stop_requested:
+            return False
+        gap = gate.wait_for_safe_gap(
+            ego_pose,
+            self.ego_spawn_front_margin,
+            self.ego_spawn_rear_margin,
+            self.ego_spawn_wait_timeout,
+        )
+        if gap is None:
+            return False
+
+        self._spawn_ego_and_sensors(self._client)
+        self.vissim_sim.start_period()
+        location = self.ego_actor.get_location()
+        print(
+            f"[EGO SPAWN] t={gate.sim_time:.2f} s spawn_point={self.spawn_point} "
+            f"location=({location.x:.2f}, {location.y:.2f}, {location.z:.2f}) "
+            f"vehicles={len(self.vissim_sim.vehicle_ids)} end_tick={self.vissim_sim.end_tick} "
+            f"{gap.describe()}"
+        )
+        return True
+
+    def _ego_spawn_pose(self):
+        """
+        Returns the EgoSpawnPose for the safe-gap check: the EGO's bounding box center, heading
+        and size at `spawn_point`, and the width of the lane there.
+
+        The EGO's size is measured by spawning its blueprint once, 200 m above the spawn point
+        (out of everyone's way, physics off), and destroying it right away - before anything
+        else is spawned or ticked, so the co-simulation never sees it. If `vehicle_type` matches
+        several blueprints (the EGO spawn then picks one at random), the largest size is used. The
+        blueprints are taken from the blueprint library directly rather than through
+        CarlaDataProvider.create_blueprint(), whose random choice would otherwise be shifted.
+
+            :raises EgoSpawnGateError: if vehicle_type matches no blueprint, or one cannot be
+                spawned for the measurement.
+        """
+        from .vissim_integration.ego_spawn_gate import EgoSpawnPose
+        from .vissim_integration.ego_spawn_gate import bounding_box_center
+
+        spawn_point, _ = self._parse_spawn_point()
+        blueprints = self.world.get_blueprint_library().filter(self.vehicle_type)
+        if not blueprints:
+            raise EgoSpawnGateError(f"vehicle_type {self.vehicle_type!r} matches no blueprint")
+        if len(blueprints) > 1:
+            print(
+                f"Warning: vehicle_type {self.vehicle_type!r} matches {len(blueprints)} "
+                "blueprints; the safe-gap check uses the largest of them"
+            )
+
+        probe_transform = carla.Transform(
+            carla.Location(spawn_point.location.x, spawn_point.location.y,
+                           spawn_point.location.z + 200.0),
+            spawn_point.rotation,
+        )
+        sizes = []
+        for blueprint in blueprints:
+            if blueprint.has_attribute("role_name"):
+                # Not the EGO's role name: nothing (e.g. spectator_follow) must take it for the EGO.
+                blueprint.set_attribute("role_name", "ego_size_probe")
+            probe = self.world.try_spawn_actor(blueprint, probe_transform)
+            if probe is None:
+                raise EgoSpawnGateError(
+                    f"could not spawn {blueprint.id} to measure the EGO size for the safe-gap check"
+                )
+            try:
+                probe.set_simulate_physics(False)
+                box = probe.bounding_box
+                sizes.append((2.0 * box.extent.x, 2.0 * box.extent.y, box.location.x,
+                              box.location.y, blueprint.id))
+            finally:
+                probe.destroy()
+        length, width, offset_x, offset_y, blueprint_id = max(sizes)
+        width = max(size[1] for size in sizes)
+
+        yaw = spawn_point.rotation.yaw
+        x, y = bounding_box_center(spawn_point.location.x, spawn_point.location.y, yaw,
+                                   offset_x, offset_y)
+        waypoint = self.world.get_map().get_waypoint(
+            spawn_point.location, project_to_road=True, lane_type=carla.LaneType.Driving
+        )
+        lane_width = waypoint.lane_width
+        lateral_offset = math.hypot(waypoint.transform.location.x - spawn_point.location.x,
+                                    waypoint.transform.location.y - spawn_point.location.y)
+        print(
+            f"[EGO SPAWN CHECK] ego {blueprint_id}: length={length:.2f} m width={width:.2f} m "
+            f"lane_width={lane_width:.2f} m (road {waypoint.road_id}, lane {waypoint.lane_id})"
+        )
+        if waypoint.is_junction:
+            print(
+                "Warning: spawn_point is in a junction; the safe-gap check assumes a straight "
+                "road around the spawn point"
+            )
+        if lateral_offset > lane_width / 2.0:
+            print(
+                f"Warning: spawn_point is {lateral_offset:.2f} m away from the nearest driving "
+                "lane center; the safe-gap check uses that lane's width"
+            )
+        return EgoSpawnPose(x, y, yaw, length, width, lane_width)
+
     def run_bridge(self):
+        if self._vissim_warmup_enabled() and not self._run_vissim_warmup():
+            return
+
         self.bridge_loop = SensorLoop()
         self.bridge_loop.sensor = self.sensor_wrapper
         self.bridge_loop.ego_actor = self.ego_actor
@@ -352,7 +604,9 @@ class InitializeInterface(object):
                 self.bridge_loop._tick_sensor(timestamp)
 
     def _stop_loop(self, sign, frame):
-        self.bridge_loop._stop_loop()
+        self._stop_requested = True
+        if self.bridge_loop is not None:
+            self.bridge_loop._stop_loop()
 
     def _cleanup(self):
         """
@@ -484,10 +738,17 @@ def main():
     signal.signal(signal.SIGINT, carla_bridge._stop_loop)
     signal.signal(signal.SIGTERM, carla_bridge._stop_loop)
 
+    exit_code = 0
     try:
         carla_bridge.run_bridge()
     except KeyboardInterrupt:
         print("\nReceived keyboard interrupt, shutting down...")
+    except EgoSpawnGateError as e:
+        # The test could not be started (Vissim warmup / EGO safe spawn, see docs/
+        # Vissim_CARLA_Autoware_ウォームアップ_EGO安全スポーン_実装計画_v1.0.md section 2.8): an
+        # expected outcome rather than a bug, so no traceback, but a non-zero exit code.
+        print(f"Error: test start failed: {e}")
+        exit_code = 1
     except Exception as e:
         print(f"\nError during bridge operation: {e}")
         raise
@@ -496,6 +757,8 @@ def main():
         print("Cleaning up CARLA resources...")
         carla_bridge._cleanup()
         print("Cleanup complete.")
+    if exit_code:
+        sys.exit(exit_code)
 
 
 if __name__ == "__main__":

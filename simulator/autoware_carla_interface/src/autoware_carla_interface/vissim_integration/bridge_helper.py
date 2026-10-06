@@ -6,8 +6,10 @@
 # This work is licensed under the terms of the MIT license.
 # For a copy, see <https://opensource.org/licenses/MIT>.
 #
-# Vendored without modification from CARLA's official Vissim-CARLA co-simulation bridge
-# (`Co-Simulation/PTV-Vissim/vissim_integration/bridge_helper.py`). See ../NOTICE.md.
+# Vendored from CARLA's official Vissim-CARLA co-simulation bridge
+# (`Co-Simulation/PTV-Vissim/vissim_integration/bridge_helper.py`). See ../NOTICE.md for the
+# deviations (blueprint/color/driver choice is derived from the vissim id instead of the global
+# random generator).
 """ This module provides a helper for the co-simulation between vissim and carla. """
 
 # ==================================================================================================
@@ -184,11 +186,14 @@ class BridgeHelper(object):
         Returns an appropriate blueprint based on the received vissim actor.
         """
         type_id = str(vissim_actor.type)
+        # Seeded by the vissim id so that the same vissim vehicle always gets the same model
+        # (and thus the same length) regardless of run or spawn order.
+        rng = random.Random(int(vissim_actor.id))
 
         if type_id in BridgeHelper.vtypes:
             candidates = BridgeHelper.vtypes[type_id]
             if candidates:
-                blueprint_id = random.choice(candidates)
+                blueprint_id = rng.choice(candidates)
             else:
                 logging.error(
                     'vissim type %s not supported. No vehicle will be spawned in carla', type_id)
@@ -202,11 +207,11 @@ class BridgeHelper(object):
             blueprint = blueprint[0]
 
             if blueprint.has_attribute('color'):
-                color = random.choice(blueprint.get_attribute('color').recommended_values)
+                color = rng.choice(blueprint.get_attribute('color').recommended_values)
                 blueprint.set_attribute('color', color)
 
             if blueprint.has_attribute('driver_id'):
-                driver_id = random.choice(blueprint.get_attribute('driver_id').recommended_values)
+                driver_id = rng.choice(blueprint.get_attribute('driver_id').recommended_values)
                 blueprint.set_attribute('driver_id', driver_id)
 
             blueprint.set_attribute('role_name', 'vissim_driver')
@@ -226,11 +231,13 @@ class BridgeHelper(object):
         above, walker blueprints have no 'color'/'driver_id' attributes to randomize.
         """
         type_id = str(vissim_pedestrian.type)
+        # Seeded by the vissim id, as in get_carla_blueprint().
+        rng = random.Random(int(vissim_pedestrian.id))
 
         if type_id in BridgeHelper.ptypes:
             candidates = BridgeHelper.ptypes[type_id]
             if candidates:
-                blueprint_id = random.choice(candidates)
+                blueprint_id = rng.choice(candidates)
             else:
                 logging.error(
                     'vissim pedestrian type %s not supported. No pedestrian will be spawned in '

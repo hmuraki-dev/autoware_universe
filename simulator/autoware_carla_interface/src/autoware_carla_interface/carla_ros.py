@@ -98,6 +98,16 @@ class carla_ros2_interface(object):
             # fixed_delta_seconds.
             "vissim_sim_period": (rclpy.Parameter.Type.INTEGER, 600),
             "vissim_max_consecutive_failures": (rclpy.Parameter.Type.INTEGER, 3),
+            # Vissim warmup / EGO safe spawn (see docs/
+            # Vissim_CARLA_Autoware_ウォームアップ_EGO安全スポーン_実装計画_v1.0.md): Vissim runs
+            # alone for vissim_warmup_time seconds, then the EGO is spawned only once the gap to
+            # the vehicles ahead/behind its spawn point is at least ego_spawn_front_margin /
+            # ego_spawn_rear_margin meters, waiting at most ego_spawn_wait_timeout seconds.
+            # vissim_warmup_time=0 (default) disables all of this.
+            "vissim_warmup_time": (rclpy.Parameter.Type.INTEGER, 0),
+            "ego_spawn_front_margin": (rclpy.Parameter.Type.DOUBLE, 20.0),
+            "ego_spawn_rear_margin": (rclpy.Parameter.Type.DOUBLE, 20.0),
+            "ego_spawn_wait_timeout": (rclpy.Parameter.Type.INTEGER, 60),
         }
 
         self.param_values = {}

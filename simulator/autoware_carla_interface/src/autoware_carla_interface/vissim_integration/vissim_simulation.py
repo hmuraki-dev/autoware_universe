@@ -214,7 +214,7 @@ class VissimPedestrian(object):
 # ==================================================================================================
 
 
-def get_vissim_sim_params(step_length, sim_period):
+def get_vissim_sim_params(step_length, sim_period, warmup_time=0, wait_timeout=0):
     """
     Validates the co-simulation's step length/period and derives the values to be written into
     the Vissim network file by the adapter (see rpc_protocol.PROTO_VERSION 2).
@@ -230,23 +230,35 @@ def get_vissim_sim_params(step_length, sim_period):
         :param float step_length: fixed delta seconds of the co-simulation.
         :param int sim_period: co-simulation period in seconds, after which the caller is expected
             to stop the co-simulation (see PTVVissimSimulation.end_tick).
+        :param int warmup_time: seconds Vissim runs alone before the co-simulation period starts
+            (see docs/Vissim_CARLA_Autoware_ウォームアップ_EGO安全スポーン_実装計画_v1.0.md). 0
+            (default) keeps the upstream behavior.
+        :param int wait_timeout: maximum seconds spent waiting for a safe EGO spawn gap after the
+            warmup, before the co-simulation period starts. 0 (default) keeps the upstream
+            behavior.
         :return: (vissim_sim_period, sim_res) - the simulation period to write into the network
-            file (sim_period plus constants.VISSIM_SIM_PERIOD_MARGIN_S) and the simulation
-            resolution (time steps per simulation second, i.e. 1 / step_length).
-        :raises ValueError: if sim_period is not a positive int, the period (plus the margin)
-            exceeds Vissim's maximum, or 1 / step_length is not an int within Vissim's valid
-            simulation resolution range.
+            file (warmup_time + wait_timeout + sim_period, plus
+            constants.VISSIM_SIM_PERIOD_MARGIN_S) and the simulation resolution (time steps per
+            simulation second, i.e. 1 / step_length).
+        :raises ValueError: if sim_period is not a positive int, warmup_time/wait_timeout are not
+            non-negative ints, the total period (plus the margin) exceeds Vissim's maximum, or
+            1 / step_length is not an int within Vissim's valid simulation resolution range.
     """
     if (not isinstance(sim_period, int) or isinstance(sim_period, bool) or
             sim_period < constants.VISSIM_MIN_SIM_PERIOD_S):
         raise ValueError('The simulation period must be an int >= %d (seconds), got %r' %
                          (constants.VISSIM_MIN_SIM_PERIOD_S, sim_period))
-    vissim_sim_period = sim_period + constants.VISSIM_SIM_PERIOD_MARGIN_S
+    for name, value in (('warmup time', warmup_time), ('spawn wait timeout', wait_timeout)):
+        if not isinstance(value, int) or isinstance(value, bool) or value < 0:
+            raise ValueError('The %s must be an int >= 0 (seconds), got %r' % (name, value))
+    vissim_sim_period = (warmup_time + wait_timeout + sim_period +
+                         constants.VISSIM_SIM_PERIOD_MARGIN_S)
     if vissim_sim_period > constants.VISSIM_MAX_SIM_PERIOD_S:
         raise ValueError(
-            'The simulation period plus its %d s margin (%d s) exceeds the maximum Vissim '
-            'simulation period of %d s' % (constants.VISSIM_SIM_PERIOD_MARGIN_S, vissim_sim_period,
-                                           constants.VISSIM_MAX_SIM_PERIOD_S))
+            'The simulation period plus the warmup time, the spawn wait timeout and its %d s '
+            'margin (%d s) exceeds the maximum Vissim simulation period of %d s' %
+            (constants.VISSIM_SIM_PERIOD_MARGIN_S, vissim_sim_period,
+             constants.VISSIM_MAX_SIM_PERIOD_S))
 
     steps_per_second = 1.0 / step_length
     sim_res = int(round(steps_per_second))
@@ -280,15 +292,21 @@ class PTVVissimSimulation(object):
     def __init__(self, args):
         # Validated before anything else (in particular before any socket is created), so that a
         # bad configuration fails fast.
-        vissim_sim_period, sim_res = get_vissim_sim_params(args.step_length, args.sim_period)
+        # warmup_time/wait_timeout are optional (getattr) so that args objects without them, as
+        # built by the upstream orchestrator, keep the upstream behavior.
+        vissim_sim_period, sim_res = get_vissim_sim_params(
+            args.step_length, args.sim_period, getattr(args, 'warmup_time', 0),
+            getattr(args, 'wait_timeout', 0))
 
         self._max_simulator_vehicles = args.simulator_vehicles
         self._step_length = args.step_length
 
         # Vissim advances in lockstep with successful tick() calls (one frame per
         # VISSIM_SetDriverVehicles), so the co-simulation period is exactly sim_period * sim_res
-        # successful ticks - see end_tick below.
-        self._end_tick = args.sim_period * sim_res
+        # successful ticks, counted from the tick at which the period starts - tick 0 unless
+        # start_period() moves it (after a warmup) - see end_tick below.
+        self._period_ticks = args.sim_period * sim_res
+        self._period_start_tick = 0
 
         # Number of tick() calls in a row that could not be completed (timeout, failed reconnect,
         # or an error reported by the adapter); reset to 0 by every successful tick(). See
@@ -532,6 +550,22 @@ class PTVVissimSimulation(object):
         return self._vissim_pedestrians[pedestrian_id]
 
     @property
+    def vehicle_ids(self):
+        """
+        Returns the set of vissim VehicleIDs of the traffic vehicles seen in the last tick() (all
+        of them, unlike spawned_vehicles, which only holds those new in that tick).
+        """
+        return set(self._vissim_vehicles.keys())
+
+    @property
+    def pedestrian_ids(self):
+        """
+        Returns the set of vissim PedestrianIDs seen in the last tick() (all of them, unlike
+        spawned_pedestrians, which only holds those new in that tick).
+        """
+        return set(self._vissim_pedestrians.keys())
+
+    @property
     def signal_ids(self):
         """
         Returns the set of (ControllerID, SignalGroupID) pairs seen in the last tick().
@@ -560,12 +594,24 @@ class PTVVissimSimulation(object):
         """
         Returns the tick_count at which the co-simulation period (args.sim_period) has elapsed.
         Vissim advances in lockstep with successful tick() calls, so once tick_count reaches this
-        value, Vissim's own simulation time equals the co-simulation period exactly. Callers are
-        expected to stop ticking and close() at that point: the period written into the Vissim
-        network file includes a margin (constants.VISSIM_SIM_PERIOD_MARGIN_S), so Vissim itself
-        never reaches the end of its simulation period first.
+        value, Vissim's own simulation time equals the co-simulation period exactly (plus the
+        warmup / spawn wait, if start_period() was called). Callers are expected to stop ticking
+        and close() at that point: the period written into the Vissim network file includes a
+        margin (constants.VISSIM_SIM_PERIOD_MARGIN_S), so Vissim itself never reaches the end of
+        its simulation period first.
         """
-        return self._end_tick
+        return self._period_start_tick + self._period_ticks
+
+    def start_period(self):
+        """
+        Starts the co-simulation period at the current tick_count, so that end_tick lies
+        args.sim_period seconds from now rather than from the first tick. Called once the EGO has
+        been spawned after a warmup (see docs/
+        Vissim_CARLA_Autoware_ウォームアップ_EGO安全スポーン_実装計画_v1.0.md section 2.5), so that
+        the time Vissim spent warming up and waiting for a safe spawn gap does not shorten the
+        test. Without a warmup it is never called, and the period starts at tick 0 as before.
+        """
+        self._period_start_tick = self._tick_count
 
     @property
     def consecutive_failures(self):
