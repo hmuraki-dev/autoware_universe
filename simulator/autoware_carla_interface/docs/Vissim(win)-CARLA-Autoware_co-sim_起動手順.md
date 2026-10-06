@@ -90,7 +90,7 @@ python server.py `
 
 **シミュレーション期間・分解能について**:
 - アダプタはLinux側からconnectリクエストを受け取ると、`--vissim-network`で指定した.inpxと**同じフォルダ**に`<元のファイル名>.cosim.inpx`(例: `Town01.inpx` → `Town01.cosim.inpx`)を作り、そのコピーでVissimを起動する。コピーでは`<simulation>`要素の次の3つの値だけが書き換わる(元の.inpxは変更されない)。
-  - `simPeriod`: Linux側の`vissim_sim_period`(2.6参照) + 余裕10秒。ウォームアップを使う場合は、さらに`vissim_warmup_time`と`ego_spawn_wait_timeout`を足した値(2.6.3参照)
+  - `simPeriod`: Linux側の`vissim_sim_period`(2.6参照) + 余裕10秒。ウォームアップを使う場合は、さらに`vissim_warmup_time`と`ego_spawn_wait_timeout`を足した値(2.6.2参照)
   - `simRes`: Linux側の`fixed_delta_seconds`から求めた値(`1 / fixed_delta_seconds`。既定の0.05秒なら20)
   - `numRuns`: 常に1
 - このため、**.inpxのあるフォルダには書き込み権限が必要**(書き込めないとconnectがエラーになる)。`.cosim.inpx`は起動のたびに上書きされる。
@@ -203,8 +203,13 @@ ros2 launch autoware_launch e2e_simulator.launch.xml \
   vissim_connect_timeout_ms:=120000 \
   vissim_sim_period:=600 \
   sync_traffic_lights:=true \
+  spawn_point:="229.8,-2.0,0.3,0.0,0.0,180.0" \
+  vissim_warmup_time:=100 \
   spectator_follow:=true
 ```
+
+(`spawn_point`の値は書式の例。実際の地点は2.6.2「スポーン地点の選び方」に従って決めること)
+
 | オプション | 説明 | 省略可/不可 | デフォルト値 |
 | --- | --- | --- | --- |
 | `simulator_type` | 使用するシミュレータ種別を指定する | 省略不可 | なし |
@@ -221,56 +226,26 @@ ros2 launch autoware_launch e2e_simulator.launch.xml \
 | `vissim_sim_period` | co-simulationのシミュレーション期間(秒、1以上の整数)。経過すると、co-simulationを終了してVissimを閉じ、`e2e_simulator.launch.xml`で起動した全ノードを停止する | 省略可 | `600` |
 | `vissim_max_consecutive_failures` | Vissimアダプタとのtickが連続でこの回数失敗したら(タイムアウト・再接続失敗・アダプタのエラー)、期間の途中でも同様に終了する | 省略可 | `3` |
 | `spectator_follow` | CARLAスペクテーター(自由視点カメラ)をEGO車両のスポーンと同時に自動追従させる | 省略可 | `false` |
+| `vissim_warmup_time` | Vissimだけを先に進める時間(秒、0以上の整数)。0でウォームアップ無効(従来どおり起動直後にEGOをスポーン) | 省略可 | `0` |
+| `spawn_point` | EGOのスポーン地点。`x,y,z,roll,pitch,yaw`の6つの数値をカンマ区切りで指定(CARLAの座標、角度は度)。zには自動で+2 mされる | **ウォームアップ時は省略不可**(ランダムスポーンでは判定する位置が決まらないため、起動時エラー) | `None`(ランダム) |
+| `ego_spawn_front_margin` | EGOの前端と前方車の後端の間に必要な距離(m) | 省略可 | `20.0` |
+| `ego_spawn_rear_margin` | EGOの後端と後方車の前端の間に必要な距離(m) | 省略可 | `20.0` |
+| `ego_spawn_wait_timeout` | ウォームアップ後、空きを待つ上限(秒、1以上の整数)。超えたら試験開始失敗として終了する | 省略可 | `60` |
 
 **注意**:
 - Vissim側のシミュレーション分解能(`simRes`)は`fixed_delta_seconds`から自動で決まり、.inpxのコピーに書き込まれる(2.2参照)。そのため、以前のように.inpx側の`simRes`を手で合わせる必要はない。
   ただし`use_vissim:=true`のときは、`fixed_delta_seconds`を**1/N秒(Nは1〜20の整数)**にすること(既定の0.05秒はN=20)。それ以外の値では起動時にエラーになる。
-- `vissim_sim_period`・`vissim_max_consecutive_failures`を`e2e_simulator.launch.xml`から指定するには、`autoware_launch`側で引数の受け渡しを追加しておく必要がある(2.6.1参照)。追加していない場合は、既定値(600秒・3回)で動作する。
-- Vissimを先に走らせて交通流を作ってからEGOを投入する場合は、ウォームアップの引数を追加する(2.6.3参照)。指定しなければ、従来どおり起動直後にEGOをスポーンする。
+- Vissimを先に走らせて交通流を作ってからEGOを投入する場合は、ウォームアップの引数(`vissim_warmup_time`・`spawn_point`など)を追加する(2.6.2参照)。指定しなければ、従来どおり起動直後にEGOをスポーンする。
+- `ego_spawn_front_margin`・`ego_spawn_rear_margin`は小数点付きで書くこと(`25`ではなく`25.0`)。整数で書くと型が合わず起動時にエラーになる。
 
-#### 2.6.1 `autoware_launch`側の対応(`e2e_simulator.launch.xml`)
-`~/autoware.1.9.0/src/launcher/autoware_launch/autoware_launch/launch/e2e_simulator.launch.xml`(別リポジトリ、ローカル変更)に、既存の`vissim_*`引数と同じ2か所へ次の行を追加する。
-
-```xml
-<!-- (1) 引数の宣言(既存の vissim_* の <arg> と同じ場所) -->
-<arg name="vissim_sim_period" default="600" description="Co-simulation period (s)"/>
-<arg name="vissim_max_consecutive_failures" default="3" description="Stop after this many consecutive failed vissim adapter ticks"/>
-
-<!-- (2) autoware_carla_interface.launch.xml を include している箇所の中(既存の vissim_* の <arg> と同じ場所) -->
-<arg name="vissim_sim_period" value="$(var vissim_sim_period)"/>
-<arg name="vissim_max_consecutive_failures" value="$(var vissim_max_consecutive_failures)"/>
-```
-
-ウォームアップ(2.6.3)を使う場合は、同じ2か所へ次の行も追加する。元の`e2e_simulator.launch.xml`はEGOの`spawn_point`(ウォームアップでは必須)と`vehicle_type`を渡していないため、それらも追加する(既定値は`autoware_carla_interface.launch.xml`と同じ)。
-
-```xml
-<!-- (1) 引数の宣言 -->
-<arg name="vissim_warmup_time" default="0" description="Run Vissim alone for this many seconds before spawning the EGO; 0 disables the warmup (use_vissim only, requires spawn_point)"/>
-<arg name="ego_spawn_front_margin" default="20.0" description="Minimum gap (m) between the EGO's front and the rear of the vehicle ahead of its spawn point (use_vissim with warmup only)"/>
-<arg name="ego_spawn_rear_margin" default="20.0" description="Minimum gap (m) between the EGO's rear and the front of the vehicle behind its spawn point (use_vissim with warmup only)"/>
-<arg name="ego_spawn_wait_timeout" default="60" description="Give up (fail to start the test) if no safe gap appears within this many seconds after the warmup (use_vissim with warmup only)"/>
-<arg name="vehicle_type" default="vehicle.toyota.prius" description="CARLA blueprint of the EGO vehicle (CARLA simulator_type only)"/>
-<arg name="spawn_point" default="None" description="EGO spawn point 'x,y,z,roll,pitch,yaw' in CARLA coordinates (degrees); None = random (CARLA simulator_type only)"/>
-
-<!-- (2) autoware_carla_interface.launch.xml を include している箇所の中 -->
-<arg name="vissim_warmup_time" value="$(var vissim_warmup_time)"/>
-<arg name="ego_spawn_front_margin" value="$(var ego_spawn_front_margin)"/>
-<arg name="ego_spawn_rear_margin" value="$(var ego_spawn_rear_margin)"/>
-<arg name="ego_spawn_wait_timeout" value="$(var ego_spawn_wait_timeout)"/>
-<arg name="vehicle_type" value="$(var vehicle_type)"/>
-<arg name="spawn_point" value="$(var spawn_point)"/>
-```
-
-(2026-10-06に、Linux機の`e2e_simulator.launch.xml`のコピーへ上記を追加済み。Linux機への反映は手動)
-
-#### 2.6.2 終了時の動作
+#### 2.6.1 終了時の動作
 `use_vissim:=true`のとき、次のいずれかで`autoware_carla_interface`ノードが終了し、それに伴って`e2e_simulator.launch.xml`で起動した**全ノードが停止する**(`autoware_carla_interface.launch.xml`の`on_exit="shutdown"`による)。
 
 | きっかけ | ログ | Vissimの状態 |
 | --- | --- | --- |
 | `vissim_sim_period`秒が経過した | `Vissim co-simulation period elapsed (<N> ticks), stopping.` | Linux側が終了を指示し(`disconnect`)、Vissimが閉じる |
 | Vissimアダプタとのtickが`vissim_max_consecutive_failures`回続けて失敗した | `Error: giving up after <N> consecutive failed vissim adapter tick(s), stopping. ...` | アダプタが応答しない状態のため、Vissimが閉じないことがある(下記参照) |
-| ウォームアップを使う場合の試験開始失敗(空きが`ego_spawn_wait_timeout`秒以内にできなかった、など。2.6.3参照) | `Error: test start failed: ...` | Linux側が終了を指示し、Vissimが閉じる。終了コードは1 |
+| ウォームアップを使う場合の試験開始失敗(空きが`ego_spawn_wait_timeout`秒以内にできなかった、など。2.6.2参照) | `Error: test start failed: ...` | Linux側が終了を指示し、Vissimが閉じる。終了コードは1 |
 | Ctrl+C、その他の異常終了 | - | 通常はLinux側が終了を指示し、Vissimが閉じる |
 
 期間は、Vissimとのtickが成功した回数で数える(`vissim_sim_period / fixed_delta_seconds`回。既定なら600秒 × 20 = 12000回)。tickに失敗した分は数えないので、実時間やCARLAの時刻とは一致しないことがある。ウォームアップを使う場合は、EGOをスポーンした時点から数える(ウォームアップと空き待ちの時間は含まない)。
@@ -279,7 +254,7 @@ ros2 launch autoware_launch e2e_simulator.launch.xml \
 
 **連続失敗で停止した場合**: Vissimが異常終了したり、アダプタ(server.py)がDLL呼び出しの中で固まったりしている可能性がある。Windows側でserver.pyを止め(Ctrl+Cで止まらない場合はプロセスを終了する)、Vissimが残っていれば閉じてから、2.2の手順でアダプタを起動し直すこと。
 
-#### 2.6.3 ウォームアップ・EGO安全スポーン
+#### 2.6.2 ウォームアップ・EGO安全スポーン
 Vissimだけを先に走らせて交通流を作り、EGOのスポーン地点の前後が空いたときにEGOを投入する。設計は`docs/Vissim_CARLA_Autoware_ウォームアップ_EGO安全スポーン_実装計画_v1.0.md`を参照。
 
 `vissim_warmup_time`に1以上を指定すると有効になる(`use_vissim:=true`のときのみ)。起動後の流れは次のとおり。
@@ -295,39 +270,9 @@ Vissimだけを先に走らせて交通流を作り、EGOのスポーン地点�
 
 ROS(Autoware)の時刻は⑤から0で始まる。①〜④の間、Autowareにはセンサーデータが届かない。
 
-起動例(Town01、ウォームアップ100秒):
-
-```bash
-ros2 launch autoware_launch e2e_simulator.launch.xml \
-  simulator_type:=carla \
-  map_path:=$HOME/autoware_map/Town01 \
-  vehicle_model:=sample_vehicle \
-  sensor_model:=carla_sensor_kit \
-  use_vissim:=true \
-  vissim_adapter_host:=192.168.16.56 \
-  vissim_connect_timeout_ms:=120000 \
-  vissim_sim_period:=600 \
-  sync_traffic_lights:=true \
-  spawn_point:="229.8,-2.0,0.3,0.0,0.0,180.0" \
-  vissim_warmup_time:=100 \
-  ego_spawn_front_margin:=23.0 \
-  ego_spawn_rear_margin:=20.0 \
-  ego_spawn_wait_timeout:=60
-```
-
-(`spawn_point`の値は書式の例。実際の地点は下記「スポーン地点の選び方」に従って決めること)
-
-| オプション | 説明 | 省略可/不可 | デフォルト値 |
-| --- | --- | --- | --- |
-| `vissim_warmup_time` | Vissimだけを先に進める時間(秒、0以上の整数)。0でウォームアップ無効(従来どおり起動直後にEGOをスポーン) | 省略可 | `0` |
-| `spawn_point` | EGOのスポーン地点。`x,y,z,roll,pitch,yaw`の6つの数値をカンマ区切りで指定(CARLAの座標、角度は度)。zには自動で+2 mされる | **ウォームアップ時は省略不可**(ランダムスポーンでは判定する位置が決まらないため、起動時エラー) | `None`(ランダム) |
-| `ego_spawn_front_margin` | EGOの前端と前方車の後端の間に必要な距離(m) | 省略可 | `20.0` |
-| `ego_spawn_rear_margin` | EGOの後端と後方車の前端の間に必要な距離(m) | 省略可 | `20.0` |
-| `ego_spawn_wait_timeout` | ウォームアップ後、空きを待つ上限(秒、1以上の整数)。超えたら試験開始失敗として終了する | 省略可 | `60` |
+起動例と引数は2.6を参照。
 
 **注意**:
-- `ego_spawn_front_margin`・`ego_spawn_rear_margin`は小数点付きで書くこと(`25`ではなく`25.0`)。整数で書くと型が合わず起動時にエラーになる。
-- ウォームアップの引数を`e2e_simulator.launch.xml`から指定するには、`autoware_launch`側で引数の受け渡しを追加しておく必要がある(2.6.1参照)。
 - Vissimに渡すシミュレーション期間は`vissim_warmup_time + ego_spawn_wait_timeout + vissim_sim_period + 10`秒になる(2.2参照)。これらを変えたら、アダプタとVissimを起動し直すこと。
 
 **スポーン地点の選び方**:
@@ -378,7 +323,7 @@ ros2 launch autoware_launch e2e_simulator.launch.xml \
 | 原因 | 表示 | 対処 |
 | --- | --- | --- |
 | `ego_spawn_wait_timeout`秒以内に空きができなかった | `no safe gap found within ego_spawn_wait_timeout=... s (t=...): <最後の判定>` | 交通量の少ない地点を選ぶ、上限時間を延ばす、必要距離を見直す |
-| ウォームアップ中・空き待ち中に、Vissimアダプタとのtickが連続で失敗した | `giving up after <N> consecutive failed vissim adapter tick(s) during the warmup ...` など | 2.6.2の「連続失敗で停止した場合」と同じ |
+| ウォームアップ中・空き待ち中に、Vissimアダプタとのtickが連続で失敗した | `giving up after <N> consecutive failed vissim adapter tick(s) during the warmup ...` など | 2.6.1の「連続失敗で停止した場合」と同じ |
 | `vehicle_type`に一致する車種がない、またはEGOの外形の計測やスポーンに失敗した | `vehicle_type ... matches no blueprint`、`could not spawn ...`、`failed to spawn the EGO vehicle ...` | `vehicle_type`・`spawn_point`を見直す |
 
 ウォームアップ中・空き待ち中にCtrl+Cを押した場合は、その時点で止まり、通常どおり終了する(試験開始失敗にはならない)。
