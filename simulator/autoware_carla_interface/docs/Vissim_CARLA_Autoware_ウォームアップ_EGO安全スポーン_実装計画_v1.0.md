@@ -14,7 +14,10 @@
 - `20260929_VissimウォームアップとEGO安全スポーン.pptx`(同フォルダ。チーム共有資料)
 - `docs/Vissim_CARLA_Autoware_統合_実装計画_v1.0.md`(同期ループ・auto-adoptの元設計)
 - `docs/Vissim_CARLA_Autoware_シミュレーション期間管理_実装計画_v1.0.md`(`end_tick`/`simPeriod`。本計画で拡張する)
-- `docs/Vissim_車両寸法一覧.md` / `docs/CARLA_車両寸法一覧.md`(車長差の根拠)
+- `docs/CARLA_車両寸法一覧.md`(CARLA側の車長の根拠)
+- `docs/Vissim_車両寸法一覧.md`(お台場`odaiba_v015.inpx`の値。参考扱い。Town01の値は§6 3-3)
+
+車両タイプ・車長は、**現状Town01(2026-10-05変更版の`.inpx`)を正とする**(§6 3-2・3-4)。
 
 ---
 
@@ -106,10 +109,11 @@
 - DSIの`VISSIM_Veh_Data`に車長の項目はない(`DrivingSimulatorProxy_windows.h:77-101`)。
   CARLA上の車長は`actor.bounding_box.extent.x × 2`で車両ごとに取得できる。
 - CARLA車種はvtypes.jsonの候補からランダムに選ばれるため、同じVissim車両タイプでも車長が変わる。
-- 最大の車長差: Vissim 220(トレーラー、16.50 m)に対し、CARLAで最長の車両はバス(10.27 m)。
-  トレーラー連結モデルはCARLA標準にない。
-- リポジトリのvtypes.jsonには、Co-Simで使う車両タイプ210 / 220 / 700が登録されていない
-  (`Vissim_車両寸法一覧.md`との差)。未登録タイプはCARLAにスポーンされない(V0で確認)。
+- Town01で最長のVissim車両は300(バス、12.14 m)。220(トレーラー)の3Dモデルはトラクターのみ(5.96 m)。
+  CARLAで最長の車両はバス(10.27 m)で、トレーラー連結モデルはCARLA標準にない。
+- 車長差が最も大きいのは210(Vissim 7.93 m、CARLA 5.20 m、差+2.73 m)。詳細は§6 3-4。
+- vtypes.jsonは2026-10-05に変更され(コミット`7438613f6`)、Town01の車両入力で使う車両タイプ
+  (100 / 210 / 220 / 300 / 700)はすべて登録済み。未登録タイプはCARLAにスポーンされない(§6 3-1)。
 
 ### 1.6 Windows側アダプタ
 
@@ -169,7 +173,7 @@ launch arg / ROS paramとして追加する(`autoware_carla_interface.launch.xml
 |---|---|---|
 | `EGO_SPAWN_SEARCH_RANGE_M` | `100.0` | 前後車を探す縦方向の範囲 |
 | `EGO_SPAWN_HEADING_TOLERANCE_DEG` | `45.0` | 同一進行方向とみなす向きの差 |
-| `EGO_SPAWN_UNKNOWN_VEHICLE_LENGTH_M` | `16.5` | CARLAにいないVissim車両の仮の車長(Vissim最長のトレーラー) |
+| `EGO_SPAWN_UNKNOWN_VEHICLE_LENGTH_M` | `12.2` | CARLAにいないVissim車両の仮の車長(Town01で最長のVissim車両、300: バス 12.14 m) |
 
 ### 2.3 WARMUP
 
@@ -243,7 +247,8 @@ rear_clearance  = |s_rear| − L_ego/2 − L_rear/2
 #### 2.6.3 CARLAにいないVissim車両
 
 - vtypes.json未登録やスポーン失敗でCARLAにいないVissim車両も、Vissimの位置(前端)から判定に含める。
-- 中心位置は「前端 − 仮の車長/2」とし、車長は`EGO_SPAWN_UNKNOWN_VEHICLE_LENGTH_M`(16.5 m)を使う(安全側)。
+- 中心位置は「前端 − 仮の車長/2」とし、車長は`EGO_SPAWN_UNKNOWN_VEHICLE_LENGTH_M`(12.2 m)を使う(安全側)。
+  ネットワークを変えて、より長いVissim車両が加わった場合は値を見直す。
 - ログでは`source=vissim_only`として区別する。
 
 #### 2.6.4 Vissimとの車長差(要件5)
@@ -420,7 +425,7 @@ python3 tools/carla_bbox_probe.py vehicle.toyota.prius
 ### Step V8(オプション): Vissim車長の対応表
 
 - 運用して、必要距離の上乗せでは待ち時間が長くなりすぎる場合に実装する(§2.6.4)。
-- `data/vissim_vehicle_lengths.json`(Vissim車両タイプ → 車長)を`Vissim_車両寸法一覧.md`から作成し、
+- `data/vissim_vehicle_lengths.json`(Vissim車両タイプ → 車長)を、使用する`.inpx`の2D/3Dモデル分布(Town01は§6 3-4)から作成し、
   `max(CARLA, Vissim)`で計算する。
 
 ### Step V9: 実機検証
@@ -456,25 +461,63 @@ python3 tools/carla_bbox_probe.py vehicle.toyota.prius
 |---|---|---|---|
 | 1 | 空のtickの連続送信でVissimが進むか | 実機計測待ち | 計測ツールはダミーアダプタで動作確認済み(2026-09-30) |
 | 2 | 1 tickのRPC往復時間 | 実機計測待ち | 同上 |
-| 3 | vtypes.jsonの登録状況 | **確認済み**(2026-09-30) | 下記3-1・3-2 |
+| 3 | vtypes.jsonの登録状況 | **確認済み**(2026-09-30、vtypes.json変更後に2026-10-05更新) | 下記3-1〜3-4 |
 | 4 | EGO車種の車長・`bounding_box`中心のずれ | 一部確認 | `vehicle.toyota.prius`: 車長4.51 m・幅2.01 m・高さ1.52 m(`CARLA_車両寸法一覧.md`)。中心のずれは実機計測待ち |
 | 5 | Autowareがセンサー開始の遅れに耐えるか | Step V4へ移動 | |
 | 6 | 交通流が安定するまでの時間 | 実機計測待ち | |
 | 7 | DSIでEGOを登録する際の重複チェック・位置補正の有無 | 未確認(公開情報なし) | ギャップ判定で事前に防ぐので、実装の前提にはしない |
 
-**3-1. Town01(`CARLA/Co-Simulation/PTV-Vissim/examples/Town01/Town01.inpx`、現行のco-sim対象)**
-- Driving Simulator: 有効(`drivSimActive="true"`、EGOの車両タイプ`drivSimVehType="100"`)。`randSeed="42"`。
-- 車両入力7か所はすべて車両構成2(車両タイプ100のみ)。100はvtypes.jsonに登録済み。
-  → **Town01では未登録の車両タイプによるCARLA未スポーンは起きない**。
-- 車両タイプ101(Car_NPC)・102(Car_EGO)は定義されているが、車両入力では使われていない。
+**3-1. vtypes.json(コミット`7438613f6`、2026-10-05変更後)**
 
-**3-2. お台場(`odaiba_v015.inpx`、`Vissim_車両寸法一覧.md`の対象)**
-- Driving Simulatorは無効(`drivSimActive="false"`)。co-sim用の設定はまだされていない。
-- 車両入力10か所はすべて車両構成10〜19で、構成比は100: 48.5%、**210: 26.4%**、**220: 11.5%**、**300: 13.1%**、**700: 0.5%**。
-- vtypes.jsonでは210・220・700が未登録、300は空配列(非対応)。
-  → **このままお台場でco-simすると、車両の約半数(210・220・300・700)がCARLAにスポーンされない**。
-  ギャップ判定では§2.6.3のとおり仮の車長16.5 mで判定されるため安全側にはなるが、必要以上に待つ原因になる。
-  お台場でco-simを行う前に、vtypes.jsonへの追加(本計画のスコープ外)が必要。
+| Vissim車両タイプ | CARLAブループリント |
+|---|---|
+| 100: 乗用車 | 乗用車16車種(変更なし) |
+| 210: トラック | `vehicle.carlamotors.carlacola` |
+| 220: トレーラー | `vehicle.carlamotors.european_hgv`(トラクターのみ。CARLA標準に連結車はない) |
+| 300: バス | `vehicle.mitsubishi.fusorosa` |
+| 700: バイク | `vehicle.yamaha.yzf`, `vehicle.harley-davidson.low_rider`, `vehicle.kawasaki.ninja` |
+
+- 変更前にあった200 / 400 / 510 / 520 / 610 / 620は削除された。これらの車両タイプを車両入力で使うネットワーク
+  (変更前のTown01の車両構成1にある610など)では、該当車両がCARLAにスポーンされない(`vissim type N unknown`)。
+- 変更途中の版では、220・300のブループリント名の末尾にゼロ幅スペース(U+200B)が混入し、CARLAで車種が見つからずスポーンされなかった。
+  コミット版では除去済み(ASCII以外の文字なし)。
+- ブリッジが読み込むのは、実行中のモジュールと同じ場所にある`data/vtypes.json`。別のコピー(CARLAリポジトリ側の
+  `Co-Simulation/PTV-Vissim/data/vtypes.json`など)を編集しても反映されない(2026-10-05に実際に発生)。
+
+**3-2. Town01(2026-10-05変更版。実機のVissim PCにある`.inpx`)**
+- 車両入力7か所はすべて車両構成1(各50台/時)。構成比は100: 60%、210・220・300・700: 各10%。
+  → **すべてvtypes.jsonに登録済み**。未登録の車両タイプによるCARLA未スポーンは起きない。
+- `randSeed="42"`。
+- **要確認**: Driving Simulatorが無効(`drivSimActive="false"`)になっている(変更前は`true`)。起動手順書では
+  「無効だと実質的に何も同期しない」とされており、EGOがVissimへ登録されない可能性がある。
+- **要確認**: EGOの車両タイプが`drivSimVehType="101"`(EGO)に変わった。一方、アダプタはEGO登録時に車両タイプ0を
+  指定している(`PTV-Vissim_windows/constants.py`の`VISSIM_DEFAULT_VEHICLE_TYPE = 0`)ため、101が実際に使われるかは未確認。
+  EGOのVissim上の車長(§2.6.4の後方の車長差)に影響する。
+
+**3-3. 車長差への影響(§2.6.4、Town01基準)**
+
+差 = Vissimの車長 − CARLAの車長。正の値ほど、Vissim上の前方の車間がCARLA上より短くなる。
+
+| 車両タイプ | CARLA車長 | Vissim車長(Town01の3Dモデル) | 差 |
+|---|---|---|---|
+| 100 | 3.63〜5.03 m(16車種) | 3.75〜4.76 m(7モデル) | −1.28〜+1.13 m |
+| 210 | 5.20 m(carlacola) | 7.93 m(HGV - Delivery DAF LF) | **+2.73 m** |
+| 220 | 7.94 m(european_hgv) | 5.96 m(HGV - Semi-Tractor Volvo E、トレーラーなし) | −1.98 m |
+| 300 | 10.27 m(fusorosa) | 12.14 m(Bus - C2 Standard) | +1.87 m |
+| 700 | 2.04〜2.35 m(3車種) | 2.10 m(Bike - Motorbike Yamaha MT 07) | −0.25〜+0.06 m |
+
+- 最大は+2.73 m(210)。前方の必要距離(`ego_spawn_front_margin`)に3 m程度上乗せすれば吸収できるため、
+  **Town01ではStep V8(Vissim車長の対応表)は不要**の見込み。
+- Vissimの車長は、2026-10-05変更版の`.inpx`の2D/3Dモデル分布から求めた。CARLAは`CARLA_車両寸法一覧.md`の値。
+- 差の範囲は「Vissimの最短/最長モデル」と「CARLAの最短/最長車種」の組み合わせで求めた最小・最大値(実際は車両ごとにランダムに組み合わさる)。
+
+**3-4. 参考: お台場(`odaiba_v015.inpx`、`Vissim_車両寸法一覧.md`の対象)**
+
+現状の検討対象はTown01であり、以下は将来お台場でco-simする場合の参考。
+- 車両入力で使う車両タイプは100 / 210 / 220 / 300 / 700で、vtypes.json変更後はすべて登録済み。
+- 同じ車両タイプでも3DモデルがTown01と異なり、車長差が大きい(210: +5.06 m、220: トレーラー連結16.50 mで+8.56 m)。
+  お台場でco-simする場合は、Step V8の実施と`EGO_SPAWN_UNKNOWN_VEHICLE_LENGTH_M`の見直しが必要。
+- Driving Simulatorは無効(`drivSimActive="false"`)のまま。
 
 ---
 
