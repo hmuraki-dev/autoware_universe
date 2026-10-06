@@ -19,8 +19,10 @@ Not vendored from the upstream CARLA repository (unlike the other files in this 
 only drives the vendored SimulationSynchronization / PTVVissimSimulation / CarlaSimulation from the
 outside, before autoware_carla_interface's own main loop starts.
 
-    WARMUP    : tick Vissim alone for warmup_time seconds (CARLA is not ticked, no pacing)
-    catch-up  : spawn in CARLA every vissim actor that entered the network meanwhile
+    WARMUP            : tick Vissim alone for warmup_time seconds (CARLA is not ticked, no pacing)
+    catch-up          : spawn in CARLA every vissim actor that entered the network meanwhile
+    WAIT_FOR_SAFE_GAP : check the gap around the EGO's spawn point; while not safe, run one
+                        regular synchronization step (without the EGO) and check again
     (then the caller spawns the EGO and starts the co-simulation period)
 
 The safe-gap check (evaluate_spawn_gap()) is a pure function on plain 2D poses in CARLA's world
@@ -123,6 +125,17 @@ def _outlines_overlap(a, b):
     return True
 
 
+def bounding_box_center(x, y, yaw_deg, offset_x, offset_y):
+    """
+    The world position of a bounding box center given the actor's origin and heading, and the
+    box's offset from that origin in the actor's own frame (CARLA's bounding_box.location: x
+    forward, y right).
+    """
+    forward, right = _unit_vectors(yaw_deg)
+    return (x + forward[0] * offset_x + right[0] * offset_y,
+            y + forward[1] * offset_x + right[1] * offset_y)
+
+
 def center_from_front(front_x, front_y, yaw_deg, length):
     """
     The bounding box center of a vehicle given its front-center-bumper position (vissim's
@@ -188,13 +201,15 @@ def evaluate_spawn_gap(ego, vehicles, front_margin, rear_margin,
 class EgoSpawnGateError(RuntimeError):
     """
     Raised when the co-simulation cannot be started (the test start failed): the vissim adapter
-    failed too many ticks in a row during the warmup, or the EGO could not be spawned.
+    failed too many ticks in a row during the warmup or the wait, no safe gap appeared within the
+    wait timeout, or the EGO could not be measured / spawned.
     """
 
 
 class EgoSpawnGate(object):
     """
-    Runs the Vissim warmup and the catch-up spawn in CARLA that follows it.
+    Runs the Vissim warmup, the catch-up spawn in CARLA that follows it, and the wait for a safe
+    EGO spawn gap.
 
         :param sync: SimulationSynchronization (its .vissim / .carla are used as well).
         :param int warmup_time: seconds to run Vissim alone (> 0).
@@ -279,3 +294,90 @@ class EgoSpawnGate(object):
             self._log('[VISSIM WARMUP] vissim vehicle(s) without a CARLA counterpart: %s' %
                       sorted(result['vehicles_not_spawned']))
         return result
+
+    def collect_gap_vehicles(self):
+        """
+        Returns the vissim vehicles currently in the network as GapVehicle, for
+        evaluate_spawn_gap() (see the plan doc sections 2.6.2 / 2.6.3):
+
+        - mirrored in CARLA: the pose and size of the CARLA actor's bounding box ('carla');
+        - without a CARLA counterpart (unknown type, spawn failure): the pose derived from vissim's
+          front-center-bumper position, with the assumed EGO_SPAWN_UNKNOWN_VEHICLE_* size
+          ('vissim_only').
+        """
+        from .bridge_helper import BridgeHelper  # imports carla: only needed from here on
+
+        vehicles = []
+        for vissim_id in sorted(self._vissim.vehicle_ids):
+            carla_id = self._sync.vissim2carla_ids.get(vissim_id)
+            carla_actor = self._carla.get_actor(carla_id) if carla_id is not None else None
+            if carla_actor is not None:
+                transform = carla_actor.get_transform()
+                box = carla_actor.bounding_box
+                x, y = bounding_box_center(transform.location.x, transform.location.y,
+                                           transform.rotation.yaw, box.location.x, box.location.y)
+                vehicles.append(GapVehicle('vissim:%s/carla:%s' % (vissim_id, carla_id), x, y,
+                                           transform.rotation.yaw, 2.0 * box.extent.x,
+                                           2.0 * box.extent.y, 'carla'))
+            else:
+                front = BridgeHelper.get_carla_transform(
+                    self._vissim.get_actor(vissim_id).get_transform())
+                yaw = front.rotation.yaw
+                x, y = center_from_front(front.location.x, front.location.y, yaw,
+                                         EGO_SPAWN_UNKNOWN_VEHICLE_LENGTH_M)
+                vehicles.append(GapVehicle('vissim:%s' % vissim_id, x, y, yaw,
+                                           EGO_SPAWN_UNKNOWN_VEHICLE_LENGTH_M,
+                                           EGO_SPAWN_UNKNOWN_VEHICLE_WIDTH_M, 'vissim_only'))
+        return vehicles
+
+    def wait_for_safe_gap(self, ego, front_margin, rear_margin, wait_timeout):
+        """
+        Checks the gap around the EGO's planned spawn pose; while it is not safe, advances the
+        co-simulation by one regular synchronization step (vissim -> CARLA, CARLA tick, CARLA ->
+        vissim; without the EGO, and without ticking GameTime or publishing anything) and checks
+        again - with no real-time pacing (see the plan doc section 2.6.5).
+
+        Logs the check right away, whenever its result changes, once per simulated second, and
+        once safe.
+
+            :param EgoSpawnPose ego: the EGO's planned spawn pose and size.
+            :param int wait_timeout: give up after this many simulated seconds.
+            :return: the safe GapResult, or None if a stop was requested meanwhile.
+            :raises EgoSpawnGateError: if no safe gap appears within wait_timeout, or if
+                max_consecutive_failures vissim ticks fail in a row.
+        """
+        max_steps = wait_timeout * self._sim_res
+        step = 0
+        last_key = None
+        while True:
+            result = evaluate_spawn_gap(ego, self.collect_gap_vehicles(), front_margin,
+                                        rear_margin)
+            # "Changed" means a different outcome or different vehicles involved - not merely
+            # clearances that moved a little, which they do at nearly every step.
+            key = (result.safe,
+                   result.front.vehicle.label if result.front is not None else None,
+                   result.rear.vehicle.label if result.rear is not None else None,
+                   tuple(v.label for v in result.overlapping))
+            if result.safe or key != last_key or step % self._sim_res == 0:
+                self._log('[EGO SPAWN CHECK] t=%.2f s %s' % (self.sim_time, result.describe()))
+            last_key = key
+            if result.safe:
+                return result
+
+            if step >= max_steps:
+                raise EgoSpawnGateError(
+                    'no safe gap found within ego_spawn_wait_timeout=%d s (t=%.2f s): %s' %
+                    (wait_timeout, self.sim_time, result.describe()))
+            if self._should_stop():
+                self._log('[EGO SPAWN CHECK] stopped at t=%.2f s' % self.sim_time)
+                return None
+
+            self._sync.sync_vissim_to_carla()
+            self._carla.world.tick()
+            self._sync.sync_carla_to_vissim()
+            if self._vissim.consecutive_failures >= self._max_consecutive_failures:
+                raise EgoSpawnGateError(
+                    'giving up after %d consecutive failed vissim adapter tick(s) while waiting '
+                    'for a safe EGO spawn gap (t=%.2f s). The vissim adapter (and Vissim) may need '
+                    'to be restarted.' % (self._vissim.consecutive_failures, self.sim_time))
+            step += 1

@@ -14,6 +14,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+import math
 import random
 import signal
 import sys
@@ -449,6 +450,9 @@ class InitializeInterface(object):
         """
         from .vissim_integration.ego_spawn_gate import EgoSpawnGate
 
+        # Measured first, so that a bad vehicle_type fails before the (possibly long) warmup.
+        ego_pose = self._ego_spawn_pose()
+
         gate = EgoSpawnGate(
             self.vissim_sync,
             self.vissim_warmup_time,
@@ -461,6 +465,14 @@ class InitializeInterface(object):
         gate.catch_up()
         if self._stop_requested:
             return False
+        gap = gate.wait_for_safe_gap(
+            ego_pose,
+            self.ego_spawn_front_margin,
+            self.ego_spawn_rear_margin,
+            self.ego_spawn_wait_timeout,
+        )
+        if gap is None:
+            return False
 
         self._spawn_ego_and_sensors(self._client)
         self.vissim_sim.start_period()
@@ -468,9 +480,88 @@ class InitializeInterface(object):
         print(
             f"[EGO SPAWN] t={gate.sim_time:.2f} s spawn_point={self.spawn_point} "
             f"location=({location.x:.2f}, {location.y:.2f}, {location.z:.2f}) "
-            f"vehicles={len(self.vissim_sim.vehicle_ids)} end_tick={self.vissim_sim.end_tick}"
+            f"vehicles={len(self.vissim_sim.vehicle_ids)} end_tick={self.vissim_sim.end_tick} "
+            f"{gap.describe()}"
         )
         return True
+
+    def _ego_spawn_pose(self):
+        """
+        Returns the EgoSpawnPose for the safe-gap check: the EGO's bounding box center, heading
+        and size at `spawn_point`, and the width of the lane there.
+
+        The EGO's size is measured by spawning its blueprint once, 200 m above the spawn point
+        (out of everyone's way, physics off), and destroying it right away - before anything
+        else is spawned or ticked, so the co-simulation never sees it. If `vehicle_type` matches
+        several blueprints (the EGO spawn then picks one at random), the largest size is used. The
+        blueprints are taken from the blueprint library directly rather than through
+        CarlaDataProvider.create_blueprint(), whose random choice would otherwise be shifted.
+
+            :raises EgoSpawnGateError: if vehicle_type matches no blueprint, or one cannot be
+                spawned for the measurement.
+        """
+        from .vissim_integration.ego_spawn_gate import EgoSpawnPose
+        from .vissim_integration.ego_spawn_gate import bounding_box_center
+
+        spawn_point, _ = self._parse_spawn_point()
+        blueprints = self.world.get_blueprint_library().filter(self.vehicle_type)
+        if not blueprints:
+            raise EgoSpawnGateError(f"vehicle_type {self.vehicle_type!r} matches no blueprint")
+        if len(blueprints) > 1:
+            print(
+                f"Warning: vehicle_type {self.vehicle_type!r} matches {len(blueprints)} "
+                "blueprints; the safe-gap check uses the largest of them"
+            )
+
+        probe_transform = carla.Transform(
+            carla.Location(spawn_point.location.x, spawn_point.location.y,
+                           spawn_point.location.z + 200.0),
+            spawn_point.rotation,
+        )
+        sizes = []
+        for blueprint in blueprints:
+            if blueprint.has_attribute("role_name"):
+                # Not the EGO's role name: nothing (e.g. spectator_follow) must take it for the EGO.
+                blueprint.set_attribute("role_name", "ego_size_probe")
+            probe = self.world.try_spawn_actor(blueprint, probe_transform)
+            if probe is None:
+                raise EgoSpawnGateError(
+                    f"could not spawn {blueprint.id} to measure the EGO size for the safe-gap check"
+                )
+            try:
+                probe.set_simulate_physics(False)
+                box = probe.bounding_box
+                sizes.append((2.0 * box.extent.x, 2.0 * box.extent.y, box.location.x,
+                              box.location.y, blueprint.id))
+            finally:
+                probe.destroy()
+        length, width, offset_x, offset_y, blueprint_id = max(sizes)
+        width = max(size[1] for size in sizes)
+
+        yaw = spawn_point.rotation.yaw
+        x, y = bounding_box_center(spawn_point.location.x, spawn_point.location.y, yaw,
+                                   offset_x, offset_y)
+        waypoint = self.world.get_map().get_waypoint(
+            spawn_point.location, project_to_road=True, lane_type=carla.LaneType.Driving
+        )
+        lane_width = waypoint.lane_width
+        lateral_offset = math.hypot(waypoint.transform.location.x - spawn_point.location.x,
+                                    waypoint.transform.location.y - spawn_point.location.y)
+        print(
+            f"[EGO SPAWN CHECK] ego {blueprint_id}: length={length:.2f} m width={width:.2f} m "
+            f"lane_width={lane_width:.2f} m (road {waypoint.road_id}, lane {waypoint.lane_id})"
+        )
+        if waypoint.is_junction:
+            print(
+                "Warning: spawn_point is in a junction; the safe-gap check assumes a straight "
+                "road around the spawn point"
+            )
+        if lateral_offset > lane_width / 2.0:
+            print(
+                f"Warning: spawn_point is {lateral_offset:.2f} m away from the nearest driving "
+                "lane center; the safe-gap check uses that lane's width"
+            )
+        return EgoSpawnPose(x, y, yaw, length, width, lane_width)
 
     def run_bridge(self):
         if self._vissim_warmup_enabled() and not self._run_vissim_warmup():

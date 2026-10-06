@@ -451,6 +451,165 @@ def check_vissim_only_vehicle(egsg):
 
 
 # ==================================================================================================
+# -- checks: collect_gap_vehicles() / wait_for_safe_gap() (Step V6) ---------------------------------
+# ==================================================================================================
+
+
+def _pose(x, y, yaw):
+    return types.SimpleNamespace(location=types.SimpleNamespace(x=x, y=y, z=0.0),
+                                 rotation=types.SimpleNamespace(yaw=yaw, pitch=0.0, roll=0.0))
+
+
+def check_bounding_box_center(egsg):
+    x, y = egsg.bounding_box_center(10.0, 5.0, 0.0, 0.5, 0.0)
+    assert abs(x - 10.5) < 1e-9 and abs(y - 5.0) < 1e-9, (x, y)
+    x, y = egsg.bounding_box_center(10.0, 5.0, 90.0, 0.5, 0.2)  # forward +y, right -x
+    assert abs(x - 9.8) < 1e-9 and abs(y - 5.5) < 1e-9, (x, y)
+
+
+def check_collect_gap_vehicles(egsg, bh):
+    vissim = types.SimpleNamespace(
+        tick_count=0, consecutive_failures=0, vehicle_ids={1, 2, 3},
+        get_actor=lambda vissim_id: types.SimpleNamespace(
+            get_transform=lambda: 'vissim-tf-%d' % vissim_id))
+    gate, sync, _ = _make_gate(egsg, vissim)
+    sync.vissim2carla_ids = {1: 501, 2: 502}
+
+    mirrored = types.SimpleNamespace(
+        get_transform=lambda: _pose(10.0, 0.0, 0.0),
+        bounding_box=types.SimpleNamespace(location=types.SimpleNamespace(x=0.5, y=0.0),
+                                           extent=types.SimpleNamespace(x=2.25, y=1.0)))
+    # 502 is mapped but gone from CARLA: treated like a vehicle without a CARLA counterpart.
+    sync.carla.get_actor.side_effect = lambda carla_id: mirrored if carla_id == 501 else None
+
+    with mock.patch.object(bh.BridgeHelper, 'get_carla_transform',
+                           side_effect=lambda tf: _pose(30.0, 0.0, 0.0)) as to_carla:
+        vehicles = gate.collect_gap_vehicles()
+    # Vissim poses are converted without a bounding box: still the front bumper, in CARLA's frame.
+    assert sorted(c.args for c in to_carla.call_args_list) == [('vissim-tf-2', ),
+                                                              ('vissim-tf-3', )], to_carla.mock_calls
+
+    assert [v.label for v in vehicles] == ['vissim:1/carla:501', 'vissim:2', 'vissim:3'], vehicles
+    carla_vehicle = vehicles[0]
+    assert carla_vehicle.source == 'carla'
+    assert (carla_vehicle.x, carla_vehicle.y, carla_vehicle.yaw) == (10.5, 0.0, 0.0), carla_vehicle
+    assert (carla_vehicle.length, carla_vehicle.width) == (4.5, 2.0), carla_vehicle
+    for vehicle in vehicles[1:]:
+        assert vehicle.source == 'vissim_only', vehicle
+        assert abs(vehicle.x - 23.9) < 1e-9 and vehicle.y == 0.0, vehicle  # 30 - 12.2 / 2
+        assert (vehicle.length, vehicle.width) == (12.2, 2.6), vehicle
+
+
+class _MovingFrontVehicle(object):
+    """
+    Scripts collect_gap_vehicles(): one vehicle ahead of the EGO (4 x 2 m at the origin, heading
+    +x) whose gap grows by `speed` m at every synchronization step.
+    """
+
+    def __init__(self, egsg, gate, sync, vissim, start_clearance, speed=1.0, fail_from_step=None):
+        self.egsg, self.vissim, self.steps, self.fail_from_step = egsg, vissim, 0, fail_from_step
+        self.start_clearance, self.speed = start_clearance, speed
+        self.order = mock.MagicMock()
+        sync.sync_vissim_to_carla.side_effect = self._sync_vissim_to_carla
+        sync.carla.world.tick.side_effect = lambda: self.order.world_tick()
+        sync.sync_carla_to_vissim.side_effect = lambda: self.order.sync_carla_to_vissim()
+        gate.collect_gap_vehicles = self.vehicles
+
+    def _sync_vissim_to_carla(self):
+        self.order.sync_vissim_to_carla()
+        if self.fail_from_step is not None and self.steps >= self.fail_from_step:
+            self.vissim.consecutive_failures += 1
+        else:
+            self.vissim.tick_count += 1
+            self.vissim.consecutive_failures = 0
+        self.steps += 1
+
+    def vehicles(self):
+        s = 4.0 + self.start_clearance + self.speed * self.steps  # front clearance = s - 2 - 2
+        return [_car(self.egsg, 'front', s, 0.0)]
+
+
+def check_wait_safe_right_away(egsg):
+    vissim = FakeVissim()
+    gate, sync, log = _make_gate(egsg, vissim)
+    script = _MovingFrontVehicle(egsg, gate, sync, vissim, start_clearance=25.0)
+    result = gate.wait_for_safe_gap(_ego(egsg), 20.0, 20.0, wait_timeout=60)
+    assert result.safe and abs(result.front.clearance - 25.0) < 1e-9, result
+    assert script.order.mock_calls == [], script.order.mock_calls  # no step needed
+    assert log == ['[EGO SPAWN CHECK] t=0.00 s front=front clearance=25.0 m rear=none '
+                   'overlap=none result=SAFE'], log
+
+
+def check_wait_steps_until_safe(egsg):
+    vissim = FakeVissim()
+    gate, sync, log = _make_gate(egsg, vissim)
+    script = _MovingFrontVehicle(egsg, gate, sync, vissim, start_clearance=10.0, speed=0.25)
+    result = gate.wait_for_safe_gap(_ego(egsg), 20.0, 20.0, wait_timeout=60)
+    # 10 m + 0.25 m per step reaches 20 m after 40 steps (2 simulated seconds at 20 Hz).
+    assert result.safe and script.steps == 40 and vissim.tick_count == 40, (script.steps, result)
+    # Each step is one regular synchronization step: vissim -> CARLA, CARLA tick, CARLA -> vissim.
+    assert script.order.mock_calls == [mock.call.sync_vissim_to_carla(), mock.call.world_tick(),
+                                       mock.call.sync_carla_to_vissim()] * 40
+    # Logged at the start, once per simulated second (same vehicles, same outcome), and once safe.
+    assert [line.split()[3] for line in log] == ['t=0.00', 't=1.00', 't=2.00'], log
+    assert log[0].endswith('result=WAIT') and log[-1].endswith('result=SAFE'), log
+
+
+def check_wait_logs_when_vehicles_change(egsg):
+    vissim = FakeVissim()
+    gate, sync, log = _make_gate(egsg, vissim)
+    script = _MovingFrontVehicle(egsg, gate, sync, vissim, start_clearance=10.0, speed=0.25)
+
+    def vehicles():
+        # Another, nearer vehicle (rear) appears at step 3 and leaves at step 6.
+        result = script.vehicles()
+        if 3 <= script.steps < 6:
+            result.append(_car(egsg, 'rear', -10.0, 0.0))
+        return result
+
+    gate.collect_gap_vehicles = vehicles
+    gate.wait_for_safe_gap(_ego(egsg), 20.0, 20.0, wait_timeout=60)
+    times = [line.split()[3] for line in log]
+    assert times == ['t=0.00', 't=0.15', 't=0.30', 't=1.00', 't=2.00'], log
+
+
+def check_wait_times_out(egsg):
+    vissim = FakeVissim()
+    gate, sync, log = _make_gate(egsg, vissim)
+    script = _MovingFrontVehicle(egsg, gate, sync, vissim, start_clearance=5.0, speed=0.0)
+    try:
+        gate.wait_for_safe_gap(_ego(egsg), 20.0, 20.0, wait_timeout=2)
+    except egsg.EgoSpawnGateError as e:
+        assert str(e) == ('no safe gap found within ego_spawn_wait_timeout=2 s (t=2.00 s): '
+                          'front=front clearance=5.0 m rear=none overlap=none result=WAIT'), e
+    else:
+        raise AssertionError('expected EgoSpawnGateError')
+    assert script.steps == 40, script.steps  # 2 simulated seconds at 20 Hz, then the last check
+
+
+def check_wait_stops_on_request(egsg):
+    vissim = FakeVissim()
+    gate, sync, log = _make_gate(egsg, vissim, should_stop=lambda: vissim.tick_count >= 7)
+    script = _MovingFrontVehicle(egsg, gate, sync, vissim, start_clearance=5.0, speed=0.0)
+    assert gate.wait_for_safe_gap(_ego(egsg), 20.0, 20.0, wait_timeout=60) is None
+    assert script.steps == 7 and log[-1] == '[EGO SPAWN CHECK] stopped at t=0.35 s', log
+
+
+def check_wait_gives_up_after_consecutive_failures(egsg):
+    vissim = FakeVissim()
+    gate, sync, log = _make_gate(egsg, vissim, max_failures=3)
+    script = _MovingFrontVehicle(egsg, gate, sync, vissim, start_clearance=5.0, speed=0.0,
+                                 fail_from_step=4)
+    try:
+        gate.wait_for_safe_gap(_ego(egsg), 20.0, 20.0, wait_timeout=60)
+    except egsg.EgoSpawnGateError as e:
+        assert '3 consecutive failed' in str(e) and 'safe EGO spawn gap' in str(e), e
+    else:
+        raise AssertionError('expected EgoSpawnGateError')
+    assert script.steps == 7 and vissim.tick_count == 4, (script.steps, vissim.tick_count)
+
+
+# ==================================================================================================
 # -- entry point -------------------------------------------------------------------------------------
 # ==================================================================================================
 
@@ -458,6 +617,7 @@ def check_vissim_only_vehicle(egsg):
 def run():
     stubs = {name: mock.MagicMock() for name in _STUBBED_MODULES}
     with mock.patch.dict(sys.modules, stubs):
+        from autoware_carla_interface.vissim_integration import bridge_helper as bh
         from autoware_carla_interface.vissim_integration import ego_spawn_gate as egsg
         from autoware_carla_interface.vissim_integration import simulation_synchronization as ss
         from autoware_carla_interface.vissim_integration import vissim_simulation as vs
@@ -485,6 +645,14 @@ def run():
         check_gap_in_rotated_frame(egsg)
         check_gap_in_oblique_frame(egsg)
         check_vissim_only_vehicle(egsg)
+        check_bounding_box_center(egsg)
+        check_collect_gap_vehicles(egsg, bh)
+        check_wait_safe_right_away(egsg)
+        check_wait_steps_until_safe(egsg)
+        check_wait_logs_when_vehicles_change(egsg)
+        check_wait_times_out(egsg)
+        check_wait_stops_on_request(egsg)
+        check_wait_gives_up_after_consecutive_failures(egsg)
     print('All EGO spawn gate checks passed.')
 
 

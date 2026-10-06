@@ -36,6 +36,7 @@ Exits with a non-zero status and an AssertionError if any check fails.
 
 import os
 import sys
+import types
 from unittest import mock
 
 sys.path.insert(0, os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), 'src'))
@@ -200,6 +201,8 @@ def _make_warmup_interface(ca, **overrides):
     interface.vissim_sim = mock.MagicMock(name='vissim_sim')
     interface.vissim_sim.vehicle_ids = {1, 2, 3}
     interface.vissim_sim.end_tick = 3200
+    # Measuring the EGO needs a CARLA world: checked on its own in check_ego_spawn_pose*().
+    interface._ego_spawn_pose = mock.MagicMock(name='_ego_spawn_pose', return_value='ego-pose')
     return interface
 
 
@@ -224,9 +227,11 @@ def check_load_world_defers_ego_with_warmup(ca):
 
 
 def check_run_bridge_warms_up_then_spawns_ego(ca):
-    interface = _make_warmup_interface(ca)
+    interface = _make_warmup_interface(ca, ego_spawn_front_margin=25.0,
+                                       ego_spawn_rear_margin=15.0, ego_spawn_wait_timeout=45)
     order = mock.MagicMock()
     order.attach_mock(interface.vissim_sim.start_period, 'start_period')
+    order.attach_mock(interface._ego_spawn_pose, '_ego_spawn_pose')
 
     def spawn(client):
         order._spawn_ego_and_sensors(client)
@@ -237,12 +242,20 @@ def check_run_bridge_warms_up_then_spawns_ego(ca):
             mock.patch.object(interface, '_spawn_ego_and_sensors', side_effect=spawn), \
             mock.patch.object(ca, 'SensorLoop', _never_running_sensor_loop(ca)):
         gate = gate_cls.return_value
+
         def warmup():
             order.warmup()
             return True
 
+        def wait_for_safe_gap(*args):
+            order.wait_for_safe_gap(*args)
+            result = mock.MagicMock(name='gap')
+            result.describe.return_value = 'front=none rear=none overlap=none result=SAFE'
+            return result
+
         gate.warmup.side_effect = warmup
         gate.catch_up.side_effect = lambda: order.catch_up()
+        gate.wait_for_safe_gap.side_effect = wait_for_safe_gap
         gate.sim_time = 107.4
         interface.run_bridge()
 
@@ -253,8 +266,10 @@ def check_run_bridge_warms_up_then_spawns_ego(ca):
     assert kwargs['should_stop']() is True
 
     assert order.mock_calls == [
+        mock.call._ego_spawn_pose(),  # first, so that a bad vehicle_type fails before the warmup
         mock.call.warmup(),
         mock.call.catch_up(),
+        mock.call.wait_for_safe_gap('ego-pose', 25.0, 15.0, 45),
         mock.call._spawn_ego_and_sensors(interface._client),
         mock.call.start_period(),
     ], order.mock_calls
@@ -289,6 +304,152 @@ def check_run_bridge_stopped_during_catch_up(ca):
         interface.run_bridge()
     spawn.assert_not_called()
     assert interface.bridge_loop is None
+
+
+def check_run_bridge_stopped_during_wait(ca):
+    interface = _make_warmup_interface(ca)
+    with mock.patch(_GATE_CLASS) as gate_cls, \
+            mock.patch.object(interface, '_spawn_ego_and_sensors') as spawn:
+        gate_cls.return_value.warmup.return_value = True
+        gate_cls.return_value.wait_for_safe_gap.return_value = None  # stop requested
+        interface.run_bridge()
+    spawn.assert_not_called()
+    interface.vissim_sim.start_period.assert_not_called()
+    assert interface.bridge_loop is None
+
+
+def check_run_bridge_wait_timeout_propagates(ca):
+    # No safe gap within the timeout: the test start fails (main() exits with 1), no EGO.
+    interface = _make_warmup_interface(ca)
+    with mock.patch(_GATE_CLASS) as gate_cls, \
+            mock.patch.object(interface, '_spawn_ego_and_sensors') as spawn:
+        gate_cls.return_value.warmup.return_value = True
+        gate_cls.return_value.wait_for_safe_gap.side_effect = ca.EgoSpawnGateError('no safe gap')
+        try:
+            interface.run_bridge()
+        except ca.EgoSpawnGateError:
+            pass
+        else:
+            raise AssertionError('expected EgoSpawnGateError')
+    spawn.assert_not_called()
+    assert interface.bridge_loop is None
+
+
+class _FakeBoundingBox(object):
+    def __init__(self, length, width, offset_x=0.0, offset_y=0.0):
+        self.extent = types.SimpleNamespace(x=length / 2.0, y=width / 2.0, z=0.75)
+        self.location = types.SimpleNamespace(x=offset_x, y=offset_y, z=0.75)
+
+
+def _fake_world(blueprint_boxes, lane_width=3.5, is_junction=False, lane_center=(229.8, -2.0),
+                spawn_fails=()):
+    """A CARLA world mock: blueprint id -> _FakeBoundingBox, and the waypoint at the spawn point."""
+    world = mock.MagicMock(name='world')
+    blueprints = []
+    for blueprint_id in blueprint_boxes:
+        blueprint = mock.MagicMock(name=blueprint_id)
+        blueprint.id = blueprint_id
+        blueprints.append(blueprint)
+    world.get_blueprint_library.return_value.filter.return_value = blueprints
+    probes = []
+
+    def try_spawn_actor(blueprint, transform):
+        if blueprint.id in spawn_fails:
+            return None
+        probe = mock.MagicMock(name='probe-' + blueprint.id)
+        probe.bounding_box = blueprint_boxes[blueprint.id]
+        probes.append((probe, transform))
+        return probe
+
+    world.try_spawn_actor.side_effect = try_spawn_actor
+    waypoint = world.get_map.return_value.get_waypoint.return_value
+    waypoint.lane_width = lane_width
+    waypoint.is_junction = is_junction
+    waypoint.road_id, waypoint.lane_id = 12, -1
+    waypoint.transform.location = types.SimpleNamespace(x=lane_center[0], y=lane_center[1], z=0.0)
+    return world, probes
+
+
+def _with_real_carla_transform(ca):
+    """carla.Transform/Location as simple namespaces, so that the probe's pose can be checked."""
+    return mock.patch.multiple(
+        ca.carla,
+        Transform=lambda location=None, rotation=None: types.SimpleNamespace(
+            location=location or types.SimpleNamespace(x=0.0, y=0.0, z=0.0),
+            rotation=rotation or types.SimpleNamespace(pitch=0.0, yaw=0.0, roll=0.0)),
+        Location=lambda x=0.0, y=0.0, z=0.0: types.SimpleNamespace(x=x, y=y, z=z),
+        Rotation=lambda pitch=0.0, yaw=0.0, roll=0.0: types.SimpleNamespace(
+            pitch=pitch, yaw=yaw, roll=roll))
+
+
+def check_ego_spawn_pose(ca):
+    interface = _make_interface(ca, **dict(_WARMUP, spawn_point='229.8,-2.0,0.3,0.0,0.0,90.0'))
+    interface.world, probes = _fake_world(
+        {'vehicle.toyota.prius': _FakeBoundingBox(4.51, 2.01, offset_x=0.2)})
+    with _with_real_carla_transform(ca), mock.patch('builtins.print') as print_:
+        pose = interface._ego_spawn_pose()
+
+    # The EGO was spawned once, 200 m above its spawn point, physics off, then destroyed.
+    (probe, transform), = probes
+    assert (transform.location.x, transform.location.y) == (229.8, -2.0)
+    assert abs(transform.location.z - (0.3 + 2.0 + 200.0)) < 1e-9, transform.location.z
+    probe.set_simulate_physics.assert_called_once_with(False)
+    probe.destroy.assert_called_once_with()
+    blueprint = interface.world.get_blueprint_library.return_value.filter.return_value[0]
+    blueprint.set_attribute.assert_called_once_with('role_name', 'ego_size_probe')
+    interface.world.get_blueprint_library.return_value.filter.assert_called_once_with(
+        'vehicle.toyota.prius')
+
+    # Heading 90 (+y): the bounding box center is 0.2 m further along +y than the origin.
+    assert abs(pose.x - 229.8) < 1e-9 and abs(pose.y - (-1.8)) < 1e-9, pose
+    assert (pose.yaw, pose.length, pose.width, pose.lane_width) == (90.0, 4.51, 2.01, 3.5), pose
+    lines = [c.args[0] for c in print_.call_args_list]
+    assert lines == ['[EGO SPAWN CHECK] ego vehicle.toyota.prius: length=4.51 m width=2.01 m '
+                     'lane_width=3.50 m (road 12, lane -1)'], lines
+
+
+def check_ego_spawn_pose_uses_largest_of_several_blueprints(ca):
+    interface = _make_interface(ca, **dict(_WARMUP, vehicle_type='vehicle.*'))
+    interface.world, probes = _fake_world({'vehicle.a': _FakeBoundingBox(3.8, 2.2),
+                                           'vehicle.b': _FakeBoundingBox(5.0, 1.9)})
+    with _with_real_carla_transform(ca), mock.patch('builtins.print') as print_:
+        pose = interface._ego_spawn_pose()
+    assert (pose.length, pose.width) == (5.0, 2.2), pose  # longest and widest
+    assert all(probe.destroy.call_count == 1 for probe, _ in probes)
+    assert 'matches 2 blueprints' in print_.call_args_list[0].args[0]
+
+
+def check_ego_spawn_pose_warnings(ca):
+    interface = _make_interface(ca, **_WARMUP)
+    interface.world, _ = _fake_world({'vehicle.toyota.prius': _FakeBoundingBox(4.51, 2.01)},
+                                     is_junction=True, lane_center=(229.8, 0.5))  # 2.5 m away
+    with _with_real_carla_transform(ca), mock.patch('builtins.print') as print_:
+        interface._ego_spawn_pose()
+    lines = [c.args[0] for c in print_.call_args_list]
+    assert any('in a junction' in line for line in lines), lines
+    assert any('2.50 m away from the nearest driving lane center' in line for line in lines), lines
+
+
+def check_ego_spawn_pose_errors(ca):
+    interface = _make_interface(ca, **_WARMUP)
+    interface.world, _ = _fake_world({})  # vehicle_type matches nothing
+    try:
+        with _with_real_carla_transform(ca):
+            interface._ego_spawn_pose()
+    except ca.EgoSpawnGateError as e:
+        assert 'matches no blueprint' in str(e), e
+    else:
+        raise AssertionError('expected EgoSpawnGateError')
+
+    interface.world, _ = _fake_world({'vehicle.toyota.prius': _FakeBoundingBox(4.51, 2.01)},
+                                     spawn_fails={'vehicle.toyota.prius'})
+    try:
+        with _with_real_carla_transform(ca):
+            interface._ego_spawn_pose()
+    except ca.EgoSpawnGateError as e:
+        assert 'could not spawn vehicle.toyota.prius' in str(e), e
+    else:
+        raise AssertionError('expected EgoSpawnGateError')
 
 
 def check_run_bridge_without_warmup_skips_gate(ca):
@@ -342,6 +503,12 @@ def run():
         check_run_bridge_warms_up_then_spawns_ego(ca)
         check_run_bridge_stopped_during_warmup(ca)
         check_run_bridge_stopped_during_catch_up(ca)
+        check_run_bridge_stopped_during_wait(ca)
+        check_run_bridge_wait_timeout_propagates(ca)
+        check_ego_spawn_pose(ca)
+        check_ego_spawn_pose_uses_largest_of_several_blueprints(ca)
+        check_ego_spawn_pose_warnings(ca)
+        check_ego_spawn_pose_errors(ca)
         check_run_bridge_without_warmup_skips_gate(ca)
         check_stop_loop_before_bridge_loop(ca)
         check_main_exits_non_zero_when_test_start_fails(ca)

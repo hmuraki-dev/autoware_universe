@@ -246,8 +246,10 @@ front_clearance = s_front − L_ego/2 − L_front/2
 rear_clearance  = |s_rear| − L_ego/2 − L_rear/2
 ```
 
-- `L`はCARLA上の車長(`bounding_box.extent.x × 2`)。`L_ego`はスポーン予定のブループリントの寸法
-  (スポーン前に取得できないため、V0で車種ごとの値を確認し、`vehicle_type`から引く。§6)。
+- `L`はCARLA上の車長(`bounding_box.extent.x × 2`)。`L_ego`はスポーン予定のブループリントの寸法。
+  スポーン前に取得できないため、ウォームアップ開始前にEGOの車種をスポーン地点の200 m上に一度だけスポーンして
+  外形を読み取り、すぐ消す(Step V6で決定。当初案の車種ごとの寸法表は使わない)。
+- 車両の位置は、アクターの原点ではなく`bounding_box`の中心(`bounding_box.location`のずれを含む)を使う。
 - `front_clearance ≥ ego_spawn_front_margin` かつ `rear_clearance ≥ ego_spawn_rear_margin` ならSAFE。
 - 前方車(後方車)がいない側は条件を満たすとみなす。
 - **重複チェック**: 車線によらず、EGO予定位置の外形と重なる車両が1台でもあればUNSAFE
@@ -498,6 +500,30 @@ python3 tools/carla_bbox_probe.py vehicle.toyota.prius
 - タイムアウト・SIGINT・連続失敗時の終了処理(§2.8)。
 - 確認: 交通量の多い地点で「待つ → 空いたらスポーン」、交通量の非常に多い設定で「タイムアウトで終了」。
 
+**実施結果(2026-10-06)**: 実装完了(実機確認は未実施)。
+- EGOの外形の取得(案1): `carla_autoware.py`の`_ego_spawn_pose()`。ウォームアップより前に実行し、`vehicle_type`に一致する
+  ブループリントをスポーン地点の200 m上に1台ずつスポーン(物理演算オフ、role_name=`ego_size_probe`)して`bounding_box`を読み、すぐ消す。
+  co-simの差分管理より前に消すので、co-simからは見えない。`CarlaDataProvider.create_blueprint()`は乱数で車種を選ぶため使わない
+  (乱数の状態がずれると、実際のEGOスポーンで選ばれる車種が変わりうる)。`vehicle_type`が複数の車種に一致する場合は、最も長い・広い値を使う。
+  一致する車種がない、または計測用のスポーンに失敗した場合は試験開始失敗。
+- 車線幅: スポーン地点の`map.get_waypoint()`(Drivingレーン)の`lane_width`。交差点内の場合、または最寄りの車線中心から
+  車線幅の半分以上離れている場合は警告を出す(直線区間の前提が崩れるため)。
+- EGOの予定位置: スポーン地点の位置に`bounding_box.location`のずれを加えた外形の中心。
+- `ego_spawn_gate.py`:
+  - `collect_gap_vehicles()`: Vissimの全車両について、CARLAにいる車両はCARLAの外形の中心・向き・車長・車幅('carla')、
+    いない車両(未登録の車両タイプ、スポーン失敗、CARLAから消えたもの)はVissimの前端位置から仮の車長・車幅で求めた中心('vissim_only')。
+  - `wait_for_safe_gap()`: 判定 → 不可なら通常の同期1ステップ(Vissim→CARLA、CARLAのtick、CARLA→Vissim。EGOなし、待ち時間なし)
+    → 再判定。`ego_spawn_wait_timeout × sim_res`ステップで空かなければ試験開始失敗。停止要求で中断。連続失敗は既存と同じ上限で試験開始失敗。
+    判定ログは、最初・結果か関係する車両が変わったとき・1秒(Vissim時間)ごと・SAFEのときに出す(車間の数値が変わっただけでは出さない)。
+- `_run_vissim_warmup()`: EGOの外形取得 → ウォームアップ → 一括スポーン → 空き待ち → EGOスポーン → 検証期間開始。
+  `[EGO SPAWN]`ログに、SAFEと判定したときの前後車・車間を含める。
+- テスト: `vissim_ego_spawn_gate_test.py`(外形の中心、車両の収集、空き待ちの各経路・ログの出し方)、
+  `vissim_warmup_ego_spawn_test.py`(呼び出し順、空き待ちでの停止・タイムアウト、EGOの外形取得・警告・エラー)。
+  全8テストの通過と、実装にわざと入れた誤り8通り(タイムアウトの境界、CARLAのtick漏れ、ログの出しすぎ、停止の無視、
+  仮の車長の不使用、外形の中心のずれの無視、計測用車両の消し忘れ、車幅の最大値の不使用)をテストが検出することを確認。
+- 実機で確認すること: 交通量の多い地点で「待つ → 空いたらスポーン」、交通量の非常に多い設定で「タイムアウトで終了」(V9 #5・#6)。
+  計測用の車両がspectator_followやAutowareに影響しないこと。
+
 ### Step V7: ログ・記録
 
 - §2.9のログを実装する。
@@ -543,7 +569,7 @@ python3 tools/carla_bbox_probe.py vehicle.toyota.prius
 | 1 | 空のtickの連続送信でVissimが進むか | 実機計測待ち | 計測ツールはダミーアダプタで動作確認済み(2026-09-30) |
 | 2 | 1 tickのRPC往復時間 | 実機計測待ち | 同上 |
 | 3 | vtypes.jsonの登録状況 | **確認済み**(2026-09-30、vtypes.json変更後に2026-10-05更新) | 下記3-1〜3-4 |
-| 4 | EGO車種の車長・`bounding_box`中心のずれ | 一部確認 | `vehicle.toyota.prius`: 車長4.51 m・幅2.01 m・高さ1.52 m(`CARLA_車両寸法一覧.md`)。中心のずれは実機計測待ち |
+| 4 | EGO車種の車長・`bounding_box`中心のずれ | 一部確認 | `vehicle.toyota.prius`: 車長4.51 m・幅2.01 m・高さ1.52 m(`CARLA_車両寸法一覧.md`)。中心のずれは実機計測待ち。Step V6で、EGOの外形はco-sim起動時にCARLAから実測し、ずれも判定に反映するようにしたので、実装の前提ではなくなった |
 | 5 | Autowareがセンサー開始の遅れに耐えるか | Step V4へ移動 | |
 | 6 | 交通流が安定するまでの時間 | 実機計測待ち | |
 | 7 | DSIでEGOを登録する際の重複チェック・位置補正の有無 | 未確認(公開情報なし) | ギャップ判定で事前に防ぐので、実装の前提にはしない |
