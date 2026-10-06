@@ -23,14 +23,166 @@ outside, before autoware_carla_interface's own main loop starts.
     catch-up  : spawn in CARLA every vissim actor that entered the network meanwhile
     (then the caller spawns the EGO and starts the co-simulation period)
 
+The safe-gap check (evaluate_spawn_gap()) is a pure function on plain 2D poses in CARLA's world
+frame (x forward/east, y right/south, yaw in degrees, clockwise from +x), so that it can be unit
+tested without CARLA.
+
 Deliberately free of carla / zmq imports, so that it can be imported (and unit tested) without
 CARLA or a vissim adapter.
 """
 
+import collections
+import math
 import time
 
 # Simulated seconds between two warmup progress lines.
 WARMUP_REPORT_INTERVAL_S = 10
+
+# Safe-gap check (see the plan doc section 2.2 / 2.6). Kept here rather than in the vendored
+# constants.py, since they are specific to this repository.
+# Longitudinal range (m, center to center) in which vehicles ahead/behind the EGO are looked for.
+EGO_SPAWN_SEARCH_RANGE_M = 100.0
+# Maximum heading difference (deg) for a vehicle to count as going the EGO's way (excludes the
+# opposite lane, and crossing traffic).
+EGO_SPAWN_HEADING_TOLERANCE_DEG = 45.0
+# Assumed size (m) of a vissim vehicle with no CARLA counterpart (unknown type, spawn failure):
+# the longest vissim vehicle of Town01 (300: bus, 12.14 m) and the widest (2.55 m), rounded up.
+EGO_SPAWN_UNKNOWN_VEHICLE_LENGTH_M = 12.2
+EGO_SPAWN_UNKNOWN_VEHICLE_WIDTH_M = 2.6
+
+# A vehicle for the safe-gap check, in CARLA's world frame. `x`/`y` is the center of its bounding
+# box. `label` identifies it in logs (e.g. 'vissim:123/carla:456'); `source` is 'carla' (pose and
+# size of its CARLA counterpart) or 'vissim_only' (no CARLA counterpart: pose derived from vissim,
+# size assumed - see center_from_front()).
+GapVehicle = collections.namedtuple('GapVehicle',
+                                    ['label', 'x', 'y', 'yaw', 'length', 'width', 'source'])
+
+# The EGO's planned spawn pose and size, and the width of the lane it is spawned in.
+EgoSpawnPose = collections.namedtuple('EgoSpawnPose',
+                                      ['x', 'y', 'yaw', 'length', 'width', 'lane_width'])
+
+# The nearest vehicle ahead/behind in the EGO's lane and the gap (m, bumper to bumper) to it.
+GapNeighbor = collections.namedtuple('GapNeighbor', ['vehicle', 'clearance', 's', 'd'])
+
+
+class GapResult(collections.namedtuple('GapResult', ['safe', 'front', 'rear', 'overlapping'])):
+    """
+    Outcome of evaluate_spawn_gap(): `safe`, the nearest vehicles ahead/behind in the EGO's lane
+    (GapNeighbor, or None when there is none in range), and the vehicles whose outline overlaps the
+    EGO's planned one (list of GapVehicle, whatever their lane).
+    """
+
+    __slots__ = ()
+
+    def describe(self):
+        """One log line, e.g. 'front=vissim:12/carla:40 clearance=8.4 m rear=none ... result=WAIT'."""
+        parts = []
+        for name, neighbor in (('front', self.front), ('rear', self.rear)):
+            if neighbor is None:
+                parts.append('%s=none' % name)
+            else:
+                parts.append('%s=%s clearance=%.1f m' % (name, neighbor.vehicle.label,
+                                                         neighbor.clearance))
+        parts.append('overlap=%s' % (','.join(v.label for v in self.overlapping) or 'none'))
+        parts.append('result=%s' % ('SAFE' if self.safe else 'WAIT'))
+        return ' '.join(parts)
+
+
+def _unit_vectors(yaw_deg):
+    """(forward, right) unit vectors of a heading, in CARLA's left-handed world frame."""
+    yaw = math.radians(yaw_deg)
+    forward = (math.cos(yaw), math.sin(yaw))
+    right = (-math.sin(yaw), math.cos(yaw))
+    return forward, right
+
+
+def _heading_difference(yaw_a_deg, yaw_b_deg):
+    """Absolute difference between two headings, in [0, 180] degrees."""
+    return abs((yaw_a_deg - yaw_b_deg + 180.0) % 360.0 - 180.0)
+
+
+def _corners(x, y, yaw_deg, length, width):
+    forward, right = _unit_vectors(yaw_deg)
+    hl, hw = length / 2.0, width / 2.0
+    return [(x + forward[0] * a + right[0] * b, y + forward[1] * a + right[1] * b)
+            for a, b in ((hl, hw), (hl, -hw), (-hl, -hw), (-hl, hw))]
+
+
+def _outlines_overlap(a, b):
+    """
+    Whether two oriented rectangles (x, y, yaw, length, width) overlap - separating axis test.
+    Rectangles that only touch (zero-area contact) do not count as overlapping.
+    """
+    corners_a, corners_b = _corners(*a), _corners(*b)
+    for yaw in (a[2], b[2]):
+        for axis in _unit_vectors(yaw):
+            proj_a = [px * axis[0] + py * axis[1] for px, py in corners_a]
+            proj_b = [px * axis[0] + py * axis[1] for px, py in corners_b]
+            if max(proj_a) <= min(proj_b) + 1e-9 or max(proj_b) <= min(proj_a) + 1e-9:
+                return False
+    return True
+
+
+def center_from_front(front_x, front_y, yaw_deg, length):
+    """
+    The bounding box center of a vehicle given its front-center-bumper position (vissim's
+    reference point, already converted to CARLA's world frame) and its length.
+    """
+    forward, _ = _unit_vectors(yaw_deg)
+    return front_x - forward[0] * length / 2.0, front_y - forward[1] * length / 2.0
+
+
+def evaluate_spawn_gap(ego, vehicles, front_margin, rear_margin,
+                       search_range=EGO_SPAWN_SEARCH_RANGE_M,
+                       heading_tolerance_deg=EGO_SPAWN_HEADING_TOLERANCE_DEG):
+    """
+    Decides whether the EGO can be spawned at its planned pose (see the plan doc section 2.6).
+
+    A vehicle is in the EGO's lane when, in the frame of the EGO's planned pose (s forward, d
+    sideways), |d| < lane_width / 2, |s| <= search_range and its heading is within
+    heading_tolerance_deg of the EGO's. This assumes a straight road around the spawn point. Of
+    those, the vehicle ahead (s >= 0) / behind (s < 0) with the smallest bumper-to-bumper gap is the
+    front / rear vehicle:
+
+        front clearance = s - L_ego / 2 - L_front / 2
+        rear clearance  = -s - L_ego / 2 - L_rear / 2
+
+    The spawn is safe when no vehicle at all (whatever its lane) overlaps the EGO's planned
+    outline, the front clearance is >= front_margin and the rear clearance >= rear_margin; a side
+    with no vehicle in range counts as clear.
+
+        :param EgoSpawnPose ego: the EGO's planned pose and size, and the lane width there.
+        :param vehicles: iterable of GapVehicle (all vehicles around, in any lane).
+        :return: GapResult.
+    """
+    forward, right = _unit_vectors(ego.yaw)
+    ego_outline = (ego.x, ego.y, ego.yaw, ego.length, ego.width)
+    front = rear = None
+    overlapping = []
+
+    for vehicle in vehicles:
+        if _outlines_overlap(ego_outline,
+                             (vehicle.x, vehicle.y, vehicle.yaw, vehicle.length, vehicle.width)):
+            overlapping.append(vehicle)
+
+        dx, dy = vehicle.x - ego.x, vehicle.y - ego.y
+        s = dx * forward[0] + dy * forward[1]
+        d = dx * right[0] + dy * right[1]
+        if (abs(d) >= ego.lane_width / 2.0 or abs(s) > search_range or
+                _heading_difference(vehicle.yaw, ego.yaw) > heading_tolerance_deg):
+            continue
+
+        clearance = abs(s) - ego.length / 2.0 - vehicle.length / 2.0
+        neighbor = GapNeighbor(vehicle, clearance, s, d)
+        if s >= 0:
+            if front is None or clearance < front.clearance:
+                front = neighbor
+        elif rear is None or clearance < rear.clearance:
+            rear = neighbor
+
+    safe = (not overlapping and (front is None or front.clearance >= front_margin) and
+            (rear is None or rear.clearance >= rear_margin))
+    return GapResult(safe, front, rear, overlapping)
 
 
 class EgoSpawnGateError(RuntimeError):

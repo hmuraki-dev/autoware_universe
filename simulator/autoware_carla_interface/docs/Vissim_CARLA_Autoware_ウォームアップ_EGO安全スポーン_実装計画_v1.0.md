@@ -171,13 +171,14 @@ launch arg / ROS paramとして追加する(`autoware_carla_interface.launch.xml
 - `vissim_warmup_time + ego_spawn_wait_timeout + vissim_sim_period + 余裕10秒` がVissimの最大期間以下であること(§2.5)。
   → `get_vissim_sim_params()`の期間計算と一緒にStep V2で追加する。
 
-判定用の固定値(`constants.py`に置く。launch argにはしない):
+判定用の固定値(launch argにはしない。vendorファイルの`constants.py`ではなく`ego_spawn_gate.py`に置く(Step V5で変更)):
 
 | 名前 | 値(案) | 用途 |
 |---|---|---|
 | `EGO_SPAWN_SEARCH_RANGE_M` | `100.0` | 前後車を探す縦方向の範囲 |
 | `EGO_SPAWN_HEADING_TOLERANCE_DEG` | `45.0` | 同一進行方向とみなす向きの差 |
 | `EGO_SPAWN_UNKNOWN_VEHICLE_LENGTH_M` | `12.2` | CARLAにいないVissim車両の仮の車長(Town01で最長のVissim車両、300: バス 12.14 m) |
+| `EGO_SPAWN_UNKNOWN_VEHICLE_WIDTH_M` | `2.6` | CARLAにいないVissim車両の仮の車幅(Town01で最も幅の広いVissim車両 2.55 m。重複チェック用。Step V5で追加) |
 
 ### 2.3 WARMUP
 
@@ -231,7 +232,8 @@ d = (p_vehicle − p_ego) · right
 - `|s| ≤ EGO_SPAWN_SEARCH_RANGE_M`
 - 向きの差 ≤ `EGO_SPAWN_HEADING_TOLERANCE_DEG`(対向車線を除く)
 
-`s ≥ 0`で最も近い車両を前方車、`s < 0`で最も近い車両を後方車とする。
+`s ≥ 0`の車両のうちクリアランス(§2.6.2)が最小の車両を前方車、`s < 0`の車両のうちクリアランスが最小の車両を後方車とする
+(当初は「中心が最も近い車両」としていたが、車長の違う車両が混在しても最も近い車両を確実に選べるよう、Step V5でクリアランス基準に変更)。
 
 - この方式は、**スポーン地点が直線区間であること**を前提にする(曲線では横位置の判定がずれる)。
   スポーン地点の選び方の注意として起動手順書に記載する。
@@ -474,6 +476,21 @@ python3 tools/carla_bbox_probe.py vehicle.toyota.prius
   - EGO予定位置と重なる車両(隣の車線にはみ出し) → UNSAFE
   - CARLAにいないVissim車両(仮の車長で判定)
   - 探索範囲外の車両は無視される
+
+**実施結果(2026-10-06)**: 完了。
+- `ego_spawn_gate.py`に追加: `evaluate_spawn_gap(ego, vehicles, front_margin, rear_margin, search_range, heading_tolerance_deg)`、
+  入力の`EgoSpawnPose`(EGO予定位置・向き・車長・車幅・車線幅)/`GapVehicle`(ラベル・中心位置・向き・車長・車幅・出所)、
+  結果の`GapResult`(`safe`・前方車/後方車`GapNeighbor`・重なる車両の一覧、`describe()`でログ1行)、
+  CARLAにいないVissim車両の中心を前端から求める`center_from_front()`、判定用の固定値。
+  座標はCARLAのワールド座標(左手系、yawは度)。carla/zmqに依存しない純粋関数。
+- 重複チェックは、EGOと各車両の外形(向き付きの長方形)の分離軸判定。接しているだけ(面積0の接触)は重なりとしない。
+- 計画からの変更: 前方車/後方車は「中心が最も近い車両」ではなく「クリアランスが最小の車両」で選ぶ(§2.6.1)。
+  固定値は`constants.py`(vendor)ではなく`ego_spawn_gate.py`に置き、CARLAにいない車両の仮の車幅`EGO_SPAWN_UNKNOWN_VEHICLE_WIDTH_M`を追加(§2.2)。
+- テスト: `test/vissim_ego_spawn_gate_test.py`に計画の全ケースを追加(前後なし、前方/後方のクリアランスが必要距離未満・ちょうど・超過、
+  前後別々の必要距離、車長の反映、最も近い車両の選択、隣の車線、対向・交差する車両、車線によらない重なり、探索範囲、
+  回転した座標系・斜めの向き、CARLAにいない車両)。
+  テストの有効性は、実装にわざと誤り(12通り: 符号・比較演算子・軸の取り違えなど)を入れたコピーで、すべてテストが失敗することで確認した。
+- `evaluate_spawn_gap()`の呼び出し(CARLA上の車両からの入力作成、EGOの車長・車線幅の取得)はStep V6で行う。
 
 ### Step V6: WAIT_FOR_SAFE_GAPとタイムアウト
 
