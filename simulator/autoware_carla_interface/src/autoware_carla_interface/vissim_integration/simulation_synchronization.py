@@ -23,8 +23,6 @@ import json
 import logging
 import os
 
-import carla
-
 from .bridge_helper import BridgeHelper
 from .constants import INVALID_ACTOR_ID
 
@@ -44,8 +42,10 @@ class SimulationSynchronization(object):
         self.vissim = vissim_simulation
         self.carla = carla_simulation
 
-        # weather setting
-        self.carla.world.set_weather(carla.WeatherParameters.ClearNoon)
+        # NOTE: weather is no longer hardcoded here. autoware_carla_interface
+        # (InitializeInterface.load_world()) already applies the `weather` ROS parameter to the
+        # world before this class is constructed (via _init_vissim_integration()); setting it
+        # again here would silently override that configurable value back to ClearNoon.
 
         # Mapped actor ids.
         self.vissim2carla_ids = {}  # Contains only actors controlled by vissim.
