@@ -123,6 +123,7 @@ class InitializeInterface(object):
         self.spawn_point = self.param_["spawn_point"]
         self.use_traffic_manager = self.param_["use_traffic_manager"]
         self.max_real_delta_seconds = self.param_["max_real_delta_seconds"]
+        self.weather = self.param_["weather"]
 
         # Vissim-CARLA co-simulation parameters (see docs/
         # Vissim_CARLA_Autoware_統合_実装計画_v1.0.md and docs/
@@ -370,6 +371,19 @@ class InitializeInterface(object):
             self.vissim_sim, self.vissim_carla_sim, vissim_args
         )
 
+    def _apply_weather_preset(self):
+        """Apply the `weather` parameter (name of a carla.WeatherParameters preset) to the world."""
+        preset_name = self.weather
+        weather = getattr(carla.WeatherParameters, preset_name, None)
+        if weather is None:
+            self.interface.logger.warning(
+                f"Unknown weather preset '{preset_name}', falling back to 'ClearNoon'. "
+                "Valid presets are the attribute names of carla.WeatherParameters "
+                "(e.g. ClearNoon, CloudyNoon, WetNoon, HardRainNoon, ClearNight...)."
+            )
+            weather = carla.WeatherParameters.ClearNoon
+        self.world.set_weather(weather)
+
     def load_world(self):
         client = carla.Client(self.local_host, self.port)
         client.set_timeout(self.timeout)
@@ -389,6 +403,8 @@ class InitializeInterface(object):
             # If synchronous mode is not enabled yet, tick() may fail
             # In this case, just wait a bit more
             time.sleep(1.0)
+
+        self._apply_weather_preset()
 
         settings = self.world.get_settings()
         settings.fixed_delta_seconds = self.fixed_delta_seconds

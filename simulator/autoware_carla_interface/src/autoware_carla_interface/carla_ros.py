@@ -70,6 +70,10 @@ class carla_ros2_interface(object):
             "vehicle_type": (rclpy.Parameter.Type.STRING, None),
             "use_traffic_manager": (rclpy.Parameter.Type.BOOL, None),
             "max_real_delta_seconds": (rclpy.Parameter.Type.DOUBLE, None),
+            # Weather preset applied to the CARLA world on load (must match an
+            # attribute name of carla.WeatherParameters, e.g. ClearNoon, CloudyNoon,
+            # WetNoon, HardRainNoon, ClearNight...).
+            "weather": (rclpy.Parameter.Type.STRING, "ClearNoon"),
             # Sensor configuration parameters
             "sensor_kit_name": (rclpy.Parameter.Type.STRING, ""),  # Empty = use YAML default
             "sensor_mapping_file": (rclpy.Parameter.Type.STRING, ""),

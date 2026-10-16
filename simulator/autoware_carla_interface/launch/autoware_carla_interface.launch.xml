@@ -16,6 +16,7 @@
     <arg name="fixed_delta_seconds" default="0.05" description="Time step for CARLA, FPS=1/value"/>
     <arg name="use_traffic_manager" default="False"/>
     <arg name="max_real_delta_seconds" default="0.05"/>
+    <arg name="weather" default="ClearNoon" description="CARLA weather preset to apply on load (attribute name of carla.WeatherParameters, e.g. ClearNoon, CloudyNoon, WetNoon, HardRainNoon, ClearNight)"/>
 
     <!-- Vissim-CARLA co-simulation (see docs/Vissim_CARLA_Autoware_統合_実装計画_v1.0.md and
          docs/Vissim_CARLA_Autoware_Windowsリモート化_実装計画_v1.0.md). vissim_network/
@@ -85,6 +86,7 @@
       <param name="vehicle_type" value="$(var vehicle_type)"/>
       <param name="use_traffic_manager" value="$(var use_traffic_manager)"/>
       <param name="max_real_delta_seconds" value="$(var max_real_delta_seconds)"/>
+      <param name="weather" value="$(var weather)"/>
       <param name="sensor_kit_name" value="$(var sensor_kit_name)"/>
       <param name="sensor_mapping_file" value="$(var sensor_mapping_file)"/>
       <param name="use_vissim" value="$(var use_vissim)"/>
