@@ -647,25 +647,88 @@ OK
   - 交差点の中で色がそろったメッセージは120件。全赤(45〜47秒、92〜94秒)の時間と合う。12交差点はオフセット0なので、全赤も同時に来る。
   - 「交差点の全信号が同時に青」は出なかった。
 - B6.3: `CARLA traffic lights: 36, frozen: 0`、`OK`。
-- 目視(Vissimの車が、372の赤で左折も右折も止まるか)は、報告を受けていない。B7の2で見る。
+- 目視(Vissimの車が、372の赤で左折も右折も止まるか)は、**確かめられなかった**(利用者の報告: 372の進入路に車が来なかった)。記録したのはシミュレーション時間で約114秒で、投入量は各100台/hのため、372の進入路まで来た車がいなかったと考えられる。B7の2で、車の多い384の進入路でも見る。
 - 1回目の起動で、connectが120秒でタイムアウトした。原因は、Vissim側でDriving Simulatorが無効になっていたことと、Vissimが複数起動していたこと(利用者の確認)。今回の変更とは関係しない。
 - B6.1を待つ間に、利用者が「Autowareが起動しない」と思ってブリッジを止めた。B6はブリッジだけを起動する手順で、Autoware本体はB7で起動する。手順書に書くときは、このことを明記する。
 
 ### B7: Autoware全体での実機確認
 
-機能AのV8と同じシナリオで確かめる。
-- 起動コマンド: V8.1
-- スポーン地点: `334.74,263.00,0.30,0.0,0.0,90.0`
-- 信号: 372(交差点 372〜374の従道路)
-- 監視: `monitor_tl_stop.py --group 372`
+機能AのV8(`Vissim_CARLA_Autoware_信号状態publish_実装計画_v1.0.md`)と同じシナリオで、Autoware全体(`e2e_simulator.launch.xml`)を起動して確かめる。
+今回は、Autoware本体も起動する。
 
-| #   | 確認                                         | 見るもの |
-| --- | -------------------------------------------- | -------- |
-| 1   | 赤で停止線に止まり、青で発進する            | `monitor_tl_stop.py` の停止位置(V8では0.5 m手前)と、赤の通過0回 |
-| 2   | Vissimの車とEGOが同じ信号で、近い位置に止まる | CARLAの画面で、372の進入路のVissimの車の先頭と停止線の距離。B4の表と比べる |
-| 3   | 交差する主道路(373・374)が、372が赤の間に青 | 主道路をVissimの車が通る。V8では全交差点が同時だったので、主道路と従道路の関係は確かめていない |
-| 4   | 走行中の黄(機能Aで残った項目)               | 黄になったときのEGOの動き。止まるか通過するかと、そのときの停止線までの距離と速度。`monitor_tl_stop.py` のログで記録する |
-| 5   | 目的地まで走れる                            | V8では、Vissimのバイクの追突とバスで止まった。交通量をB5で変えたときは、その影響も見る |
+#### B7.0 シナリオと準備
+
+- スポーン地点は `334.74,263.00,0.30,0.0,0.0,90.0`(V8と同じ)。信号372(SC 5のSG2、従道路)の進入路を南へ走る。
+- 停止線: B4で作り直したので、信号372の停止線は交差点の入口の1.0 m手前になった(地図座標 y=-316.4付近)。
+  V8の停止線(y=-314.73)より約1.7 m交差点寄り。スポーン地点から約54 m。
+- 信号372の時間(SC 5、周期94秒): 従道路(372)は47〜89秒が青、89〜92秒が黄、それ以外は赤。
+  主道路(373・374)は0〜42秒が青。横断歩道(歩行者)は0〜34秒が青、34〜38秒が青点滅。
+- 目的地はV8と同じ: 地図座標 (374.92, -330.61)、向き0度。
+  - V8では、経路が大回りになり、目的地に着かなかった。このB7では、目的地に着くことは主な確認項目にしない。
+- 端末: Windows(アダプタ)、Linux 1(CARLA)、2(Autoware)、3(監視)、4(AD API)。
+  - ターミナル2〜4の最初の設定は、B6.0と同じ。
+  - Windowsの `Town01.inpx` はB6と同じ(`4213552`)。アダプタは起動し直す。
+
+#### B7.1 起動(ターミナル2)
+
+```bash
+ros2 launch autoware_launch e2e_simulator.launch.xml \
+  simulator_type:=carla map_path:=$MAP_DIR lanelet2_map_file:=lanelet2_map_with_tl.osm \
+  vehicle_model:=sample_vehicle sensor_model:=carla_sensor_kit \
+  use_vissim:=true vissim_adapter_host:=$VISSIM_HOST vissim_adapter_port:=5555 \
+  vissim_connect_timeout_ms:=120000 vissim_sim_period:=600 sync_traffic_lights:=true \
+  traffic_light.publish:=true spawn_point:=334.74,263.00,0.30,0.0,0.0,90.0 spectator_follow:=true
+```
+
+- ブリッジのログに `Traffic-light matching: 36 matched, 0 ambiguous, 0 too far` が出ることを確かめる。
+- RVizが開き、EGOが地図上に出るまで数分かかる。
+
+#### B7.2 publisherの確認と監視(ターミナル3)
+
+```bash
+ros2 topic info /perception/traffic_light_recognition/traffic_signals --verbose | grep -E "Node name|Publisher count"
+```
+
+```bash
+python3 tools/monitor_tl_stop.py --map $MAP_DIR/lanelet2_map_with_tl.osm --group 372 | tee /tmp/b7_monitor.log
+```
+
+- 監視は、Autoの前から最後まで動かしておく。止めるとまとめが出る(停止した位置、そのときの色、赤で停止線を越えた回数)。
+- `--map` には、B4で作り直した地図を渡す。停止線の位置は、この地図から読む。
+
+#### B7.3 自己位置・目的地・Auto(ターミナル4)
+
+V8.4と同じ。
+
+```bash
+ros2 service call /api/localization/initialize autoware_adapi_v1_msgs/srv/InitializeLocalization "{pose: []}"
+```
+
+```bash
+ros2 service call /api/routing/set_route_points autoware_adapi_v1_msgs/srv/SetRoutePoints "{header: {frame_id: map}, option: {allow_goal_modification: true}, goal: {position: {x: 374.92, y: -330.61, z: 0.0}, orientation: {x: 0.0, y: 0.0, z: 0.0, w: 1.0}}, waypoints: []}"
+```
+
+```bash
+ros2 service call /api/operation_mode/change_to_autonomous autoware_adapi_v1_msgs/srv/ChangeOperationMode "{}"
+```
+
+- 初期化のあと、`/api/localization/initialization_state` が `state: 3` になるのを待つ。
+- Autoの前に、`/api/operation_mode/state` の `is_autonomous_mode_available: true` になるのを待つ。
+
+#### B7.4 確認すること
+
+| #   | 確認 | 見るもの | 期待 |
+| --- | ---- | -------- | ---- |
+| 1 | publisherが1つ | B7.2 | `Publisher count: 1`、`autoware_carla_interface` |
+| 2 | **Vissimの車が、赤で全進路とも止まる** | CARLAの画面(または、VissimのGUI)。372の進入路(link 39)と、384の進入路(link 50。vehicleInput 4がこのlinkにあるので、車が必ず来る。signalHead 36は地図座標 (92.4, -209.3)、SC 9のSG1) | 左折する車も右折する車も、交差点の手前で止まる。赤で交差点に入る車がいない(B4で直した点。384も、前は交差点の中の1つの進路だけにsignalHeadがあった) |
+| 3 | **EGOとVissimの車の停止位置** | 監視ログの停止位置と、CARLAの画面 | EGOの前端が停止線の約0.5 m手前(V8の実績)。Vissimの車も、ほぼ同じ位置(交差点の入口の約1 m手前)で止まる。V8より交差点に近い |
+| 4 | 赤で止まり、青で発進する | 監視ログ | 赤の間は `traffic-signal factor=yes` で止まり、青(47秒〜)で発進する。`Crossings of the stop line on RED: 0` |
+| 5 | 交差する主道路が、372の赤の間に流れる | CARLAの画面 | 372が赤の間(0〜42秒)、主道路(373・374)のVissimの車が交差点を通る。V8では全交差点が同時だったので、確かめていなかった |
+| 6 | 走行中の黄(機能Aで残った項目) | 監視ログで `AMBER` になったときの、速度と停止線までの距離 | 止まれる距離なら止まり、近すぎれば通過する。どちらだったかを記録する |
+| 7 | 目的地に着く(任意) | `ros2 topic echo --once /api/routing/state` | `state: 3`(ARRIVED) |
+
+- 1回の走行で赤や黄に当たるとは限らない。当たらなかった項目は、Ctrl+Cで止めてB7.1からやり直す。
+- 終わったら、ターミナル2をCtrl+Cで止める。そのあと、`python3 tools/check_tl_topic_vs_carla.py --frozen-only` で `frozen: 0` を確かめる。
 
 ### B8: ドキュメントとコミット
 
