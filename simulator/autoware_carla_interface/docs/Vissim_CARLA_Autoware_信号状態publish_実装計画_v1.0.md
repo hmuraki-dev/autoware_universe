@@ -98,7 +98,7 @@ infoとwarningのログの呼び出し箇所を分ける)は変えない。変�
 | V5  | 起動時チェック、`force_green`、終了時の解除             | `carla_autoware.py`                                                                                                                           |
 | V6  | launchの引数とカメラ信号認識ノードの停止                | `launch/autoware_carla_interface.launch.xml`、`test/vissim_launch_params_test.py`(必要なら)                                                   |
 | V7  | ブリッジ単体での実機確認                                | `tools/check_tl_topic_vs_carla.py`(新規、確認用)                                                                                                                                             |
-| V8  | Autoware全体での実機確認                                | –                                                                                                                                             |
+| V8  | Autoware全体での実機確認                                | `tools/monitor_tl_stop.py`(新規、確認用)                                                                                                                                             |
 | V9  | ドキュメント                                            | `docs/Vissim(win)-CARLA-Autoware_co-sim_起動手順.md`、`README.md`、`~/CARLA` の `TRAFFIC_SIGNAL_TODO.md`                                      |
 
 進める順番: V0 → V1+V2 → V3 → V4 → V5 → V6 → V7 → V8 → V9
@@ -404,27 +404,136 @@ ros2 topic hz /perception/traffic_light_recognition/traffic_signals
 
 ### V8: Autoware全体での実機確認
 
-起動は `docs/Vissim(win)-CARLA-Autoware_co-sim_起動手順.md` 2.6.1のコマンドに、次を足す。
+Autoware全体(`e2e_simulator.launch.xml`)を起動し、Vissimが決めた信号でEGOが止まり・発進することを確かめる。
+目的地の設定とAutoはAD API(`ros2 service call`)で行う(RVizのボタンでもよい)。走行中の様子は
+監視スクリプト `tools/monitor_tl_stop.py` で記録する。
+
+#### V8.0 シナリオと準備
+
+- スポーン地点: `spawn_point:=334.74,263.00,0.30,0.0,0.0,90.0`(CARLA座標。道路19、V7と同じ)。
+- 信号: 372(`signal_mapping.json` のSC1・SG2。SG2の12信号は同時に切り替わる)。
+  CARLAの停止位置は y=308.73、Lanelet2の停止線は6 m前に出して y=314.73(地図座標では y=-314.73)。
+  スポーン地点から停止線まで約52 m。
+- 道路19の先はT字路。右折して道路7に入った先を目的地にする:
+  CARLA (374.92, 330.61)、向き0度 → 地図座標 (374.92, -330.61)、向き0度。
+- 端末はV7と同じ(Windows: アダプタ、Linux 1: CARLA、2: Autoware、3: AD APIと監視)。
+  ターミナル2・3の最初の設定はV7.0と同じ(`carla310_env` を有効にしたターミナルは使わない)。
+- `vissim_sim_period` はV7と同じ600(変えるとアダプタの起動し直しが要る)。Autowareの起動に
+  数分かかっても、Vissim連携は実時間より遅く進むので600秒(シミュレーション時間)で足りる。
+
+#### V8.1 起動(ターミナル2)
 
 ```bash
-export RMW_IMPLEMENTATION=rmw_cyclonedds_cpp
-# 2.6.1のコマンドに追加:
-#   lanelet2_map_file:=lanelet2_map_with_tl.osm sync_traffic_lights:=true traffic_light.publish:=true
+ros2 launch autoware_launch e2e_simulator.launch.xml \
+  simulator_type:=carla \
+  map_path:=$MAP_DIR \
+  lanelet2_map_file:=lanelet2_map_with_tl.osm \
+  vehicle_model:=sample_vehicle \
+  sensor_model:=carla_sensor_kit \
+  use_vissim:=true \
+  vissim_adapter_host:=$VISSIM_HOST \
+  vissim_adapter_port:=5555 \
+  vissim_connect_timeout_ms:=120000 \
+  vissim_sim_period:=600 \
+  sync_traffic_lights:=true \
+  traffic_light.publish:=true \
+  spawn_point:=334.74,263.00,0.30,0.0,0.0,90.0 \
+  spectator_follow:=true
 ```
 
-| #   | 確認                                    | 見るもの                                                                                                           |
-| --- | --------------------------------------- | ------------------------------------------------------------------------------------------------------------------ |
-| 1   | publisherが1つ                          | `ros2 topic info /perception/traffic_light_recognition/traffic_signals` のpublisherがブリッジだけ                |
-| 2   | 赤で止まり、青で発進する                | behavior_velocity_plannerの停止理由 `traffic-signal`、停止位置と停止線の距離                                       |
-| 3   | 黄の扱い                                | AMBERが届いたときのEGOの動き(止まれる距離なら止まり、近すぎれば通過する)                                         |
-| 4   | Vissimの車とEGOが同じ信号に従う         | CARLAの画面で、同じ進入路のVissimの車とEGOの停止。停止位置のずれ(機能Bで揃える予定のため、ずれの記録だけ)          |
-| 5   | `force_green`(`sync_traffic_lights:=false`) | 停止理由 `traffic-signal` が出ずに交差点を通過する                                                              |
+- `traffic_light.map_path` は指定しない(既定値がAutowareの読む地図 `$MAP_DIR/lanelet2_map_with_tl.osm` になる)。
+- ブリッジのログに `Traffic-light matching: 36 matched, 0 ambiguous, 0 too far, ...` が出ることを確認する。
 
-- スポーン地点: SUMO版で確認したTown01の `spawn_point:="334.74,263.00,0.30,0.0,0.0,90.0"`
-  (信号372の停止線の約46 m手前)を候補にする。Vissimのウォームアップと組み合わせるときは、
-  Vissimのリンク上にある地点か(安全スポーンの判定に使えるか)も確かめる。
-- 今の `signal_mapping.json` では全交差点が同時に切り替わるので、それを前提に結果を読む。
-- Autoを押した後、MPCの操舵の収束待ちでしばらく発進しないことがある(SUMO版で確認済み、本機能とは無関係)。
+#### V8.2 publisherの確認(ターミナル3)
+
+```bash
+ros2 topic info /perception/traffic_light_recognition/traffic_signals --verbose | grep -E "Node name|Publisher count"
+```
+
+- 期待: `Publisher count: 1`、Node nameは `autoware_carla_interface`(カメラの信号認識が起動していない)。
+
+#### V8.3 監視を始める(ターミナル3、Autoの前から最後まで動かしておく)
+
+```bash
+python3 tools/monitor_tl_stop.py --map $MAP_DIR/lanelet2_map_with_tl.osm --group 372 | tee /tmp/v8_monitor.log
+```
+
+1秒ごと(と変化したとき)に、信号372の色、`traffic-signal` の停止理由(`/api/planning/velocity_factors`)、
+速度、EGOの前端から停止線までの距離を出す。Ctrl+Cで止めると、停止線の近くで止まった位置・そのときの色・
+時間と、赤で停止線を越えた回数をまとめて出す。
+
+#### V8.4 自己位置・目的地・Auto(ターミナル4、新しく開いてV7.0の設定をする)
+
+```bash
+ros2 service call /api/localization/initialize autoware_adapi_v1_msgs/srv/InitializeLocalization "{pose: []}"
+```
+
+```bash
+ros2 topic echo --once /api/localization/initialization_state
+```
+
+(`state: 3`(INITIALIZED)になるまで待つ)
+
+```bash
+ros2 service call /api/routing/set_route_points autoware_adapi_v1_msgs/srv/SetRoutePoints "{header: {frame_id: map}, option: {allow_goal_modification: true}, goal: {position: {x: 374.92, y: -330.61, z: 0.0}, orientation: {x: 0.0, y: 0.0, z: 0.0, w: 1.0}}, waypoints: []}"
+```
+
+- `The route is already set.` で失敗したら、次を実行してから設定し直す(SUMO版でも起きた):
+
+```bash
+ros2 service call /api/routing/clear_route autoware_adapi_v1_msgs/srv/ClearRoute "{}"
+```
+
+```bash
+ros2 topic echo --once /api/operation_mode/state
+```
+
+(`is_autonomous_mode_available: true` になってから)
+
+```bash
+ros2 service call /api/operation_mode/change_to_autonomous autoware_adapi_v1_msgs/srv/ChangeOperationMode "{}"
+```
+
+- Autoの後しばらく発進しないことがある(MPCの操舵の収束待ち。SUMO版で23〜60秒以上)。本機能とは無関係。
+
+#### V8.5 確認すること
+
+| #   | 確認                                     | 見るもの                                                                                                                                                     |
+| --- | ---------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| 1   | publisherが1つ                           | V8.2                                                                                                                                                         |
+| 2   | 赤で止まり、青で発進する                 | 監視ログ: 赤の間に `traffic-signal factor=yes` で減速・停止し、青で `no` になって発進する。停止位置(前端から停止線までの距離)。まとめの `Crossings of the stop line on RED: 0` |
+| 3   | 黄の扱い                                 | 監視ログで `AMBER` になったときの動き(止まれる距離なら止まり、近すぎれば通過する)。黄の間に停止線を越えたときは、そのときの距離と速度を記録する             |
+| 4   | Vissimの車とEGOが同じ信号に従う          | CARLAの画面で、同じ進入路のVissimの車がEGOと同じ赤で止まっているか。停止位置のずれ(Vissimの信号設置は機能Bで揃える予定なので、ずれは記録のみ)           |
+| 5   | 目的地に着く                             | `ros2 topic echo --once /api/routing/state` が `state: 3`(ARRIVED)                                                                                         |
+
+- 1回の走行で赤に当たるとは限らない(SG2の周期しだい)。赤で止まる場面がなかったときは、Ctrl+Cで止めて
+  V8.1からやり直す(タイミングがずれて別の色で着く)。
+- 終わったら、ターミナル2をCtrl+Cで止め、`python3 tools/check_tl_topic_vs_carla.py --frozen-only` で
+  freezeが残っていないことを確かめる。
+
+#### V8.6 force_green(任意)
+
+V8.1のコマンドを `sync_traffic_lights:=false traffic_light.force_green:=true` に替えて起動し、V8.3〜V8.4を行う。
+停止理由 `traffic-signal` が一度も出ずに交差点を通過して目的地に着くことを確かめる。
+
+#### V8.7 記録
+
+監視ログ(`/tmp/v8_monitor.log`)のまとめ部分と、目立った場面(赤での停止、黄の扱い)を「結果(V8)」として書く。
+
+#### 結果(V8、2026-11-12、CARLA 0.9.15、Town01、Vissim 2026(Windows)、Autoware全体)
+
+| #   | 確認                         | 結果                                                                                                                                                                                                                                                                                                                                         |
+| --- | ---------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 1   | publisherが1つ               | ✅ `Publisher count: 1`(`autoware_carla_interface`)。カメラの信号認識はない                                                                                                                                                                                                                                                                 |
+| 2   | 赤で止まり、青で発進する     | ✅ Autoは信号372が赤の間(監視ログ206 s)。赤のまま停止線へ近づき(最高約5.4 m/s)、`traffic-signal` で減速、前端が停止線の2.0 m手前でいったん止まったあと0.5 m手前まで詰めて停止(256.7 s〜)。約34秒停止し、青(290.5 s)の約3秒後に発進して交差点に入った。**赤で停止線を越えたことはない**(利用者もCARLAの画面で信号の遵守を確認) |
+| 3   | 黄の扱い                     | 未確認。黄(AMBER)はトピックに届いた(190.5〜198.4 s、EGOはスポーン地点で停止中)が、走行中に黄に当たる場面はなかった                                                                                                                                                                                                                         |
+| 4   | Vissimの車とEGOが同じ信号に従う | ✅ 利用者がCARLAの画面で、Vissimの車もEGOと一緒に赤で止まっていたことを確認(停止位置のずれは未計測)                                                                                                                                                                                                                                                                                                                                       |
+| 5   | 目的地に着く                 | 未達(本機能とは無関係)。経路は右折ではなく左折して西側を大回りするものになり、地図座標 (92.5, -139.6) で後ろからVissimのバイクに衝突されて動けなくなり、その後は左折するVissimのバスに前をふさがれた(停止理由 `route-obstacle`)                                                                                                                                                                                                                                                                              |
+
+- 目的地に着かなかったのは、Vissimの車とEGOのやりとり(Vissim側がEGOを避けない・ふさぐ)によるもので、信号の機能とは関係しない。
+  経路が大回りになった理由(目的地の向き・車線の向き)は未確認。
+- 監視スクリプトの `traffic-signal factor` は信号372に限らず、経路上のどの信号の停止理由でも `yes` になる(交差点を通過した後も
+  `yes` が続いたのは、先の信号のため)。また停止線から離れた場所の `front->stop line` の値は意味を持たない。
 
 ### V9: ドキュメント
 
