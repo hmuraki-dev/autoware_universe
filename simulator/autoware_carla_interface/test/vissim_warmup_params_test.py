@@ -62,6 +62,7 @@ _BASE_PARAMS = {
     'spawn_point': 'None',
     'use_traffic_manager': False,
     'max_real_delta_seconds': 0.05,
+    'weather': 'ClearNoon',
     'use_vissim': True,
     'vissim_adapter_host': '127.0.0.1',
     'vissim_adapter_port': 5555,
