@@ -97,7 +97,7 @@ infoとwarningのログの呼び出し箇所を分ける)は変えない。変�
 | V4  | ROSパラメータ、publisher、毎tickのpublish               | `carla_ros.py`                                                                                                                                |
 | V5  | 起動時チェック、`force_green`、終了時の解除             | `carla_autoware.py`                                                                                                                           |
 | V6  | launchの引数とカメラ信号認識ノードの停止                | `launch/autoware_carla_interface.launch.xml`、`test/vissim_launch_params_test.py`(必要なら)                                                   |
-| V7  | ブリッジ単体での実機確認                                | –                                                                                                                                             |
+| V7  | ブリッジ単体での実機確認                                | `tools/check_tl_topic_vs_carla.py`(新規、確認用)                                                                                                                                             |
 | V8  | Autoware全体での実機確認                                | –                                                                                                                                             |
 | V9  | ドキュメント                                            | `docs/Vissim(win)-CARLA-Autoware_co-sim_起動手順.md`、`README.md`、`~/CARLA` の `TRAFFIC_SIGNAL_TODO.md`                                      |
 
@@ -196,17 +196,178 @@ git checkout feature/sumo_co-sim -- \
 
 ### V7: ブリッジ単体での実機確認(Autowareなし)
 
-Windows PCでアダプタ(`server.py`)を起動した状態で、`autoware_carla_interface.launch.xml` を単体で起動する。
+Autowareは起動せず、`autoware_carla_interface.launch.xml` だけを起動する。信号の状態が正しく
+トピックに出ているかを、確認用スクリプト `tools/check_tl_topic_vs_carla.py` でCARLAの状態と突き合わせる。
 
-| #   | 条件                                                                                          | 確認すること                                                                                       |
-| --- | --------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------- |
-| 1   | `use_vissim:=true traffic_light.publish:=false`                                               | 従来どおり動く。カメラ信号認識向け3ノードが起動する                                                |
-| 2   | `use_vissim:=true sync_traffic_lights:=true traffic_light.publish:=true traffic_light.map_path:=~/autoware_map/Town01/lanelet2_map_with_tl.osm` | 起動ログ「36 matched, 0 ambiguous, 0 too far」。3ノードが起動しない。36グループがpublishされる |
-| 3   | 2と同じ                                                                                       | Vissimの信号の切り替わり(`[sync] signal ...` のdebugログ)と、トピックの状態・stampが1 tick以内で一致する。黄(AMBER)が届く |
-| 4   | `use_vissim:=true sync_traffic_lights:=true traffic_light.force_green:=true`                  | 起動時にエラーで止まる(Vissimへ接続する前)                                                         |
-| 5   | `use_vissim:=true sync_traffic_lights:=false traffic_light.publish:=true traffic_light.force_green:=true` | 全グループがGREEN/SOLID_ON。終了時に「36信号のfreezeを解除、Nグループをreset」のログ               |
-| 6   | 4・5の終了後                                                                                  | CARLAにfreezeされた信号が残っていない                                                              |
-| 7   | `vissim_warmup_time:=60` を付けて2を起動                                                       | ウォームアップ中はpublishせず、EGOのスポーン後からpublishが始まる                                  |
+#### V7.0 準備
+
+| 端末                   | やること                                                                                                     |
+| ---------------------- | ------------------------------------------------------------------------------------------------------------ |
+| Windows                | 起動手順書2.2のとおりアダプタ(`server.py`)を起動しておく。`--debug` を付けると、Vissimへのtickが追える       |
+| Linux ターミナル1      | 起動手順書2.3のとおりCARLAを起動する(マップはブリッジが `map_path` の名前からTown01を読み込む)               |
+| Linux ターミナル2      | ブリッジ(下の各ケースのコマンド)                                                                           |
+| Linux ターミナル3      | 確認用スクリプト・`ros2` コマンド                                                                            |
+
+ターミナル2・3では、最初に次を実行する。
+
+```bash
+source /opt/ros/humble/setup.bash
+source ~/autoware.1.9.0/install/setup.bash
+export RMW_IMPLEMENTATION=rmw_cyclonedds_cpp
+export ROS_DOMAIN_ID=33        # 起動手順書2.6.1と同じ(Linux機のIPの末尾)
+VISSIM_HOST=192.168.16.56      # Windows PCのIP
+MAP_DIR=$HOME/autoware_map/Town01
+cd ~/autoware.1.9.0/src/universe/autoware_universe/simulator/autoware_carla_interface
+```
+
+- ビルドは不要(`--symlink-install` のinstallが、追加したモジュールのソースを指している)。
+- 各ケースのブリッジは、確認が済んだらCtrl+Cで止める。Linux側の終了でVissimが閉じる。次のケースで
+  接続できない(connectがエラーになる)ときは、起動手順書2.6.2のとおりアダプタを起動し直す。
+- `vissim_sim_period` などVissimへ渡す値は全ケースで同じにしてある(値を変えるとアダプタの起動し直しが要る)。
+- Vissim連携の `logging.info`/`logging.debug`(`Carla traffic light(s) mapped`・`[sync] signal ...`)は、
+  ログレベルの設定がないため表示されない。Vissimの状態がCARLAに入ったかは、CARLAの画面と確認用スクリプトで見る。
+
+ブリッジの共通の引数(ケースごとに、これに引数を足す):
+
+```bash
+COMMON="map_path:=$MAP_DIR use_vissim:=true vissim_adapter_host:=$VISSIM_HOST vissim_adapter_port:=5555 \
+  vissim_connect_timeout_ms:=120000 vissim_sim_period:=600 spectator_follow:=true \
+  spawn_point:=334.74,263.00,0.30,0.0,0.0,90.0"
+```
+
+(`spawn_point` はSUMO版で確認したTown01の地点。信号372の停止線の約46 m手前。EGOはAutowareなしでは動かない)
+
+#### V7.1 従来どおり動く(publishなし)
+
+```bash
+# ターミナル2
+ros2 launch autoware_carla_interface autoware_carla_interface.launch.xml $COMMON sync_traffic_lights:=true
+```
+
+```bash
+# ターミナル3
+ros2 node list | grep -E "traffic_light_(image_relay|camera_info_relay|republish)"
+ros2 topic info /perception/traffic_light_recognition/traffic_signals
+```
+
+- 期待: 3ノードが出る。トピックのPublisher countは0(ブリッジはpublishしない)。Vissimの車がCARLAに出て、
+  CARLAの信号がVissimに合わせて切り替わる(今の `signal_mapping.json` では全交差点が同時に切り替わる)。
+
+#### V7.2 publishと位置マッチング(メインのケース)
+
+```bash
+# ターミナル2
+ros2 launch autoware_carla_interface autoware_carla_interface.launch.xml $COMMON sync_traffic_lights:=true \
+  traffic_light.publish:=true traffic_light.map_path:=$MAP_DIR/lanelet2_map_with_tl.osm
+```
+
+ブリッジのログに次が出ることを確かめる。
+
+```text
+Traffic-light matching: 36 matched, 0 ambiguous, 0 too far, 0 overridden (map has 36 heads / 36 groups)
+```
+
+```bash
+# ターミナル3
+ros2 node list | grep -E "traffic_light_(image_relay|camera_info_relay|republish)"   # 何も出ない
+ros2 topic hz /perception/traffic_light_recognition/traffic_signals                  # Ctrl+Cで止める
+python3 tools/check_tl_topic_vs_carla.py --duration 180
+```
+
+- `ros2 topic hz` はtickの周期と同じ程度(Vissim連携では実時間より遅くなることがある)。
+- `--duration` は、Vissimの信号が少なくとも1周(青→黄→赤→青)するように決める。Vissimの信号プログラムの
+  周期が分からなければ、まず180秒で実行し、`color transitions` に変化が出ているかを見る。
+- 期待(確認用スクリプトの出力):
+
+| 項目                     | 期待                                                                                                    |
+| ------------------------ | ------------------------------------------------------------------------------------------------------- |
+| `publishers on the topic` | `1 ['/autoware_carla_interface']`                                                                       |
+| `groups per message`      | `{36: N}`(すべてのメッセージに36グループ)                                                              |
+| `match (same tick)`       | ほぼ全件。`1 tick behind` は少数ならよい(tickの途中で読んだもの)。`mismatch` は0                       |
+| `stamp vs CARLA elapsed`  | `spread` が0.05 s(1 tick)程度以下                                                                       |
+| `colors published`        | `RED`・`AMBER`・`GREEN` が出る(**Vissimの黄がAMBERで届くこと**。SUMO版では確認できなかった項目)        |
+| `color transitions`       | `GREEN->AMBER`・`AMBER->RED`・`RED->GREEN`(Vissimの `RED_AMBER` を使う信号プログラムなら、赤のまま) |
+| 最後の行                  | `OK`                                                                                                   |
+
+- あわせて、CARLAの画面(スペクテーターはEGOを追従)で信号372の色とトピックの色が同じことを目で見る:
+  `ros2 topic echo /perception/traffic_light_recognition/traffic_signals --field traffic_light_groups | grep -A6 "traffic_light_group_id: 372"`
+- Ctrl+Cで止めた後、V7.6を行う。
+
+#### V7.3 地図なし(OpenDRIVE IDのまま)と id_map
+
+```bash
+# ターミナル2
+ros2 launch autoware_carla_interface autoware_carla_interface.launch.xml $COMMON sync_traffic_lights:=true \
+  traffic_light.publish:=true "traffic_light.id_map:=360:9000|9001"
+```
+
+- 期待: ログ `Traffic lights: publishing 35 CARLA lights using the OpenDRIVE signal id as the group id (no traffic_light.map_path), 1 overridden by traffic_light.id_map`。
+  トピックに37グループ(9000・9001があり、360がない)。
+- 確認用スクリプトは使わない(9000・9001はCARLAのIDではないため `group ids without a CARLA light` でNGになる)。
+  `ros2 topic echo ... --once | grep traffic_light_group_id | sort | uniq | wc -l` で37を確かめる。
+
+#### V7.4 force_green と sync_traffic_lights の排他
+
+```bash
+# ターミナル2
+ros2 launch autoware_carla_interface autoware_carla_interface.launch.xml $COMMON sync_traffic_lights:=true \
+  traffic_light.publish:=true traffic_light.force_green:=true
+```
+
+- 期待: Vissimに接続する前(Windows側のアダプタにconnectが届く前)に、
+  `traffic_light.force_green cannot be used with use_vissim and sync_traffic_lights` のエラーで止まり、
+  launch全体が終了する(`on_exit="shutdown"`)。
+
+#### V7.5 force_green(信号同期なし)
+
+```bash
+# ターミナル2
+ros2 launch autoware_carla_interface autoware_carla_interface.launch.xml $COMMON sync_traffic_lights:=false \
+  traffic_light.publish:=true traffic_light.map_path:=$MAP_DIR/lanelet2_map_with_tl.osm traffic_light.force_green:=true
+```
+
+```bash
+# ターミナル3
+python3 tools/check_tl_topic_vs_carla.py --duration 30
+```
+
+- 期待: ブリッジのログ `traffic_light.force_green: forced 36 traffic lights to green and froze them.`。
+  確認用スクリプトで `colors published` が `GREEN` だけ、`color transitions` が空、`OK`。
+- Vissimの車はVissimの信号に従うので、CARLAの画面では青信号の前でVissimの車が止まることがある(想定どおり)。
+- Ctrl+Cで止めたとき、ブリッジのログに `Un-froze 36 traffic lights (traffic_light.force_green) and reset N groups.` が出る
+  (Town01はSUMO版の確認で12グループ)。続けてV7.6を行う。
+
+#### V7.6 終了後にfreezeが残っていない(V7.2・V7.5の後)
+
+```bash
+# ターミナル3(ブリッジを止めた後)
+python3 tools/check_tl_topic_vs_carla.py --frozen-only
+```
+
+- 期待: `CARLA traffic lights: 36, frozen: 0` と `OK`。
+  V7.2の後は `_cleanup_vissim()`(マッピング済みの信号の解除)、V7.5の後は `_cleanup_forced_green()` による。
+
+#### V7.7 ウォームアップ中はpublishしない
+
+```bash
+# ターミナル2
+ros2 launch autoware_carla_interface autoware_carla_interface.launch.xml $COMMON sync_traffic_lights:=true \
+  traffic_light.publish:=true traffic_light.map_path:=$MAP_DIR/lanelet2_map_with_tl.osm vissim_warmup_time:=60
+```
+
+```bash
+# ターミナル3(ブリッジを起動した直後から)
+ros2 topic hz /perception/traffic_light_recognition/traffic_signals
+```
+
+- 期待: ウォームアップ中は `ros2 topic hz` に何も出ない。ブリッジのログに `[EGO SPAWN] ... result=SAFE` が出た後から
+  publishが始まり、`Traffic-light matching: 36 matched, ...` のログもそのときに出る。
+- `spawn_point` がVissimのリンク上にないなど、ウォームアップの条件を満たさずに起動が失敗した場合は、起動手順書2.6.3の
+  「スポーン地点の選び方」で地点を選び直す(`COMMON` の `spawn_point` を置き換える)。
+
+#### V7.8 記録
+
+各ケースの結果(ログ、確認用スクリプトの出力)を、この節の後に「結果(V7)」として書く。
 
 ### V8: Autoware全体での実機確認
 
