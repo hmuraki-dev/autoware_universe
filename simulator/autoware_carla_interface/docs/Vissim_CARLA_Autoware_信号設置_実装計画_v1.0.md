@@ -150,7 +150,7 @@ python3 tools/check_vissim_lanelet2_tl_ids.py SIGNAL_MAPPING.json MAP_with_tl.os
 | B2  | SCの雛形(GUI)と分割スクリプト `split_signal_controllers.py`    | Windows GUI・CARLA      | 完了(2026-11-12。B2.4の歩行者用信号を含む) |
 | B3  | `signal_mapping.json` の作り直しと照合                        | CARLA・autoware_universe | 完了(2026-11-12) |
 | B4  | 停止位置のずれを測って直す                                    | CARLA・Windows GUI      | 完了(2026-11-12。スクリプトで直した。GUIでの確認はB5) |
-| B5  | Vissim単体での確認(交差点ごとの切り替わり、投入待ち)          | Windows                 | 未着手 |
+| B5  | Vissim単体での確認(交差点ごとの切り替わり、投入待ち)          | Windows                 | 完了(2026-11-12、利用者の確認) |
 | B6  | ブリッジ単体での実機確認(Autowareなし)                        | Linux + Windows         | 未着手 |
 | B7  | Autoware全体での実機確認(機能Aで残った黄の確認を含む)         | Linux + Windows         | 未着手 |
 | B8  | ドキュメントとコミット                                        | 両リポジトリ            | 未着手 |
@@ -545,6 +545,14 @@ python3 util/split_signal_controllers.py IN.inpx --carla-json ~/autoware_map/Tow
    - 下げた値と理由を残す。
 
 完了条件: 1800秒で投入待ちが増え続けない。交差点で詰まらない。
+
+#### 結果(B5、2026-11-12)
+
+- 利用者がWindowsのVissim GUIで、B4の `Town01.inpx`(CARLAリポジトリ `4213552`)を確かめ、「問題ない」との回答だった。
+  - 主に見たのは、signalHeadの位置(372・373・368の進入路。位置を図で示して確かめた)。
+  - 372は、交差点の中(link 93)から進入路(link 39、横断歩道の手前)に移った。
+  - 368は、交差点から出ていく側の車線(connector 10226)から、入ってくる側の車線(link 49)に移った。
+- 投入量は、B2.4で決めた値(車両7か所100台/h、歩行者2か所100人/h)のまま。変えていない。
 
 ### B6: ブリッジ単体での実機確認(Autowareなし)
 
