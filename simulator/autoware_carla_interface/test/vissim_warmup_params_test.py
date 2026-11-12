@@ -44,6 +44,7 @@ _STUBBED_MODULES = [
     'autoware_carla_interface.modules',
     'autoware_carla_interface.modules.carla_data_provider',
     'autoware_carla_interface.modules.carla_wrapper',
+    'autoware_carla_interface.modules.traffic_light_publisher',
 ]
 
 _SPAWN_POINT = '229.8,-2.0,0.3,0.0,0.0,180.0'
@@ -63,6 +64,12 @@ _BASE_PARAMS = {
     'use_traffic_manager': False,
     'max_real_delta_seconds': 0.05,
     'weather': 'ClearNoon',
+    'traffic_light.publish': False,
+    'traffic_light.force_green': False,
+    'traffic_light.map_path': '',
+    'traffic_light.match_distance': 5.0,
+    'traffic_light.match_ratio': 0.6,
+    'traffic_light.id_map': '',
     'use_vissim': True,
     'vissim_adapter_host': '127.0.0.1',
     'vissim_adapter_port': 5555,

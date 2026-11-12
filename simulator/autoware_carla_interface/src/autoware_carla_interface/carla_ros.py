@@ -987,8 +987,9 @@ class carla_ros2_interface(object):
         except RuntimeError:
             boxes = []
         location = actor.get_location()
-        # No map origin offset: the SUMO plan T1 (feature/sumo_co-sim) confirmed map = (carla_x, -carla_y) for Town01,
-        # the same conversion pose() uses (carla_location_to_ros_point).
+        # No map origin offset: the SUMO plan T1 (feature/sumo_co-sim) confirmed
+        # map = (carla_x, -carla_y) for Town01, the same conversion pose() uses
+        # (carla_location_to_ros_point).
         return carla_head_map_point(
             [(box.location.x, box.location.y) for box in boxes], (location.x, location.y)
         )
