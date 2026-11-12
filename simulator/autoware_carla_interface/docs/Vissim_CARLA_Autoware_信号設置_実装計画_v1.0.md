@@ -40,7 +40,7 @@ Vissimの車、Autoware(Lanelet2)のEGOが、同じ信号に同じ位置で従�
 ### 0.2 スコープ外
 
 - Town01以外のTown(Town05・Town10HD)のVissimネットワーク。Vissim側に `.inpx` がない。
-- 歩行者用の信号と横断歩道。SUMO版のjunction 60には横断歩道があるが、Vissimでは扱わない。
+- 歩行者用の信号と横断歩道。SUMO版のjunction 60には横断歩道があるが、Vissimでは扱わない。ただし、既存の横断歩道(link 203・204)の歩行者用信号を別のSGにすることだけは、利用者の要望で扱う(B2.4)。
 - 感応制御(actuated)、交差点間のオフセット最適化(系統制御)。
 - Linux側の信号同期処理(`simulation_synchronization.py`)の変更。SCが増えても今のコードのまま動く(1章の6)。
 - Windows側アダプタ(`PTV-Vissim_windows/`)の変更。
@@ -146,8 +146,8 @@ python3 tools/check_vissim_lanelet2_tl_ids.py SIGNAL_MAPPING.json MAP_with_tl.os
 | #   | タスク                                                         | 場所                    | 状態 |
 | --- | -------------------------------------------------------------- | ----------------------- | ---- |
 | B0  | 事前確認(使う `.inpx`、交差点のまとまり、signalHead 37・38)    | Windows・Linux・CARLA   | 完了(2026-11-12) |
-| B1  | 照合ツール `check_vissim_lanelet2_tl_ids.py` とテスト         | autoware_universe       | 未着手 |
-| B2  | SCの雛形(GUI)と分割スクリプト `split_signal_controllers.py`    | Windows GUI・CARLA      | 未着手 |
+| B1  | 照合ツール `check_vissim_lanelet2_tl_ids.py` とテスト         | autoware_universe       | 完了(2026-11-12) |
+| B2  | SCの雛形(GUI)と分割スクリプト `split_signal_controllers.py`    | Windows GUI・CARLA      | スクリプトと試作ファイルまで完了。GUIでの確認待ち |
 | B3  | `signal_mapping.json` の作り直しと照合                        | CARLA・autoware_universe | 未着手 |
 | B4  | 停止位置のずれを測って直す                                    | CARLA・Windows GUI      | 未着手 |
 | B5  | Vissim単体での確認(交差点ごとの切り替わり、投入待ち)          | Windows                 | 未着手 |
@@ -205,12 +205,58 @@ B4で `pos` を動かしたときは、B3(マッピングの作り直しと照�
   - signalHeadの `sg` が食い違う
   - 距離超え
   - `refers` を共有するregulatory element
-- まず今の `signal_mapping.json`・`Town01.inpx` にかける。期待する結果はNGで、出るべき指摘は次の2つ。
-  - 「1つのSCに12交差点」
-  - signalHead 37の食い違い
+- まず今の `signal_mapping.json`・`Town01.inpx` にかける。期待する結果はNGで、出るべき指摘は「1つのSCに12交差点」。
+  signalHead 37・38は歩行者用(B0)なので、landmarkの確認からは外れる。
 - 停止位置の表(`--report-stop-offset`)もここで作り、今の構成のずれを記録する(B4の入力)。
 
 完了条件: `python3 -m pytest test/test_check_vissim_lanelet2_tl_ids.py` が通る。今の構成で、期待どおりのNGが出る。
+
+#### 結果(B1、2026-11-12)
+
+作ったもの・変えたもの(autoware_universe):
+
+| ファイル | 内容 |
+| -------- | ---- |
+| `tools/check_vissim_lanelet2_tl_ids.py` | 2.3の照合ツール。歩行者用のsignalHead(`isPedArea` のlink上)は、landmarkの確認から外す。そのかわり、「最も近い信号の交差点と同じSCにあるか」を確かめる。`--report-stop-offset` で、停止位置の表を出す(停止線はosmの `ref_line` から読む。目安の範囲は `--stop-offset-range`、既定0〜2 m)。 |
+| `test/test_check_vissim_lanelet2_tl_ids.py` | 17件。計画に書いた7つのケースに加え、次を確かめる。`group` のない `carla_tl.json`、`--group-id-offset`、CARLAにだけある信号、車用signalHeadのない信号、歩行者用signalHeadの除外とSCの確認、停止位置の符号(東行き・西行き・停止線の手前)、終了コード。 |
+| `tools/carla_tl_to_lanelet2.py` | `--dump-json` の各信号に `group` を足した。地図を作る処理は変えていない。 |
+| `test/test_carla_tl_to_lanelet2.py` | 2件を足した。`group` を記録すること(偽の `carla` モジュールで確かめる)と、`group` があっても地図が変わらないこと。 |
+| `tools/check_tl_topic_vs_carla.py` | `--carla-json` を足した。メッセージごとに、交差点の全信号が同時に青ならNGとし、交差点の中で色が違うメッセージの数を出す(B6で使う)。 |
+
+`~/autoware_map/Town01/carla_tl.json` は、CARLA(Town01)から読み直して置き換えた。元のファイルは `carla_tl.json.bak_before_group` として残してある。
+- 変わったのは `group` が加わったことだけ。36信号の位置・停止位置・actor IDは同じだった。
+- 同じデータから `--stop-line-forward-offset 6` で作った地図は、今の `lanelet2_map_with_tl.osm` と(timestampを除いて)同じだった。
+- `group` は12組で、B0の結果と同じ。
+
+今の構成(コミット済みの `signal_mapping.json`、CARLAリポジトリ `c5df1a6` の `Town01.inpx`)での結果は、期待どおり **NG**。
+
+```text
+Vissim: 36 landmarks in 2 signal groups of 1 signal controllers
+Lanelet2: 36 traffic lights in 36 regulatory elements (group id offset 0)
+CARLA: 36 traffic lights
+CARLA: 12 intersections (groups)
+Vissim network: 36 vehicle and 2 pedestrian signal heads
+  pedestrian head 37 (link 203): SC 1 SG 1, nearest light 372 (4.1 m, SC [1]) OK
+  pedestrian head 38 (link 204): SC 1 SG 1, nearest light 374 (8.6 m, SC [1]) OK
+NG signal controllers with lights of several intersections: ['SC 1 (12 intersections)']
+```
+
+ほかの確認は通った。結果は次のとおり。
+- 36信号は、`signal_mapping.json`・Lanelet2・CARLAのどれにもあり、どれも1つのSGだけに入っている。
+- 車用signalHeadは各信号に1個ずつあり、SGはマッピングと一致する。
+- 距離はどれも10 m以内。
+
+**停止位置**(`--report-stop-offset`、B4の入力): 車用signalHeadは36個とも、Lanelet2の停止線より**先(交差点寄り)にあり、その距離は+0.55〜+8.99 m**。
+目安の0〜2 mに入るのは7個だけで、29個は外れている。
+
+| ずれ | 信号 |
+| ---- | ---- |
+| 0〜2 m(7個) | 362(+1.94)、368(+1.76)、369(+0.55)、376(+0.79)、386(+1.54)、388(+0.65)、394(+1.26) |
+| 2〜4 m(10個) | 363(+2.77)、370(+2.12)、371(+2.82)、372(+3.38)、373(+2.03)、375(+2.72)、378(+2.78)、383(+2.27)、391(+3.76)、392(+3.32) |
+| 4 m以上(19個) | 360(+4.70)、361(+6.36)、364(+6.83)、365(+4.45)、366(+8.99)、367(+8.92)、374(+6.40)、377(+4.40)、379(+5.69)、380(+5.51)、381(+4.24)、382(+4.09)、384(+5.53)、385(+5.71)、387(+7.40)、389(+5.77)、390(+7.12)、393(+5.45)、395(+7.21) |
+
+- signalHeadの多くは、交差点の手前のlinkの始め(`pos` 1〜3 m)、または長いlinkの終わりにある。そのため、Vissimの車はEGOより交差点寄りで止まる。
+- V8で使った372では、EGOは停止線の0.5 m手前で止まった。Vissimの車は、それより約3.4 m先(signalHeadの位置)で止まることになる。
 
 ### B2: SCの雛形と分割スクリプト
 
@@ -226,12 +272,109 @@ B4で `pos` を動かしたときは、B3(マッピングの作り直しと照�
    - Simulation runでSC 1とSC 2が独立して動く(信号時間表で確認)。
    - 確かめられたら、`intSupplyData` の `id` を書き換える必要があるかどうかが決まる。
 
+**B2.1 試作ファイルと手順(2026-11-12)**
+
+順番を変えた。先に、スクリプト(B2.2)で、雛形を今のSC 1のままにした試作ファイルを作る。
+GUIで時間を直す作業は、試作Aの上で行い、SCが独立して動くことの確認とまとめる。
+
+試作ファイル(CARLAリポジトリ `Co-Simulation/PTV-Vissim/examples/Town01/trial/`、コミットしない):
+
+| ファイル | 内容 |
+| -------- | ---- |
+| `Town01_trialA_sc2.inpx` | SC 2個。交差点1(360〜362)がSC 1、ほかの11交差点がSC 2。SC 2の `intSupplyData` はSC 1のコピーそのまま(中の `id="1"` もそのまま) |
+| `Town01_trialB_sc2_supplyid.inpx` | Aと同じだが、SC 2の `intSupplyData` の中の `<sc id>` を2に書き換えた(`checkSum` はそのまま)。Aが開けなかったときに試す |
+| `Town01_trialC_sc12.inpx` | SC 12個(本番の形。信号プログラムはまだ周期60秒のまま)。仮のマッピング(歩行者用を除いて位置で作ったもの)で、照合ツールがOKになることを確かめてある |
+
+手順(Windows PC):
+
+1. 3つのファイルを、`C:\Users\divp\SBIR\Vissim\work_muraki\CARLA\`(`Town01.inpx` と同じフォルダ)にコピーする。`#data#` の相対パスをそろえるため。
+2. VissimのGUIで `Town01_trialA_sc2.inpx` を開く。確かめることは次のとおり。
+   - エラーや警告のダイアログが出ない。
+   - Signal Controllersの一覧に2つある(1: `J1 360-362`、2: `J2 11 intersections`)。
+   - SC 2の信号制御エディタを開くと、SC 1と同じ信号プログラム(周期60秒)が見える。
+   - 開けなかった場合は、`Town01_trialB_sc2_supplyid.inpx` で同じことを試す。どちらもだめなら、GUIで作る方法に切り替える(B2の代替案)。
+3. 開けたファイルで、**SC 1だけ**、信号プログラムを目標の時間にする。
+   - 周期を94秒にする。
+   - interstage 1の開始を42秒、interstage 2の開始を89秒にする。
+   - interstageの中身(黄3秒、全赤2秒)は変えない。
+   - これで、SG1の青は0〜42秒、SG2の青は47〜89秒になる。
+4. Simulation runで200秒ほど回し、信号時間表(Signal Times Table)か画面で、次を確かめる。
+   - SC 1(周期94秒)とSC 2(周期60秒)が、別々に切り替わる。
+   - 交差点1では、主道路(360・362)と従道路(361)が交互に青になる。
+5. SC 1を直したファイルを、`Town01_template_sc1_94s.inpx` として保存する。
+   - 保存したファイルをLinuxの `Co-Simulation/PTV-Vissim/examples/Town01/trial/` へコピーする。
+   - 本番(B2.3)では、このファイルのSC 1を雛形にする(`--template-from`)。
+6. 結果を伝える。伝えることは、AとBのどちらで開けたか、出たメッセージ、SCが独立して切り替わったかどうか。
+
+結果(2026-11-12、Vissim 2026、Windows):
+- 手順2: **試作Aが開けた**(利用者が確認)。SCは2つあり、どちらも同じ制御だった。
+  `intSupplyData` をそのまま複製したSC(中の `id="1"` と `checkSum` も同じ)を、Vissimが受け付けることがわかった。
+  そのため、`--renumber-supply-id`(試作B)は要らない。
+- 手順3・5: 利用者がSC 1の信号プログラムを周期94秒にした。保存先は別名ではなく、`Town01_trialA_sc2.inpx` への上書きだった。
+  - 中身を確かめた結果、SC 1は周期94秒・interstageの開始42秒と89秒、SC 2は元のまま(60秒)。
+  - `checkSum` はVissimが計算し直していた(3025973488 → 1200156291)。
+  - **SC以外にも、保存で2か所が変わっていた**。`netPara` の `drivSimActive`(true → false)と、vehicleInput 7か所の投入量(300 → 100台/h)。
+    本番は、コミット済みの `Town01.inpx` を元にし、このファイルからはSC 1(`--template-from`)だけを取るので、この2つは本番に入らない。
+    `drivSimActive=false` だとDriving Simulator Interfaceが使えない可能性があるため、本番では元のtrueのままにする。投入量はB5で決める。
+- 手順4(SCが別々に切り替わるか): 未確認。
+
+**B2.3 本番(SC 12個)**: `trial/Town01_sc12_94s.inpx` を作った(2026-11-12)。
+
+```bash
+cd ~/CARLA/Co-Simulation/PTV-Vissim
+python3 util/split_signal_controllers.py examples/Town01/Town01.inpx \
+    --carla-json ~/autoware_map/Town01/carla_tl.json \
+    --template-from examples/Town01/trial/Town01_trialA_sc2.inpx --template-sc 1 \
+    -o examples/Town01/trial/Town01_sc12_94s.inpx
+```
+
+- SCは12個(`J1 360-362` 〜 `J12 393-395`)で、どれも周期94秒、interstageの開始は42秒・89秒。
+- SC以外は元の `Town01.inpx` と同じ(`drivSimActive=true`、投入量300台/h、CRLF)。
+- 仮のマッピング(歩行者用を除き、位置で作ったもの)で照合ツールにかけると、**OK**(SC 12個、SG 24個、36 landmark、歩行者用の37・38はSC 5)。
+- WindowsのVissim GUIでの確認(利用者、2026-11-12): SCは12個。各交差点で、主道路と従道路が交互に青になる。
+- 投入量の100台/h(試作Aの保存で変わっていたもの)は、**利用者が意図して減らしたもの**だった。本番にも入れる(B2.4と一緒に行う)。
+- `drivSimActive` がfalseになったのは、GUIでSimulation runを回すため(trueのままだと、Driving Simulatorからの接続を待つ)と考えられる。
+  co-simで使うファイルは、trueに戻してから使う。
+
+**B2.4 歩行者用信号を別のSGにする(利用者の要望、2026-11-12)**
+
+今は、横断歩道(link 203・204)の歩行者用signalHead 37・38が、車用と同じSG1に入っている(SC 5)。そのため、歩行者用の信号も車用と同時に黄・赤になる。
+要望は、「車用が黄になる前に、歩行者用が青点滅になり、車用より早く赤になる」こと。0.2のスコープ外としていた歩行者用信号のうち、この1か所だけを扱う。
+
+- SC 5(`J5 372-374`)に、歩行者用のSG3を足す。
+  - 信号の順序(signal sequence)は、赤 → 青 → 青点滅 → 赤。
+  - 青はSG1と同時に始め、SG1の青が終わる(42秒)より前に、青点滅を経て赤にする。
+  - 推奨: 青0〜34秒、青点滅34〜38秒(4秒)、38秒から赤。横断歩道の長さは9.9 m。赤になってから従道路(372)が青になる47秒まで、9秒ある。
+- signalHead 37・38の `sg` を `5 3` にする。
+- 作業はVissimのGUIで行う(SGの追加と信号の順序は、`intSupplyData` の中にあり、`checkSum` があるため)。
+  - 元にするのは `Town01_sc12_94s.inpx`。投入量の100台/hへの変更も、同じファイルで行う。
+  - 保存すると `drivSimActive` がfalseになるので、Linux側でtrueに戻し、ほかに差分がないことを確かめる。
+- Linux側への影響:
+  - CARLAには歩行者用の信号がない。SG3は `signal_mapping.json` に入らない(B3で直す生成ツールは、歩行者用を除く)。
+  - 同期処理はマッピングにある(SC, SG)だけを読むので、SG3の状態は使われない。
+  - 照合ツールは、歩行者用signalHeadについて「同じ交差点のSC(5)にあるか」だけを見るので、SG3でもOK。
+
 **B2.2 スクリプト(CARLAリポジトリ `Co-Simulation/PTV-Vissim/util/split_signal_controllers.py`)**
 
 ```text
 python3 util/split_signal_controllers.py IN.inpx --carla-json ~/autoware_map/Town01/carla_tl.json \
-    -o OUT.inpx [--template-sc 1] [--offset 0] [--align-stop-lines MAP_with_tl.osm] [--dry-run]
+    -o OUT.inpx [--template-sc 1] [--template-from INPX] [--first-intersections K] \
+    [--renumber-supply-id] [--dry-run]
 ```
+
+作ったもの(2026-11-12): `util/split_signal_controllers.py` と `util/split_signal_controllers_test.py`。
+- `--offset` と `--align-stop-lines` は、まだ入れていない。オフセットは0のまま(5章の2)とし、停止位置はB4で決める。
+- 試作のために、次の2つを足した。
+  - `--first-intersections K`: 先頭のK交差点だけに自分のSCを持たせ、残りはSC K+1にまとめる。
+  - `--template-from`: 雛形のSCを、GUIで保存した別の `.inpx` から取る。
+- 雛形のSCを複製するときに変えるのは、`no`、`name`(`J<番号> <最小landmark>-<最大landmark>`)、`sigTmsTabConfig` のSC番号だけ。
+- 改行は、編集する側のファイルに合わせる(今はCRLF)。
+- signalHeadで変えるのは `sg` だけ。歩行者用(37・38)は、最も近い信号の交差点のSCに入れる。
+- テストでは、次を確かめる。
+  - SCの複製と、signalHeadの書き換え
+  - 編集していない部分が変わらないこと(CRLFを含む)
+  - `--renumber-supply-id`、`--first-intersections`、`--template-from`
+  - エラーになる場合(`group` がない、距離が遠すぎる、1つの信号が2つのSGに入る、入力ファイルを上書きしようとする)
 
 - 交差点(`carla_tl.json` の `group`)ごとに、SC番号を1から振る。順番は、landmarkの小さい順。
 - 各SCの `name` は、そこに含まれるlandmark(例: `J1 360-362`)にする。
