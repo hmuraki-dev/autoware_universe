@@ -232,6 +232,9 @@ ros2 launch autoware_launch e2e_simulator.launch.xml \
 | `ego_spawn_front_margin` | EGOの前端と前方車の後端の間に必要な距離(m) | 省略可 | `20.0` |
 | `ego_spawn_rear_margin` | EGOの後端と後方車の前端の間に必要な距離(m) | 省略可 | `20.0` |
 | `ego_spawn_wait_timeout` | ウォームアップ後、空きを待つ上限(秒、1以上の整数)。超えたら試験開始失敗として終了する | 省略可 | `60` |
+| `lanelet2_map_file` | Autowareが読み込むLanelet2地図のファイル名(`map_path`内)。信号を使うときは信号入りの地図(2.7.1) | 省略可 | `lanelet2_map.osm` |
+| `traffic_light.publish` | CARLAの信号状態をAutowareへ直接通知する(カメラの信号認識は起動しない)。2.7参照 | 省略可 | `false` |
+| `traffic_light.force_green` | 起動時に全信号を緑にして固定する。`sync_traffic_lights:=true`とは同時に使えない(起動時エラー)。2.7.3参照 | 省略可 | `false` |
 
 **注意**:
 - Vissim側のシミュレーション分解能(`simRes`)は`fixed_delta_seconds`から自動で決まり、.inpxのコピーに書き込まれる(2.2参照)。そのため、以前のように.inpx側の`simRes`を手で合わせる必要はない。
@@ -329,4 +332,78 @@ ROS(Autoware)の時刻は⑤から0で始まる。①〜④の間、Autowareに�
 
 ウォームアップ中・空き待ち中にCtrl+Cを押した場合は、その時点で止まり、通常どおり終了する(試験開始失敗にはならない)。
 
+### 2.7 CARLAの信号状態をAutowareへ直接通知する
 
+CARLAが管理している信号の状態(赤・黄・青)を、カメラ画像による信号認識を使わずに、
+ブリッジ(`autoware_carla_interface`)から`/perception/traffic_light_recognition/traffic_signals`へ
+毎tick publishする機能。設計と確認結果は`docs/Vissim_CARLA_Autoware_信号状態publish_実装計画_v1.0.md`を参照
+(SUMO構成の`feature/sumo_co-sim`から移植したもの)。
+`sync_traffic_lights:=true`のときは、Vissimが決めた信号状態がCARLA経由でそのままAutowareに届く
+(Vissim→CARLA→Autoware。CARLAの状態をpublishするのは、Vissimの状態をCARLAに書き込んだ次のtickの後)。
+
+#### 2.7.1 信号入りのLanelet2地図
+
+標準のCARLA用Lanelet2地図(`~/autoware_map/Town01/lanelet2_map.osm`)には信号の情報がないため、
+そのままではAutowareが信号で止まらない。CARLAから信号を読み取って地図に追加したものを使う。
+
+- Town01は作成済み: `~/autoware_map/Town01/lanelet2_map_with_tl.osm`(36信号、停止線をCARLAの停止位置から6 m前に出したもの)。
+  同じフォルダの`carla_tl.json`は、地図を作ったときのCARLAの信号の記録。
+- 作り直すときは、CARLAサーバーでTown01を読み込んだ状態で次を実行する(出力は元の地図と同じフォルダ。すでにある場合は`--force`)。
+
+```bash
+cd ~/autoware.1.9.0/src/universe/autoware_universe/simulator/autoware_carla_interface
+python3 tools/carla_tl_to_lanelet2.py ~/autoware_map/Town01/lanelet2_map.osm --stop-line-forward-offset 6
+```
+
+- ツールの詳細(停止線をずらす量、`--group-id-offset`、Town05・Town10HD)はREADMEの「Adding traffic lights to the CARLA Lanelet2 maps」を参照。
+
+#### 2.7.2 起動とログの確認
+
+2.6.1の起動コマンドに、次の2つを足す(`sync_traffic_lights:=true`はそのまま)。
+
+```bash
+  lanelet2_map_file:=lanelet2_map_with_tl.osm \
+  traffic_light.publish:=true \
+```
+
+- ブリッジが信号を地図と対応付けるときの地図(`traffic_light.map_path`)は、既定でAutowareが読み込む地図と同じになる(指定不要)。
+- EGOのスポーン後(ウォームアップを使う場合は`[EGO SPAWN] ... result=SAFE`の後)に、次のログが1回出る。
+
+```text
+Traffic-light matching: 36 matched, 0 ambiguous, 0 too far, 0 overridden (map has 36 heads / 36 groups)
+```
+
+- `ambiguous`・`too far`が0でないときは、その信号はpublishされない(ログの次の行に信号のIDが出る)。
+- 確認: `ros2 topic info /perception/traffic_light_recognition/traffic_signals --verbose`のpublisherが
+  `autoware_carla_interface`の1つだけであること(カメラの信号認識は起動しない)。
+- ウォームアップ中はpublishしない(EGOのスポーン後のループから始まる)。
+
+#### 2.7.3 オプション
+
+| オプション | 説明 | 既定値 |
+| --- | --- | --- |
+| `traffic_light.publish` | 信号状態をpublishする。`true`のとき、カメラの信号認識(ブリッジ側の画像の中継ノードとAutoware側の信号認識)は起動しない | `false` |
+| `traffic_light.force_green` | 起動時に全信号を緑にしてfreezeし、終了時に解除する。**`use_vissim:=true sync_traffic_lights:=true`とは同時に使えない**(Vissimが毎tick信号を上書きするため。起動時に`Error: invalid parameters: ...`で止まる) | `false` |
+| `traffic_light.map_path` | 位置で対応付けるLanelet2地図。`""`にするとOpenDRIVEの信号IDをそのままグループIDに使う | Autowareが読む地図 |
+| `traffic_light.match_distance` | 対応付けを認める信号灯どうしの最大距離(m) | `5.0` |
+| `traffic_light.match_ratio` | 曖昧と判定するしきい値(小さいほど厳しい) | `0.6` |
+| `traffic_light.id_map` | 手動の対応付け`opendrive_id:group_id[\|group_id...],...`。位置の対応付けより優先する(`\|`を含むので引用符で囲む) | `""` |
+
+#### 2.7.4 注意点
+
+- **今の`signal_mapping.json`(Town01)は試験用の構成**: Signal Controller 1つ・Signal Group 2つに36信号すべてが割り当てられ、
+  全交差点が同時に切り替わる(SG1に24信号、SG2に12信号)。交差点ごとの信号制御は今後の作業(Vissimの信号設置の作り直し)。
+- **黄はAMBERとして届く**: Vissimの`AMBER`/`FLASHING_AMBER`はCARLAの黄になり、そのまま黄としてpublishされる
+  (SUMO構成では1つの信号に状態の違うリンクがあると赤になったが、Vissimでは起きない)。黄で止まるか通過するかはAutowareの判断
+  (`traffic_light.param.yaml`の`enable_pass_judge`など)。
+- **`sync_traffic_lights:=false`のとき**: Vissimの車はVissimの信号に、EGOはCARLAの信号に従うので、両者が食い違う。
+  Autowareに信号を届けるときは`sync_traffic_lights:=true`を基本にする。
+- **CycloneDDS**: `RMW_IMPLEMENTATION=rmw_cyclonedds_cpp`で起動する(`~/.bashrc`で設定済みなら不要)。Fast DDSではノードの発見が一部しかできず、
+  Autoを押せなかった(SUMO構成で確認)。
+- **`carla310_env`を有効にしたターミナルで起動しない**: `transforms3d`がなく、ブリッジが起動直後に落ちる(`deactivate`してから起動する)。
+- **確認用のツール**(どれもCARLA・ROSの読み取りだけ):
+  - `tools/check_tl_topic_vs_carla.py --duration 180`: トピックとCARLAの信号状態を突き合わせる(ブリッジの実行中)。
+  - `tools/check_tl_topic_vs_carla.py --frozen-only`: 終了後にfreezeが残っていないか数える(ブリッジを止めてから。必要なら1回tickする)。
+  - `tools/monitor_tl_stop.py --map <信号入りの地図> --group 372`: 1つの信号に対するEGOの停止・発進を記録する(Autoware全体の実行中)。
+- **確認済みの地点**(Town01): `spawn_point:="334.74,263.00,0.30,0.0,0.0,90.0"`(道路19、信号372の停止線の約52 m手前)。
+  赤で停止線の0.5 m手前に止まり、青の約3秒後に発進することを確認した(2026-11-12)。

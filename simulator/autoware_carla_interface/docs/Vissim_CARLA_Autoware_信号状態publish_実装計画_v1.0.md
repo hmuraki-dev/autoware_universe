@@ -549,6 +549,19 @@ V8.1のコマンドを `sync_traffic_lights:=false traffic_light.force_green:=tr
 - 引き継ぎメモ(`Vissim移植_信号状態publish_信号設置_引き継ぎ.md`)は、機能Aが終わったことを書いて、
   機能Bの計画書を作るときの入力にする。
 
+#### 結果(V9、2026-11-12)
+
+- `docs/Vissim(win)-CARLA-Autoware_co-sim_起動手順.md`
+  - 2.6.1のオプション一覧に `lanelet2_map_file`・`traffic_light.publish`・`traffic_light.force_green` を追加。
+  - 2.7(新規)に、信号入りの地図(2.7.1)、起動とログの確認(2.7.2)、オプション(2.7.3)、注意点(2.7.4:
+    試験用の `signal_mapping.json`、黄の扱い、`sync_traffic_lights:=false` のとき、CycloneDDS、`carla310_env`、
+    確認用ツール、確認済みの地点)を書いた。
+- `README.md`: パラメータ表に `traffic_light.*` の6行、「Publishing CARLA Traffic-Light States」節(SUMO版から移し、
+  排他条件・ウォームアップ・終了コード・確認用ツールをVissim用に書き換え)、Known Issuesに追記。
+- CARLAリポジトリ `feature/vissim_windows` の `Co-Simulation/PTV-Vissim/docs/TRAFFIC_SIGNAL_TODO.md`:
+  タスク9に今回の実機確認を追記(run境界は未確認のまま)、タスク10を完了にした。
+- 黄の走行中の扱い(V8.5の3)は未確認のまま。ドキュメントには「黄はAMBERとして届き、止まるか通過するかはAutowareの判断」とだけ書いた。
+
 ---
 
 ## 5. リスクと対応
