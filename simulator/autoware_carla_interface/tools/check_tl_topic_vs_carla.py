@@ -30,7 +30,8 @@ OpenDRIVE id itself).
 
 Usage (ROS 2 sourced, Python with the carla package):
     python3 tools/check_tl_topic_vs_carla.py --duration 120
-    python3 tools/check_tl_topic_vs_carla.py --frozen-only   # after the bridge has stopped
+    python3 tools/check_tl_topic_vs_carla.py --frozen-only   # only after the bridge has stopped
+                                                             # (ticks CARLA once if needed)
 
 Exit status: 0 if every check passed, 1 otherwise.
 """
@@ -70,6 +71,13 @@ def _traffic_lights(world):
 
 def check_frozen(world):
     lights = _traffic_lights(world)
+    if not lights and world.get_settings().synchronous_mode:
+        # The bridge leaves CARLA in synchronous mode: once it has stopped nobody ticks, and a
+        # newly connected client sees no actors until the next tick. Tick once (only here, after
+        # the bridge has stopped; it advances the world by one fixed_delta_seconds step).
+        print("Synchronous world without actors: ticking once to receive them")
+        world.tick()
+        lights = _traffic_lights(world)
     frozen = sorted(light.get_opendrive_id() for light in lights if light.is_frozen())
     print(f"CARLA traffic lights: {len(lights)}, frozen: {len(frozen)}")
     if not lights:
@@ -168,6 +176,12 @@ def run_compare(world, args):
     from rclpy.qos import QoSProfile
     from rclpy.qos import ReliabilityPolicy
 
+    # A newly connected client may see no actors until it has received a tick from the bridge.
+    try:
+        world.wait_for_tick(10.0)
+    except RuntimeError:
+        print("No CARLA tick within 10 s: is the bridge running?")
+        return False
     lights = _traffic_lights(world)
     if not lights:
         print("No traffic lights in the CARLA world (has the world been ticked yet?).")

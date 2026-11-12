@@ -369,6 +369,39 @@ ros2 topic hz /perception/traffic_light_recognition/traffic_signals
 
 各ケースの結果(ログ、確認用スクリプトの出力)を、この節の後に「結果(V7)」として書く。
 
+#### 結果(V7、2026-11-12、CARLA 0.9.15、Town01、Vissim 2026(Windows)、ブリッジ単体)
+
+| ケース                 | 結果                                                                                                                                                                                                                                                                                       |
+| ---------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| V7.1                   | ✅ カメラ信号認識の3ノードが起動。トピックのpublisherなし(`Unknown topic`)                                                                                                                                                                                                                 |
+| V7.6(V7.1の後)         | ✅ `CARLA traffic lights: 36, frozen: 0`(信号同期でfreezeした信号は `_cleanup_vissim()` で解除されている)                                                                                                                                                                                  |
+| V7.2                   | ✅ ログ `Traffic-light matching: 36 matched, 0 ambiguous, 0 too far, 0 overridden (map has 36 heads / 36 groups)`。3ノードは起動しない。確認用スクリプト(180秒): CARLAのtick 1344回、メッセージ1341件、publisherはブリッジ1つ、全メッセージ36グループ、**1341件すべて同じtickで一致**(1 tick遅れ0、不一致0)、stampのずれのばらつき0.000 s。色は `GREEN`・`RED`・**`AMBER`** が届き、変化は `GREEN->AMBER` 60・`AMBER->RED` 36・`RED->GREEN` 36(SG1の24信号が青から1周してもう一度黄、SG2の12信号が赤から1周、で数が合う) |
+| V7.6(V7.2の後)         | ✅ `CARLA traffic lights: 36, frozen: 0`                                                                                                                                                                                                                                                    |
+| V7.3                   | ✅ トピックに37グループ(361〜395と9000・9001。360なし)。90秒間(704件)、9000・9001の色はつねにCARLAの信号360と一致(赤・黄・青すべて観測)                                                                                                                                                       |
+| V7.4                   | ✅(修正後) 起動から約2秒で `Error: invalid parameters: traffic_light.force_green cannot be used with use_vissim and sync_traffic_lights: ...` を出して終了コード1で終わり、launch全体が止まった。Windows側アダプタのログに新しい接続(`Wrote co-simulation network file` / `Establishing a connection`)は出ず、Vissimに接続する前に止まったことを確認した。**修正前は、エラーの後もブリッジのプロセスが終わらなかった**(下記)                                         |
+| V7.5                   | ✅ ログ `traffic_light.force_green: forced 36 traffic lights to green and froze them.`。CARLA側は36信号とも緑・freeze。確認用スクリプト(30秒): 243件すべて36グループで `GREEN` のみ、色の変化なし、不一致0、`OK`。停止時に `Un-froze 36 traffic lights (traffic_light.force_green) and reset 12 groups.` |
+| V7.6(V7.5の後)         | ✅ `CARLA traffic lights: 36, frozen: 0`。1 tick進めた時点で赤24・緑12(まとまりごとの周期に戻っている)                                                                              |
+| V7.7                   | ✅ `vissim_warmup_time:=60`。起動から約29秒(実時間)はトピックのメッセージ0件(publisherは起動時から1つある)。CARLAの車両0台・EGOなし。ウォームアップ後にVissimの車29台とEGOが一括でスポーンし、その直前後からpublishが始まった(以後約6.7件/秒) |
+
+- 実時間180秒でtickは1344回(約7.5 Hz、シミュレーション時間で約67秒)。Vissim連携ではシミュレーションが実時間より遅い。
+- `stamp vs CARLA elapsed` の `offset`(572 s)は、CARLAの経過時刻(以前の実行の分を含む)とブリッジのゲーム時刻の差で、一定なら問題ない。
+- 準備で分かったこと(手順に関するもの):
+  - `carla310_env` を有効にしたターミナルでブリッジを起動すると、`transforms3d` がなく起動直後に落ちる。`deactivate` してから起動する。
+  - `--frozen-only` は、ブリッジの終了後に同期モードのまま誰もtickしないため信号が0個に見えた。スクリプトを、信号が見えなければ1回tickしてから数えるように直した。
+  - CARLAに新しく接続したクライアントは、最初のtickを受け取るまで信号が見えないことがある。比較モードでも、最初に `wait_for_tick()` するようにした。
+  - CARLAの起動前に、NVIDIAドライバーの自動更新(11/4)による `Driver/library version mismatch` でCARLAが起動できず、PCを再起動した(本機能とは無関係)。
+
+- V7.5の停止時に `Timed out waiting for a reply from the vissim adapter ... (request type='disconnect')` が出た(2000 ms)。後始末は続行して正常に終わった。Vissimを閉じる処理が `vissim_rpc_timeout_ms` より長くかかった可能性がある(本機能とは無関係。V7.1〜V7.3では出ていない)。
+- アダプタのログで、接続し直すたびに `spawn requested for already-tracked local_id=1, ignoring` が出る。前回のEGOの追跡が残っている(本機能とは無関係)。
+- **V7.4で見つかった不具合と修正**: 起動時のチェック(`_check_vissim_*`・`_check_traffic_light_params()`)の
+  `ValueError` は `InitializeInterface()` の中で出るが、その時点で `carla_ros2_interface` がROSのspinスレッド
+  (daemonでない)を動かしているため、メインの処理が例外で終わってもプロセスが残り、`on_exit="shutdown"` も働かなかった
+  (既存のVissim用のチェックでも同じ)。チェックで失敗したら `self.interface.shutdown()` してから例外を出し、`main()` で
+  `Error: invalid parameters: ...` を1行出して終了コード1で終わるようにした(SUMO版の `main()` と同じ形)。
+  - 終了時に `Spin thread did not terminate within timeout` の警告が出て2秒待つ(`shutdown()` は `destroy_node()` の後に
+    spinスレッドを待ち、`rclpy.shutdown()` はその後のため)。プロセスは終わるので、そのままにしている。
+  - launchの停止時に `republish` が終了コード-11で終わるのは、V7.1の失敗時にも出ている既存の動き(本機能とは無関係)。
+
 ### V8: Autoware全体での実機確認
 
 起動は `docs/Vissim(win)-CARLA-Autoware_co-sim_起動手順.md` 2.6.1のコマンドに、次を足す。
