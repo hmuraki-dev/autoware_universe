@@ -148,7 +148,7 @@ python3 tools/check_vissim_lanelet2_tl_ids.py SIGNAL_MAPPING.json MAP_with_tl.os
 | B0  | 事前確認(使う `.inpx`、交差点のまとまり、signalHead 37・38)    | Windows・Linux・CARLA   | 完了(2026-11-12) |
 | B1  | 照合ツール `check_vissim_lanelet2_tl_ids.py` とテスト         | autoware_universe       | 完了(2026-11-12) |
 | B2  | SCの雛形(GUI)と分割スクリプト `split_signal_controllers.py`    | Windows GUI・CARLA      | 完了(2026-11-12。B2.4の歩行者用信号を含む) |
-| B3  | `signal_mapping.json` の作り直しと照合                        | CARLA・autoware_universe | 未着手 |
+| B3  | `signal_mapping.json` の作り直しと照合                        | CARLA・autoware_universe | 完了(2026-11-12) |
 | B4  | 停止位置のずれを測って直す                                    | CARLA・Windows GUI      | 未着手 |
 | B5  | Vissim単体での確認(交差点ごとの切り替わり、投入待ち)          | Windows                 | 未着手 |
 | B6  | ブリッジ単体での実機確認(Autowareなし)                        | Linux + Windows         | 未着手 |
@@ -447,6 +447,46 @@ python3 util/split_signal_controllers.py IN.inpx --carla-json ~/autoware_map/Tow
    `signal_mapping.json` の形に依存した失敗がないことを確かめる。
 
 完了条件: 照合ツールで `OK` が出る。期待するマッピングの形は「`signal_mapping.json` にSCが12個、各SCにSGが2個、36 landmarkがすべて1回ずつ」。
+
+#### 結果(B3、2026-11-12)
+
+`util/generate_signal_mapping.py`(CARLAリポジトリ)の変更:
+- 歩行者エリアのlink(`isPedArea="true"`)上のsignalHeadを除く。除いたものはログに出す。
+- 1つの信号が2つ以上の(SC, SG)に入るマッピングは、書き出さずに終了コード1で止まる。
+- `--carla-json` を足した(CARLAサーバーのかわりに `carla_tl.json` を読む)。`carla` は、サーバーにつなぐときだけimportする。
+- CARLAが同期モードで信号が見えないときは、1回だけtickする(`carla_tl_to_lanelet2.py` と同じ)。
+  ブリッジを止めたあとのCARLAでは、誰もtickしないので、新しく接続したクライアントからは信号が0個に見えた。
+- SCとSGを番号順に並べて書き出す(実行するたびに同じファイルになる)。
+- テストを足した: `util/generate_signal_mapping_test.py`(歩行者用の除外、2つのSGに入る信号での停止、`--carla-json`)。
+
+直したツールを前の `Town01.inpx`(SC 1つ、`c5df1a6`)にかけると、コミット済みの `signal_mapping.json`(手で直してあったもの)と同じになった。
+
+新しい `Town01.inpx`(`0e45900`)から、CARLA(Town01)につないで作り直した結果は次のとおり。`--carla-json` で作ったものと同じだった。
+
+| SC | SG1(主道路) | SG2(従道路) |
+| -- | ----------- | ----------- |
+| 1 | 360, 362 | 361 |
+| 2 | 364, 365 | 363 |
+| 3 | 366, 367 | 368 |
+| 4 | 369, 371 | 370 |
+| 5 | 373, 374 | 372 |
+| 6 | 375, 376 | 377 |
+| 7 | 379, 380 | 378 |
+| 8 | 382, 383 | 381 |
+| 9 | 384, 386 | 385 |
+| 10 | 388, 389 | 387 |
+| 11 | 390, 391 | 392 |
+| 12 | 393, 395 | 394 |
+
+- SC 5のSG3(歩行者用)は、マッピングに入らない。
+- 2か所(CARLAの `data/signal_mapping.json`、autoware_universeの `vissim_integration/data/signal_mapping.json`)は同じ内容。
+- 照合ツール(`--carla-json`・`--inpx` 付き)の結果は **OK**。
+
+既存のテスト:
+- `util/signal_sync_stub_test.py` は、前のマッピング(SC 1、SG1に10個)を書き込んでいたので落ちた。
+  期待値を実際の `signal_mapping.json` から作るように書き直した。あわせて、1つのSCだけが切り替わり、ほかのSCの信号はそのままであること(交差点ごとの独立)も確かめるようにした。
+  書き直したテストは、新旧どちらのマッピングでも通る。
+- CARLAリポジトリの `util/*_test.py` 8本、autoware_universeの `test/test_*.py`(89件)と `test/vissim_*_test.py` 8本は、すべて通った。
 
 ### B4: 停止位置のずれを測って直す
 
