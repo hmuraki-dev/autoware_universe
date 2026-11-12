@@ -151,7 +151,7 @@ python3 tools/check_vissim_lanelet2_tl_ids.py SIGNAL_MAPPING.json MAP_with_tl.os
 | B3  | `signal_mapping.json` の作り直しと照合                        | CARLA・autoware_universe | 完了(2026-11-12) |
 | B4  | 停止位置のずれを測って直す                                    | CARLA・Windows GUI      | 完了(2026-11-12。スクリプトで直した。GUIでの確認はB5) |
 | B5  | Vissim単体での確認(交差点ごとの切り替わり、投入待ち)          | Windows                 | 完了(2026-11-12、利用者の確認) |
-| B6  | ブリッジ単体での実機確認(Autowareなし)                        | Linux + Windows         | 未着手 |
+| B6  | ブリッジ単体での実機確認(Autowareなし)                        | Linux + Windows         | 完了(2026-11-12。目視はB7へ) |
 | B7  | Autoware全体での実機確認(機能Aで残った黄の確認を含む)         | Linux + Windows         | 未着手 |
 | B8  | ドキュメントとコミット                                        | 両リポジトリ            | 未着手 |
 
@@ -556,23 +556,100 @@ python3 util/split_signal_controllers.py IN.inpx --carla-json ~/autoware_map/Tow
 
 ### B6: ブリッジ単体での実機確認(Autowareなし)
 
-機能AのV7と同じ準備(`Vissim_CARLA_Autoware_信号状態publish_実装計画_v1.0.md` のV7.0)で、Windows側の `server.py` とブリッジを起動する。
-起動するときは、`use_vissim:=true sync_traffic_lights:=true traffic_light.publish:=true lanelet2_map_file:=lanelet2_map_with_tl.osm` を付ける。
+#### B6.0 準備
 
-| #   | 確認                                         | 見るもの |
-| --- | -------------------------------------------- | -------- |
-| 1   | マッピングの読み込み                        | ブリッジのログ `Vissim signal group(s) mapped` に24組((1,1)〜(12,2))、`Carla traffic light(s) mapped` に36個。警告なし |
-| 2   | 対応付け                                    | `Traffic-light matching: 36 matched, 0 ambiguous, 0 too far` |
-| 3   | トピックとCARLAが同じtickで一致             | `tools/check_tl_topic_vs_carla.py --duration 120` が `OK`。V7と同じく、全メッセージが同じtickで一致 |
-| 4   | 交差点の中で主道路と従道路が逆の色になる    | 同じスクリプトの出力、またはCARLAの画面で、例えば360・362が青のとき361が赤。各交差点で、3信号すべてが同時に青にならない |
-| 5   | 黄が届く                                    | `colors published` にAMBER。遷移 `GREEN->AMBER->RED` |
-| 6   | 終了後のfreeze                              | `--frozen-only` で `frozen: 0` |
+| 端末              | やること |
+| ----------------- | -------- |
+| Windows           | `C:\Users\divp\SBIR\Vissim\work_muraki\CARLA\Town01.inpx` が、CARLAリポジトリ `4213552` の版になっていることを確かめる。B5でGUIから保存した場合は、`drivSimActive` がfalseになっているので、コピーし直す。そのあと、起動手順書2.2のとおりアダプタ(`server.py`)を起動し直す |
+| Linux ターミナル1 | 起動手順書2.3のとおりCARLAを起動する |
+| Linux ターミナル2 | ブリッジ |
+| Linux ターミナル3 | 確認用スクリプト |
 
-交差点ごとのチェック(4)を自動でできるように、`check_tl_topic_vs_carla.py` に `--carla-json` を足す。これで交差点ごとに「同時に青」を数えられる。
-小さい変更なので、B1と同じコミットにする。
+ターミナル2・3では、最初に次を実行する(機能AのV7.0と同じ)。
 
-`--offset` が0のときは、12交差点が同じ時刻に切り替わる。SUMO版も全tlLogicのオフセットが0なので、同じ挙動になる。
-ただし、交差点の中では主道路と従道路の色が違う。
+```bash
+source /opt/ros/humble/setup.bash
+source ~/autoware.1.9.0/install/setup.bash
+export RMW_IMPLEMENTATION=rmw_cyclonedds_cpp
+export ROS_DOMAIN_ID=33
+VISSIM_HOST=192.168.16.56
+MAP_DIR=$HOME/autoware_map/Town01
+cd ~/autoware.1.9.0/src/universe/autoware_universe/simulator/autoware_carla_interface
+```
+
+- ビルドは不要。installの `signal_mapping.json` は、ソースへのシンボリックリンクになっている(B3で更新済み)。
+- `lanelet2_map_with_tl.osm` はB4で作り直したが、信号灯の位置は変わっていない。そのため、ブリッジの位置マッチングの結果は変わらないはず。
+
+#### B6.1 起動(ターミナル2)
+
+```bash
+ros2 launch autoware_carla_interface autoware_carla_interface.launch.xml \
+  map_path:=$MAP_DIR use_vissim:=true vissim_adapter_host:=$VISSIM_HOST vissim_adapter_port:=5555 \
+  vissim_connect_timeout_ms:=120000 vissim_sim_period:=600 spectator_follow:=true \
+  spawn_point:=334.74,263.00,0.30,0.0,0.0,90.0 sync_traffic_lights:=true \
+  traffic_light.publish:=true traffic_light.map_path:=$MAP_DIR/lanelet2_map_with_tl.osm
+```
+
+- ブリッジのログに `Traffic-light matching: 36 matched, 0 ambiguous, 0 too far` が出ることを確かめる。
+
+#### B6.2 確認(ターミナル3)
+
+```bash
+python3 tools/check_tl_topic_vs_carla.py --duration 300 --carla-json $MAP_DIR/carla_tl.json
+```
+
+- `--duration` は実時間。Vissimの周期は94秒で、co-simは実時間より遅くなることがある。そのため、1周以上入るように300秒にした。
+
+| 項目 | 期待 |
+| ---- | ---- |
+| `publishers on the topic` | `1 ['/autoware_carla_interface']` |
+| `groups per message` | `{36: N}` |
+| `match (same tick)` | ほぼ全件。`mismatch` は0 |
+| `colors published` / `color transitions` | `RED`・`AMBER`・`GREEN` があり、`GREEN->AMBER`・`AMBER->RED`・`RED->GREEN` がある |
+| `intersections` | `12`。`messages with differing colors inside an intersection` がほぼ全件(主道路と従道路が別の色になる) |
+| `every light of an intersection green at once` | 出ない(交差点の全信号が同時に青にならない) |
+| 最後の行 | `OK` |
+
+目視(CARLAの画面。スペクテーターはEGOを追い、EGOは信号372の停止線の手前にいる):
+- 372が赤の間、372の進入路のVissimの車が、左折も右折も停止線の手前で止まる。前は、交差点の中の1つの進路にしかsignalHeadがなかった。
+- 止まる位置は、交差点の入口の手前(EGOの停止線とほぼ同じ位置)。
+- 372が赤の間、交差する主道路(373・374)の車が通る。
+
+#### B6.3 終了後(ブリッジをCtrl+Cで止めた後)
+
+```bash
+python3 tools/check_tl_topic_vs_carla.py --frozen-only
+```
+
+- 期待は `CARLA traffic lights: 36, frozen: 0` と `OK`。
+
+#### 結果(B6、2026-11-12、CARLA 0.9.15、Town01、Vissim 2026(Windows)、ブリッジ単体)
+
+- B6.1: `Traffic-light matching: 36 matched, 0 ambiguous, 0 too far, 0 overridden (map has 36 heads / 36 groups)`。
+  - B4で作り直した地図でも、マッチングの結果は変わらない。
+  - アダプタのログには、`25 signal(s)`(12交差点×SG 2個+歩行者用SG3)が出ていた。新しい `Town01.inpx` が使われている。
+- B6.2: `OK`。
+
+```text
+CARLA ticks seen          : 2291
+messages received         : 2288
+publishers on the topic   : 1 ['/autoware_carla_interface']
+groups per message        : {36: 2288}
+match (same tick)         : 2288 / 2288   1 tick behind: 0   mismatch: 0
+stamp vs CARLA elapsed    : offset 399.989 s, spread 0.000 s
+colors published (count)  : {'GREEN': 37248, 'RED': 41520, 'AMBER': 3600}
+color transitions         : {'GREEN->AMBER': 60, 'AMBER->RED': 60, 'RED->GREEN': 48}
+intersections             : 12, messages with differing colors inside an intersection: 2168 / 2288
+OK
+```
+
+  - 2288メッセージは、シミュレーション時間で約114秒にあたる。周期94秒の1周と少し。実時間300秒に対して約0.4倍で、これまでのVissim連携と同じ傾向。
+  - 交差点の中で色がそろったメッセージは120件。全赤(45〜47秒、92〜94秒)の時間と合う。12交差点はオフセット0なので、全赤も同時に来る。
+  - 「交差点の全信号が同時に青」は出なかった。
+- B6.3: `CARLA traffic lights: 36, frozen: 0`、`OK`。
+- 目視(Vissimの車が、372の赤で左折も右折も止まるか)は、報告を受けていない。B7の2で見る。
+- 1回目の起動で、connectが120秒でタイムアウトした。原因は、Vissim側でDriving Simulatorが無効になっていたことと、Vissimが複数起動していたこと(利用者の確認)。今回の変更とは関係しない。
+- B6.1を待つ間に、利用者が「Autowareが起動しない」と思ってブリッジを止めた。B6はブリッジだけを起動する手順で、Autoware本体はB7で起動する。手順書に書くときは、このことを明記する。
 
 ### B7: Autoware全体での実機確認
 
