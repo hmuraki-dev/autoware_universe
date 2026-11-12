@@ -324,3 +324,74 @@ def test_main_returns_error_on_id_collision(tmp_path):
     js.write_text(json.dumps({"traffic_lights": [_light("100", [_box(55.0, -6.0)], [_EAST_STOP])]}))
     assert tool.main([str(tmp_path / "lanelet2_map.osm"), "--from-json", str(js)]) == 1
     assert not (tmp_path / "lanelet2_map_with_tl.osm").exists()
+
+
+def test_collect_records_the_carla_group_of_each_light(monkeypatch):
+    class Loc:
+        def __init__(self, x, y, z=0.0):
+            self.x, self.y, self.z = x, y, z
+
+    class Light:
+        def __init__(self, actor_id, opendrive_id):
+            self.id = actor_id
+            self._odid = opendrive_id
+            self.group = []
+
+        def get_opendrive_id(self):
+            return self._odid
+
+        def get_location(self):
+            return Loc(1.0, 2.0)
+
+        def get_light_boxes(self):
+            return []
+
+        def get_stop_waypoints(self):
+            return []
+
+        def get_group_traffic_lights(self):
+            return self.group
+
+    lights = [Light(1, "10"), Light(2, "9"), Light(3, "20")]
+    lights[0].group = lights[1].group = [lights[0], lights[1]]
+    lights[2].group = [lights[2]]
+
+    class Actors(list):
+        def filter(self, _pattern):
+            return self
+
+    class World:
+        def get_actors(self):
+            return Actors(lights)
+
+        def get_settings(self):
+            return type("Settings", (), {"synchronous_mode": False})()
+
+        def get_map(self):
+            return type("Map", (), {"name": "Carla/Maps/TownX"})()
+
+    class Client:
+        def __init__(self, *_args):
+            pass
+
+        def set_timeout(self, _timeout):
+            pass
+
+        def get_world(self):
+            return World()
+
+    monkeypatch.setitem(sys.modules, "carla", type(sys)("carla"))
+    sys.modules["carla"].Client = Client
+    data = tool.collect_carla_traffic_lights("localhost", 2000, 1.0)
+    groups = {light["opendrive_id"]: light["group"] for light in data["traffic_lights"]}
+    assert groups == {"10": ["9", "10"], "9": ["9", "10"], "20": ["20"]}
+
+
+def test_group_field_does_not_change_the_map(tmp_path):
+    # The other tests use lights without "group" (files written before it existed); a light
+    # with "group" must give the same result.
+    plain = {"traffic_lights": [_light("360", [_box(55.0, -6.0)], [_EAST_STOP])]}
+    grouped = {"traffic_lights": [dict(plain["traffic_lights"][0], group=["360", "361"])]}
+    first = tool.add_traffic_lights(_load(tmp_path), plain).regulatory_elements
+    second = tool.add_traffic_lights(_load(tmp_path), grouped).regulatory_elements
+    assert first == second == [(360, "360", 100)]

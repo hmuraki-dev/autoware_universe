@@ -40,6 +40,9 @@ Usage (CARLA server running with the matching town loaded):
     python3 tools/carla_tl_to_lanelet2.py ~/autoware_map/Town01/lanelet2_map.osm
 Offline, from data saved earlier with --dump-json:
     python3 tools/carla_tl_to_lanelet2.py MAP.osm --from-json town01_tl.json
+The --dump-json file also lists, for every light, the OpenDRIVE ids of its CARLA group
+(get_group_traffic_lights(), i.e. its intersection) as "group". Files written before that
+field existed still load; only tools/check_vissim_lanelet2_tl_ids.py uses it.
 """
 
 import argparse
@@ -82,6 +85,12 @@ def collect_carla_traffic_lights(host, port, timeout):
             {
                 "opendrive_id": light.get_opendrive_id(),
                 "actor_id": light.id,
+                # The lights CARLA switches together with this one (one intersection). Used by
+                # tools/check_vissim_lanelet2_tl_ids.py; not needed to build the map.
+                "group": sorted(
+                    (other.get_opendrive_id() for other in light.get_group_traffic_lights()),
+                    key=_sort_key,
+                ),
                 "location": [
                     light.get_location().x,
                     light.get_location().y,

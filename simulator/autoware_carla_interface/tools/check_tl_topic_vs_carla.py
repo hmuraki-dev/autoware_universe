@@ -28,8 +28,15 @@ subtracting --group-id-offset (the lanelet2 maps made by carla_tl_to_lanelet2.py
 id + offset as the regulatory element id; without traffic_light.map_path the group id is the
 OpenDRIVE id itself).
 
+With --carla-json (the --dump-json output of tools/carla_tl_to_lanelet2.py, with "group") it
+also checks every message per CARLA intersection (docs/Vissim_CARLA_Autoware_信号設置_実装計画_v1.0.md,
+B6): NG if all lights of an intersection are green at once (crossing roads green together), and
+it reports how many messages show differing colors inside an intersection (expected once each
+intersection has its own Vissim signal controller with a main-road and a side-road group).
+
 Usage (ROS 2 sourced, Python with the carla package):
     python3 tools/check_tl_topic_vs_carla.py --duration 120
+    python3 tools/check_tl_topic_vs_carla.py --carla-json ~/autoware_map/Town01/carla_tl.json
     python3 tools/check_tl_topic_vs_carla.py --frozen-only   # only after the bridge has stopped
                                                              # (ticks CARLA once if needed)
 
@@ -38,6 +45,7 @@ Exit status: 0 if every check passed, 1 otherwise.
 
 import argparse
 import collections
+import json
 import os
 import sys
 import threading
@@ -62,6 +70,7 @@ from autoware_carla_interface.modules.traffic_light_publisher import (  # noqa: 
 
 TOPIC = "/perception/traffic_light_recognition/traffic_signals"
 COLOR_NAMES = {1: "RED", 2: "AMBER", 3: "GREEN", 4: "WHITE", 0: "UNKNOWN"}
+GREEN = 3
 STATUS_NAMES = {1: "SOLID_OFF", 2: "SOLID_ON", 3: "FLASHING", 0: "UNKNOWN"}
 
 
@@ -92,8 +101,11 @@ def check_frozen(world):
 class Recorder:
     """Keeps the CARLA states of the last few ticks and the topic comparison results."""
 
-    def __init__(self, lights):
+    def __init__(self, lights, intersections=None):
         self._lights = [(light.get_opendrive_id(), light) for light in lights]
+        self.intersections = intersections or []  # [[OpenDRIVE id, ...], ...]
+        self.all_green = collections.Counter()  # intersection -> messages with every light green
+        self.mixed_messages = 0  # messages with differing colors inside some intersection
         self._lock = threading.Lock()
         self.frames = collections.deque(maxlen=20)  # (frame, elapsed, {odid: (color, status)})
         self.tick_count = 0
@@ -146,6 +158,17 @@ class Recorder:
             self._last_colors[odid] = element.color
         latest = frames[-1]
         self.stamp_offsets.append(latest[1] - stamp)
+        mixed = False
+        for group in self.intersections:
+            colors = [published[odid][0] for odid in group if odid in published]
+            if len(colors) < 2:
+                continue
+            if all(color == GREEN for color in colors):
+                self.all_green["/".join(group)] += 1
+            if len(set(colors)) > 1:
+                mixed = True
+        if mixed:
+            self.mixed_messages += 1
 
         def diff(states):
             out = []
@@ -186,7 +209,8 @@ def run_compare(world, args):
     if not lights:
         print("No traffic lights in the CARLA world (has the world been ticked yet?).")
         return False
-    recorder = Recorder(lights)
+    intersections = load_intersections(args.carla_json) if args.carla_json else []
+    recorder = Recorder(lights, intersections)
     callback_id = world.on_tick(recorder.on_tick)
 
     rclpy.init()
@@ -250,7 +274,31 @@ def run_compare(world, args):
         )
     print(f"colors published (count)  : {dict(recorder.colors_seen)}")
     print(f"color transitions         : {dict(recorder.transitions)}")
+    if args.carla_json:
+        if not intersections:
+            print("NG: --carla-json has no 'group' (re-dump it with carla_tl_to_lanelet2.py)")
+            ok = False
+        else:
+            print(
+                f"intersections             : {len(intersections)}, messages with differing "
+                f"colors inside an intersection: {recorder.mixed_messages} / {recorder.messages}"
+            )
+            if recorder.all_green:
+                print(
+                    "NG: every light of an intersection green at once: "
+                    f"{dict(recorder.all_green)}"
+                )
+                ok = False
     return ok
+
+
+def load_intersections(json_path):
+    """Return the CARLA intersections ("group" of each light) of a --dump-json file."""
+    with open(os.path.expanduser(json_path), encoding="utf-8") as f:
+        lights = json.load(f)["traffic_lights"]
+    if not all("group" in light for light in lights):
+        return []
+    return sorted({tuple(str(odid) for odid in light["group"]) for light in lights})
 
 
 def main():
@@ -259,6 +307,10 @@ def main():
     parser.add_argument("--carla-port", type=int, default=2000)
     parser.add_argument("--duration", type=float, default=60.0, help="recording time (s, wall clock)")
     parser.add_argument("--group-id-offset", type=int, default=0)
+    parser.add_argument(
+        "--carla-json",
+        help="carla_tl_to_lanelet2.py --dump-json output with 'group': check each intersection",
+    )
     parser.add_argument(
         "--frozen-only", action="store_true", help="only report frozen CARLA lights and exit"
     )
