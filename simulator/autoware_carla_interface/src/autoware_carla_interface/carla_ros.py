@@ -14,7 +14,11 @@
 
 import math
 import threading
+import xml.etree.ElementTree as ET
 
+from autoware_perception_msgs.msg import TrafficLightElement
+from autoware_perception_msgs.msg import TrafficLightGroup
+from autoware_perception_msgs.msg import TrafficLightGroupArray
 from autoware_vehicle_msgs.msg import ControlModeReport
 from autoware_vehicle_msgs.msg import GearReport
 from autoware_vehicle_msgs.msg import HazardLightsCommand
@@ -44,12 +48,18 @@ from .modules import ROSPublisherManager
 from .modules import SensorKitLoader
 from .modules import SensorPublishWorker
 from .modules import SensorRegistry
+from .modules.carla_data_provider import CarlaDataProvider
 from .modules.carla_data_provider import GameTime
 from .modules.carla_utils import carla_location_to_ros_point
 from .modules.carla_utils import carla_rotation_to_ros_quaternion
 from .modules.carla_utils import create_cloud
 from .modules.carla_utils import ros_pose_to_carla_transform
 from .modules.carla_wrapper import SensorInterface
+from .modules.traffic_light_matcher import load_map_traffic_lights
+from .modules.traffic_light_publisher import build_group_states
+from .modules.traffic_light_publisher import carla_head_map_point
+from .modules.traffic_light_publisher import resolution_report
+from .modules.traffic_light_publisher import resolve_traffic_light_groups
 
 
 class carla_ros2_interface(object):
@@ -112,6 +122,19 @@ class carla_ros2_interface(object):
             "ego_spawn_front_margin": (rclpy.Parameter.Type.DOUBLE, 20.0),
             "ego_spawn_rear_margin": (rclpy.Parameter.Type.DOUBLE, 20.0),
             "ego_spawn_wait_timeout": (rclpy.Parameter.Type.INTEGER, 60),
+            # CARLA traffic-light state publishing (see
+            # docs/Vissim_CARLA_Autoware_信号状態publish_実装計画_v1.0.md, ported from the
+            # SUMO co-simulation branch feature/sumo_co-sim). Names/defaults
+            # mirror upstream; kept under "traffic_light." so they stay together in
+            # `ros2 param list`. traffic_light.publish=False (default) changes nothing.
+            "traffic_light.publish": (rclpy.Parameter.Type.BOOL, False),
+            "traffic_light.force_green": (rclpy.Parameter.Type.BOOL, False),
+            # Lanelet2 .osm for position matching; empty = use the OpenDRIVE id directly.
+            "traffic_light.map_path": (rclpy.Parameter.Type.STRING, ""),
+            "traffic_light.match_distance": (rclpy.Parameter.Type.DOUBLE, 5.0),
+            "traffic_light.match_ratio": (rclpy.Parameter.Type.DOUBLE, 0.6),
+            # "opendrive_id:group_id[|group_id...],..." overrides, taking precedence.
+            "traffic_light.id_map": (rclpy.Parameter.Type.STRING, ""),
         }
 
         self.param_values = {}
@@ -163,6 +186,12 @@ class carla_ros2_interface(object):
         self.pub_hazard_lights_state = self.ros2_node.create_publisher(
             HazardLightsReport, "/vehicle/status/hazard_lights_status", 1
         )
+        if self.param_values["traffic_light.publish"]:
+            self.pub_traffic_signals = self.ros2_node.create_publisher(
+                TrafficLightGroupArray,
+                "/perception/traffic_light_recognition/traffic_signals",
+                1,
+            )
 
     def _initialize_subscriptions(self):
         """Initialize all ROS 2 subscriptions."""
@@ -336,6 +365,13 @@ class carla_ros2_interface(object):
         self.current_control = carla.VehicleControl()
         self.current_turn_indicator = TurnIndicatorsCommand.DISABLE
         self.current_hazard_lights = HazardLightsCommand.DISABLE
+
+        # CARLA traffic-light publishing (only used when traffic_light.publish is set).
+        # The actors and their resolved group ids are filled on the first publishing
+        # tick; both are only touched from the main loop thread (run_step).
+        self.pub_traffic_signals = None
+        self._traffic_light_actors = None
+        self._traffic_light_actor_groups = None
 
         # Thread synchronization (protects: current_control, ego_actor, timestamp, physics_control)
         self._state_lock = threading.Lock()
@@ -929,9 +965,117 @@ class carla_ros2_interface(object):
         # Publish ego vehicle status
         self.ego_status()
 
+        # Publish CARLA traffic-light states (no-op unless traffic_light.publish)
+        self._publish_traffic_lights()
+
         # Thread-safe read of current control command
         with self._state_lock:
             return self.current_control
+
+    @staticmethod
+    def _actor_opendrive_id(actor):
+        try:
+            return actor.get_opendrive_id()
+        except RuntimeError:
+            return None
+
+    @staticmethod
+    def _carla_light_map_point(actor):
+        """Head position of a CARLA traffic light in the Autoware map frame."""
+        try:
+            boxes = actor.get_light_boxes()
+        except RuntimeError:
+            boxes = []
+        location = actor.get_location()
+        # No map origin offset: the SUMO plan T1 (feature/sumo_co-sim) confirmed map = (carla_x, -carla_y) for Town01,
+        # the same conversion pose() uses (carla_location_to_ros_point).
+        return carla_head_map_point(
+            [(box.location.x, box.location.y) for box in boxes], (location.x, location.y)
+        )
+
+    def _resolve_traffic_light_groups(self):
+        """Resolve each CARLA traffic light to its Autoware group id(s), once.
+
+        Traffic lights are static actors, so the mapping is built on the first
+        publishing tick and reused. The resolution order (id_map, position matching,
+        OpenDRIVE id) lives in modules/traffic_light_publisher.py.
+        """
+        world = CarlaDataProvider.get_world()
+        if world is None:
+            return
+        self._traffic_light_actors = list(world.get_actors().filter("traffic.traffic_light"))
+        self._traffic_light_actor_groups = {}
+        if not self._traffic_light_actors:
+            self.logger.warning("Traffic lights: the CARLA world has no traffic lights")
+            return
+
+        map_path = str(self.param_values["traffic_light.map_path"] or "").strip()
+        map_lights = None
+        if map_path:
+            try:
+                map_lights = load_map_traffic_lights(map_path)
+            except (OSError, ET.ParseError) as error:
+                # Publishing guessed ids would be worse than publishing nothing.
+                self.logger.error(
+                    f"Traffic lights: cannot read traffic_light.map_path '{map_path}' "
+                    f"({error}); no traffic-light states will be published"
+                )
+                return
+        lights = [
+            (actor.id, self._actor_opendrive_id(actor), self._carla_light_map_point(actor))
+            for actor in self._traffic_light_actors
+        ]
+        resolution = resolve_traffic_light_groups(
+            lights,
+            id_map=self.param_values["traffic_light.id_map"],
+            map_lights=map_lights,
+            match_distance=self.param_values["traffic_light.match_distance"],
+            match_ratio=self.param_values["traffic_light.match_ratio"],
+            on_invalid=lambda message: self.logger.warning(f"traffic_light.id_map: {message}"),
+        )
+        # One call site per severity: an rclpy log call site refuses to change severity
+        # between calls ("Logger severity cannot be changed between calls").
+        for level, message in resolution_report(resolution, map_lights):
+            if level == "warning":
+                self.logger.warning(message)
+            else:
+                self.logger.info(message)
+        self._traffic_light_actor_groups = resolution.assignments
+
+    def _publish_traffic_lights(self):
+        """Publish CARLA traffic-light states as a TrafficLightGroupArray.
+
+        No-op unless traffic_light.publish is enabled (the publisher only exists then).
+        Each resolved group gets one circular element carrying the current CARLA state.
+        With traffic_light.force_green the lights are frozen green in CARLA, so green
+        is published for all of them.
+        """
+        if self.pub_traffic_signals is None:
+            return
+        if self._traffic_light_actor_groups is None:
+            self._resolve_traffic_light_groups()
+        if not self._traffic_light_actor_groups:
+            return
+
+        actor_states = {
+            actor.id: actor.state
+            for actor in self._traffic_light_actors
+            if actor.id in self._traffic_light_actor_groups
+        }
+        msg = TrafficLightGroupArray()
+        msg.stamp = self.get_msg_header(frame_id="map").stamp
+        group_states = build_group_states(self._traffic_light_actor_groups, actor_states)
+        for group_id, (color, status) in group_states.items():
+            element = TrafficLightElement()
+            element.color = color
+            element.shape = TrafficLightElement.CIRCLE
+            element.status = status
+            element.confidence = 1.0
+            group = TrafficLightGroup()
+            group.traffic_light_group_id = group_id
+            group.elements.append(element)
+            msg.traffic_light_groups.append(group)
+        self.pub_traffic_signals.publish(msg)
 
     def shutdown(self):
         """
