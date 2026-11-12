@@ -147,7 +147,7 @@ python3 tools/check_vissim_lanelet2_tl_ids.py SIGNAL_MAPPING.json MAP_with_tl.os
 | --- | -------------------------------------------------------------- | ----------------------- | ---- |
 | B0  | 事前確認(使う `.inpx`、交差点のまとまり、signalHead 37・38)    | Windows・Linux・CARLA   | 完了(2026-11-12) |
 | B1  | 照合ツール `check_vissim_lanelet2_tl_ids.py` とテスト         | autoware_universe       | 完了(2026-11-12) |
-| B2  | SCの雛形(GUI)と分割スクリプト `split_signal_controllers.py`    | Windows GUI・CARLA      | スクリプトと試作ファイルまで完了。GUIでの確認待ち |
+| B2  | SCの雛形(GUI)と分割スクリプト `split_signal_controllers.py`    | Windows GUI・CARLA      | 完了(2026-11-12。B2.4の歩行者用信号を含む) |
 | B3  | `signal_mapping.json` の作り直しと照合                        | CARLA・autoware_universe | 未着手 |
 | B4  | 停止位置のずれを測って直す                                    | CARLA・Windows GUI      | 未着手 |
 | B5  | Vissim単体での確認(交差点ごとの切り替わり、投入待ち)          | Windows                 | 未着手 |
@@ -353,6 +353,36 @@ python3 util/split_signal_controllers.py examples/Town01/Town01.inpx \
   - CARLAには歩行者用の信号がない。SG3は `signal_mapping.json` に入らない(B3で直す生成ツールは、歩行者用を除く)。
   - 同期処理はマッピングにある(SC, SG)だけを読むので、SG3の状態は使われない。
   - 照合ツールは、歩行者用signalHeadについて「同じ交差点のSC(5)にあるか」だけを見るので、SG3でもOK。
+
+結果(B2.4、2026-11-12): 利用者がVisSigで設定し、`trial/Town01_sc12_94s_ped.inpx` として保存した。
+
+- SC 5に、SG3(`Red-Green-Flashing Green`)を足した。最小時間は、赤1秒・青0秒・青点滅4秒。
+  - 青の最小時間を5秒のままにすると、interstage 2で「minimum green time violated」になった。VisSigは、interstageの終わりに始まる青の最小時間を、interstageの中で数えるため。SG1も0なので、そろえた。
+- 中間時間の行列で、SG1とSG3の組を空欄にした(同時に青になる、交差しない組)。
+  - 0を入れたままだと「intergreen violated」になる。0も「交差する」という意味になるため。
+  - SG2とSG3の組は、0のまま(交差する)。
+- interstage 1(Stage 1→2)は、13秒にした。内訳は次のとおり。
+  - SG1: 8秒まで青、黄3秒、11秒から赤
+  - SG2: 13秒から青
+  - SG3: 0〜4秒が青点滅、4秒から赤
+- interstage 2では、SG3を5秒から青にした(SG1と同時)。
+- 信号プログラムでは、interstage 1の開始を34秒にした(周期94秒、interstage 2は89秒のまま)。
+- 結果として、SC 5は次の時間で動く。ほかの11個のSCは変えていない。
+
+  | SG | 青 | 黄・青点滅 | 赤 |
+  | -- | -- | ---------- | -- |
+  | SG1(主道路) | 0〜42秒 | 黄42〜45秒 | 45〜94秒 |
+  | SG3(歩行者) | 0〜34秒 | 青点滅34〜38秒 | 38〜94秒 |
+  | SG2(従道路・372) | 47〜89秒 | 黄89〜92秒 | 92〜47秒 |
+
+- signalHead 37・38を `5 3` にした。
+- 投入量は、車両7か所を100台/h、歩行者2か所を100人/hにした(利用者の判断)。
+- 保存したファイルとSC 12個版(`Town01_sc12_94s.inpx`)の差分は、上のSC 5、signalHead 37・38、投入量、`drivSimActive`(false)だけだった。
+  ほかの11個のSCの `intSupplyData` は同じだった。
+
+**B2の成果物**: `drivSimActive` をtrueに戻したものを、`examples/Town01/Town01.inpx` に置いた。
+- 照合ツールでは、仮のマッピング(歩行者用を除き、位置で作ったもの)で **OK**。SC 12個・SG 24個・36 landmark、歩行者用の37・38はSC 5のSG3。
+- `signal_mapping.json` は、まだ前の構成(SC 1)のまま。B3で作り直すまで、co-simでの信号同期は正しく動かない。
 
 **B2.2 スクリプト(CARLAリポジトリ `Co-Simulation/PTV-Vissim/util/split_signal_controllers.py`)**
 
