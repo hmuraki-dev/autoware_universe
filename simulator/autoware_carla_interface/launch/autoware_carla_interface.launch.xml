@@ -42,6 +42,25 @@
     <arg name="ego_spawn_front_margin" default="20.0" description="Minimum gap (m) between the EGO's front and the rear of the vehicle ahead of its spawn point (use_vissim with warmup only)"/>
     <arg name="ego_spawn_rear_margin" default="20.0" description="Minimum gap (m) between the EGO's rear and the front of the vehicle behind its spawn point (use_vissim with warmup only)"/>
     <arg name="ego_spawn_wait_timeout" default="60" description="Give up (fail to start the test) if no safe gap appears within this many seconds after the warmup (use_vissim with warmup only)"/>
+    <!--
+      CARLA traffic-light state publishing (see docs/Vissim_CARLA_Autoware_信号状態publish_実装計画_v1.0.md).
+      Names/defaults mirror upstream. traffic_light.publish=false (default) changes nothing.
+      traffic_light.force_green is refused together with use_vissim and sync_traffic_lights.
+    -->
+    <arg name="traffic_light.publish" default="false" description="Publish CARLA traffic-light states on /perception/traffic_light_recognition/traffic_signals"/>
+    <arg name="traffic_light.force_green" default="false" description="Set every CARLA traffic light to green and freeze it there at startup (for camera-less closed-loop runs; not with use_vissim and sync_traffic_lights)"/>
+    <arg
+      name="traffic_light.map_path"
+      default=""
+      description="Path to the lanelet2 map (.osm); when set, CARLA traffic lights are matched to it by position. Empty uses the OpenDRIVE signal id as the group id"
+    />
+    <arg name="traffic_light.match_distance" default="5.0" description="Max head-to-head distance (m) accepted when matching a CARLA traffic light to a lanelet2 head"/>
+    <arg name="traffic_light.match_ratio" default="0.6" description="Ambiguity threshold: reject a match when nearest &gt; ratio * second-nearest (different signal). Lower is stricter"/>
+    <arg
+      name="traffic_light.id_map"
+      default=""
+      description="Optional override 'opendrive_id:group_id[|group_id...],...' that pins a CARLA signal id to one or more Autoware group ids, taking precedence over position matching"
+    />
 
     <!-- CARLA spectator camera auto-follow (see scripts/spectator_follow) -->
     <arg name="spectator_follow" default="False" description="Automatically lock the CARLA spectator camera onto the ego vehicle as soon as it spawns"/>
@@ -102,6 +121,13 @@
       <param name="ego_spawn_front_margin" value="$(var ego_spawn_front_margin)"/>
       <param name="ego_spawn_rear_margin" value="$(var ego_spawn_rear_margin)"/>
       <param name="ego_spawn_wait_timeout" value="$(var ego_spawn_wait_timeout)"/>
+      <param name="traffic_light.publish" value="$(var traffic_light.publish)"/>
+      <param name="traffic_light.force_green" value="$(var traffic_light.force_green)"/>
+      <param name="traffic_light.map_path" value="$(var traffic_light.map_path)"/>
+      <!-- float() so that an integer argument (e.g. traffic_light.match_distance:=5) still matches the DOUBLE parameter type -->
+      <param name="traffic_light.match_distance" value="$(eval &quot;float('$(var traffic_light.match_distance)')&quot;)"/>
+      <param name="traffic_light.match_ratio" value="$(eval &quot;float('$(var traffic_light.match_ratio)')&quot;)"/>
+      <param name="traffic_light.id_map" value="$(var traffic_light.id_map)"/>
     </node>
     <node pkg="autoware_carla_interface" exec="autoware_carla_interface" name="autoware_carla_interface" output="screen" if="$(var use_vissim)" on_exit="shutdown">
       <param name="host" value="$(var host)"/>
@@ -131,6 +157,13 @@
       <param name="ego_spawn_front_margin" value="$(var ego_spawn_front_margin)"/>
       <param name="ego_spawn_rear_margin" value="$(var ego_spawn_rear_margin)"/>
       <param name="ego_spawn_wait_timeout" value="$(var ego_spawn_wait_timeout)"/>
+      <param name="traffic_light.publish" value="$(var traffic_light.publish)"/>
+      <param name="traffic_light.force_green" value="$(var traffic_light.force_green)"/>
+      <param name="traffic_light.map_path" value="$(var traffic_light.map_path)"/>
+      <!-- float() so that an integer argument (e.g. traffic_light.match_distance:=5) still matches the DOUBLE parameter type -->
+      <param name="traffic_light.match_distance" value="$(eval &quot;float('$(var traffic_light.match_distance)')&quot;)"/>
+      <param name="traffic_light.match_ratio" value="$(eval &quot;float('$(var traffic_light.match_ratio)')&quot;)"/>
+      <param name="traffic_light.id_map" value="$(var traffic_light.id_map)"/>
     </node>
 
     <!-- Keeps the CARLA spectator (free) camera locked onto the ego vehicle (role_name=
@@ -175,20 +208,22 @@
     <!-- Relay CAM_FRONT to traffic_light namespace for traffic light recognition.
          These relays subscribe the raw image, which forces the interface to
          convert and publish every CAM_FRONT frame; skip them in light-weight
-         mode like the republish nodes below. -->
+         mode like the republish nodes below, and with traffic_light.publish
+         (the CARLA states replace camera-based recognition, see
+         docs/Vissim_CARLA_Autoware_信号状態publish_実装計画_v1.0.md V6). -->
     <node
       pkg="topic_tools"
       exec="relay"
       name="traffic_light_image_relay"
       args="/sensing/camera/CAM_FRONT/image_raw /sensing/camera/traffic_light/image_raw"
-      unless="$(var use_light_weight_sensor_mapping)"
+      if="$(eval &quot;'$(var use_light_weight_sensor_mapping)'.lower() != 'true' and '$(var traffic_light.publish)'.lower() != 'true'&quot;)"
     />
     <node
       pkg="topic_tools"
       exec="relay"
       name="traffic_light_camera_info_relay"
       args="/sensing/camera/CAM_FRONT/camera_info /sensing/camera/traffic_light/camera_info"
-      unless="$(var use_light_weight_sensor_mapping)"
+      if="$(eval &quot;'$(var use_light_weight_sensor_mapping)'.lower() != 'true' and '$(var traffic_light.publish)'.lower() != 'true'&quot;)"
     />
 
     <!-- Image transport nodes to create compressed versions for all cameras -->
@@ -240,7 +275,7 @@
       exec="republish"
       name="traffic_light_republish"
       args="raw compressed --ros-args -r in:=/sensing/camera/traffic_light/image_raw -r out/compressed:=/sensing/camera/traffic_light/image_raw/compressed"
-      unless="$(var use_light_weight_sensor_mapping)"
+      if="$(eval &quot;'$(var use_light_weight_sensor_mapping)'.lower() != 'true' and '$(var traffic_light.publish)'.lower() != 'true'&quot;)"
     />
 
     <!-- Multi-camera combiner for RViz visualization -->
