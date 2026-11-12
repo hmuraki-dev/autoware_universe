@@ -256,6 +256,39 @@ def test_stop_line_forward_offset_moves_the_line_along_the_lane(tmp_path):
     ]
 
 
+def test_stop_line_before_junction_puts_every_line_at_the_same_distance(tmp_path):
+    # Lanelet 100 (east) ends at x = 100, lanelet 200 (west) at x = 0. With D = 1 the lines go
+    # to x = 99 (east, CARLA stop at x = 50) and x = 1 (west, CARLA stop at x = 50), whatever
+    # CARLA's stop positions are.
+    lanelet_map = _load(tmp_path)
+    data = {
+        "traffic_lights": [
+            _light("360", [_box(55.0, -6.0)], [_EAST_STOP]),
+            _light("361", [_box(45.0, 6.0)], [_WEST_STOP], actor_id=2),
+        ]
+    }
+    report = tool.add_traffic_lights(lanelet_map, data, stop_line_before_junction=1.0)
+    assert report.regulatory_elements == [(360, "360", 100), (361, "361", 200)]
+    assert report.stop_line_offsets == [
+        ("360", 0, pytest.approx(49.0)),
+        ("361", 0, pytest.approx(49.0)),
+    ]
+    east = _members(_relation(lanelet_map.root, 360))[1][1]
+    west = _members(_relation(lanelet_map.root, 361))[1][1]
+    assert [p[0] for p in _way_points(lanelet_map.root, east)] == [pytest.approx(99.0)] * 2
+    assert [p[0] for p in _way_points(lanelet_map.root, west)] == [pytest.approx(1.0)] * 2
+
+
+def test_stop_line_before_junction_and_forward_offset_are_exclusive(tmp_path):
+    path = tmp_path / "lanelet2_map.osm"
+    path.write_text(_MAP)
+    with pytest.raises(SystemExit):
+        tool.main(
+            [str(path), "--from-json", "x.json", "--stop-line-forward-offset", "6",
+             "--stop-line-before-junction", "1"]
+        )
+
+
 def test_stop_line_moved_out_of_its_lanelet_is_not_added(tmp_path):
     # Lanelet 100 ends at x = 100; 60 m forward from x = 50 leaves it.
     lanelet_map = _load(tmp_path)

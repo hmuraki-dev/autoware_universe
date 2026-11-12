@@ -149,7 +149,7 @@ python3 tools/check_vissim_lanelet2_tl_ids.py SIGNAL_MAPPING.json MAP_with_tl.os
 | B1  | 照合ツール `check_vissim_lanelet2_tl_ids.py` とテスト         | autoware_universe       | 完了(2026-11-12) |
 | B2  | SCの雛形(GUI)と分割スクリプト `split_signal_controllers.py`    | Windows GUI・CARLA      | 完了(2026-11-12。B2.4の歩行者用信号を含む) |
 | B3  | `signal_mapping.json` の作り直しと照合                        | CARLA・autoware_universe | 完了(2026-11-12) |
-| B4  | 停止位置のずれを測って直す                                    | CARLA・Windows GUI      | 未着手 |
+| B4  | 停止位置のずれを測って直す                                    | CARLA・Windows GUI      | 完了(2026-11-12。スクリプトで直した。GUIでの確認はB5) |
 | B5  | Vissim単体での確認(交差点ごとの切り替わり、投入待ち)          | Windows                 | 未着手 |
 | B6  | ブリッジ単体での実機確認(Autowareなし)                        | Linux + Windows         | 未着手 |
 | B7  | Autoware全体での実機確認(機能Aで残った黄の確認を含む)         | Linux + Windows         | 未着手 |
@@ -498,6 +498,40 @@ python3 util/split_signal_controllers.py IN.inpx --carla-json ~/autoware_map/Tow
 4. 表(変える前、変えた後)を、計画書のB4の結果に残す。
 
 完了条件: 全signalHeadがおおむね目安の範囲に入っている。外れたものは理由を書く。
+
+#### 結果(B4、2026-11-12)
+
+利用者の要望は、「EGOもVissimの車も、停止線から異常に離れて止まらないようにする」こと。基準は、**交差点の入口**(Lanelet2の進入路laneletの終わり)にした。
+
+**測った結果(直す前、交差点の入口からの距離。マイナスは入口の手前)**:
+- EGOの停止線(Lanelet2、CARLAの停止位置+6 m)は、-0.96〜-7.08 m。366(-7.08)・367(-6.55)・387(-6.25)は、6 m以上手前で止まる。
+- Vissimの車用signalHeadは、-1.57〜**+3.76 m**。18個が交差点の中にあった。
+- **signalHeadの多くが、交差点の中の1つの進路のlinkの上にあった**。そのため、同じ進入路からほかの進路へ行く車は、赤でも止まらなかった。
+  - 進入路のlinkから2つの進路に分かれるのに、片方にしかsignalHeadがない進入路は8本あった(361・372・377・384・385・387・390・391)。
+  - V8で見た、EGOの前をふさいだ左折のバスも、これで赤を通った可能性がある。
+- 368のsignalHead 9は、交差点から**出ていく側**のconnector(link 191→50)の上にあった。368の進入路(link 49)の車は、信号で止まっていなかった。
+
+**直し方**:
+1. Lanelet2の停止線: `tools/carla_tl_to_lanelet2.py` に `--stop-line-before-junction D` を足した。
+   - 停止線を、信号ごとに「laneletの終わりからD m手前」に置く。`--stop-line-forward-offset` のように全信号を同じ量だけずらす方法とは違う。
+   - D=1.0で `~/autoware_map/Town01/lanelet2_map_with_tl.osm` を作り直した。前の地図(offset 6)は `lanelet2_map_with_tl.osm.bak_offset6` に残してある。
+   - CARLAの停止位置から前へずらした量は、5.96〜12.08 mになった。WARNINGはない。
+   - テストを2件足した(`test_carla_tl_to_lanelet2.py`)。
+2. Vissimのsignalheadの位置: CARLAリポジトリに `util/align_signal_heads.py` を作った。
+   - 車用signalHeadを、そのCARLA信号のLanelet2の停止線の中点に最も近い、同じ向きの**進入路のlink**の上に移す。connectorと歩行者エリアのlinkは除く。
+   - そのlinkから出るconnectorの開始位置より、`--connector-margin`(0.2 m)手前に収める。
+     - これを入れたのは、366で、停止線(68.63 m)が、connectorの開始位置(68.60 m)より先だったため。
+   - 変えるのはsignalHeadの `lane` と `pos` だけ(文字列のまま置き換え、CRLFは変えない)。
+   - テストは `util/align_signal_heads_test.py`。
+
+**直した後**:
+- 36個とも、進入路のlinkに移り、その進入路の全進路(connector 2本)の手前にある。横ずれはどれも0.00 m。
+- 照合ツール(`--report-stop-offset --stop-offset-range -0.5 0.5`)の結果は **OK**。
+  - signalHeadとLanelet2の停止線の距離は、-0.23〜0.00 m。0でないのは、connectorの手前に収めた6個(366:-0.23、ほかは-0.09以下)だけ。
+- `signal_mapping.json` は作り直しても変わらなかった。
+- 想定する停止位置は、EGOもVissimの車も、前端が交差点の入口の約1 m手前(EGOは停止線の手前0.5 m前後。V8の実績)。
+- 停止線の位置が変わったので、起動手順書2.7の地図の作り方(`--stop-line-forward-offset 6`)は、B8で `--stop-line-before-junction 1.0` に書き換える。
+- 実機(Vissim GUI、co-sim)での確認は、B5〜B7で行う。
 
 ### B5: Vissim単体での確認(Windows)
 
