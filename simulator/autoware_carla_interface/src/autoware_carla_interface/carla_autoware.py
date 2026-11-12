@@ -156,12 +156,20 @@ class InitializeInterface(object):
         self.vissim_sim = None
         self.vissim_sync = None
 
-        self._check_vissim_traffic_manager_exclusivity()
-        # The warmup parameters are checked first: the period check below adds the warmup time
-        # and the spawn wait timeout to the period written into the Vissim network file.
-        self._check_vissim_warmup_params()
-        self._check_vissim_sim_period_params()
-        self._check_traffic_light_params()
+        try:
+            self._check_vissim_traffic_manager_exclusivity()
+            # The warmup parameters are checked first: the period check below adds the warmup
+            # time and the spawn wait timeout to the period written into the Vissim network file.
+            self._check_vissim_warmup_params()
+            self._check_vissim_sim_period_params()
+            self._check_traffic_light_params()
+        except ValueError:
+            # carla_ros2_interface has already started its ROS spin thread, which is not a
+            # daemon thread: without shutting it down, the process would never exit after the
+            # error (and on_exit="shutdown" would never stop the launch). Found in docs/
+            # Vissim_CARLA_Autoware_信号状態publish_実装計画_v1.0.md V7.4.
+            self.interface.shutdown()
+            raise
 
     def _check_traffic_light_params(self):
         """
@@ -830,7 +838,14 @@ def main():
     # immediately written stderr logs (logging / rclpy). Flush stdout at every newline instead.
     sys.stdout.reconfigure(line_buffering=True)
 
-    carla_bridge = InitializeInterface()
+    try:
+        carla_bridge = InitializeInterface()
+    except ValueError as e:
+        # Invalid launch parameter combination (startup checks in InitializeInterface.__init__,
+        # which has already shut the ROS interface down). Report it as one line instead of a
+        # traceback, so the cause is easy to spot in the launch output.
+        print(f"Error: invalid parameters: {e}", flush=True)
+        return 1
     carla_bridge.load_world()
 
     # Register signal handlers for graceful shutdown
