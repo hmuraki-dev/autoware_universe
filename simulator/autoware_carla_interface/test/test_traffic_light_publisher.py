@@ -266,25 +266,32 @@ def test_invalid_params_are_rejected(map_path, distance, ratio, message):
         tlp.validate_traffic_light_params(True, map_path, distance, ratio)
 
 
-@pytest.mark.parametrize("tls_manager", ["sumo", "carla"])
-def test_force_green_is_refused_with_sumo_synchronized_traffic_lights(tls_manager):
+def test_force_green_is_refused_with_vissim_synchronized_traffic_lights():
     with pytest.raises(ValueError, match="force_green"):
         tlp.validate_traffic_light_params(
-            False, "", 5.0, 0.6, force_green=True, use_sumo=True, tls_manager=tls_manager
+            False, "", 5.0, 0.6, force_green=True, use_vissim=True, sync_traffic_lights=True
         )
 
 
 @pytest.mark.parametrize(
-    "use_sumo, tls_manager",
-    [(True, "none"), (False, "sumo"), (False, "carla"), (False, "none")],
+    "use_vissim, sync_traffic_lights",
+    [(True, False), (False, True), (False, False)],
 )
-def test_force_green_is_accepted_without_traffic_light_sync(use_sumo, tls_manager):
-    # tls_manager only matters with use_sumo; without SUMO the CARLA lights are alone.
+def test_force_green_is_accepted_without_traffic_light_sync(use_vissim, sync_traffic_lights):
+    # sync_traffic_lights only matters with use_vissim; without Vissim the CARLA lights are alone.
     tlp.validate_traffic_light_params(
-        True, "", 5.0, 0.6, force_green=True, use_sumo=use_sumo, tls_manager=tls_manager
+        True,
+        "",
+        5.0,
+        0.6,
+        force_green=True,
+        use_vissim=use_vissim,
+        sync_traffic_lights=sync_traffic_lights,
     )
 
 
-def test_sumo_tls_manager_is_fine_without_force_green():
-    # Publishing the SUMO-driven CARLA states is the main co-simulation use case.
-    tlp.validate_traffic_light_params(True, "", 5.0, 0.6, use_sumo=True, tls_manager="sumo")
+def test_vissim_traffic_light_sync_is_fine_without_force_green():
+    # Publishing the Vissim-driven CARLA states is the main co-simulation use case.
+    tlp.validate_traffic_light_params(
+        True, "", 5.0, 0.6, use_vissim=True, sync_traffic_lights=True
+    )

@@ -90,31 +90,29 @@ def carla_head_map_point(light_box_locations, fallback_location, origin_x=0.0, o
     return (x + origin_x, -y + origin_y)
 
 
-# tls_manager values with which traffic_light.force_green is refused: with 'sumo', SUMO
-# keeps overwriting the CARLA lights every step; with 'carla', the frozen all-green CARLA
-# lights would be copied into SUMO and let SUMO traffic cross intersections head-on.
-_TLS_MANAGERS_WITHOUT_FORCE_GREEN = ("sumo", "carla")
-
-
 def validate_traffic_light_params(
     publish,
     map_path,
     match_distance,
     match_ratio,
     force_green=False,
-    use_sumo=False,
-    tls_manager="none",
+    use_vissim=False,
+    sync_traffic_lights=False,
 ):
     """Raise ``ValueError`` if the traffic_light.* parameters cannot work.
 
     Checked at startup so a typo fails the launch instead of silently publishing
     nothing. With ``publish`` and ``force_green`` False (default) every value is accepted.
+
+    ``force_green`` is refused together with ``use_vissim`` and ``sync_traffic_lights``:
+    Vissim then overwrites the mapped CARLA lights every tick, so they cannot be held green
+    (see docs/Vissim_CARLA_Autoware_信号状態publish_実装計画_v1.0.md, section 2).
     """
-    if force_green and use_sumo and tls_manager in _TLS_MANAGERS_WITHOUT_FORCE_GREEN:
+    if force_green and use_vissim and sync_traffic_lights:
         raise ValueError(
-            f"traffic_light.force_green cannot be used with use_sumo and "
-            f"tls_manager={tls_manager!r}: the traffic lights are synchronized between SUMO "
-            f"and CARLA. Use tls_manager=none, or disable traffic_light.force_green."
+            "traffic_light.force_green cannot be used with use_vissim and "
+            "sync_traffic_lights: Vissim overwrites the synchronized CARLA traffic lights "
+            "every tick. Use sync_traffic_lights:=false, or disable traffic_light.force_green."
         )
     if not publish:
         return
