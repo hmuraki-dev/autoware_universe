@@ -132,8 +132,12 @@ python3 config.py --map Town01
 
 ```bash
 cd ~/CARLA/Co-Simulation/PTV-Vissim/util
-python3 generate_signal_mapping.py ../examples/Town01/Town01.inpx
+python3 generate_signal_mapping.py ../examples/Town01/Town01.inpx   # ← 生成物(既定の出力先 ../data/signal_mapping.json)
 ```
+
+> 📄 **生成物:** `~/CARLA/Co-Simulation/PTV-Vissim/data/signal_mapping.json`(`--output`で変えられる)。
+> これを`~/autoware.1.9.0/src/universe/autoware_universe/simulator/autoware_carla_interface/src/autoware_carla_interface/vissim_integration/data/signal_mapping.json`にもコピーする(上の注意)。
+
 | オプション | 説明 | 省略可/不可 | デフォルト値 |
 | --- | --- | --- | --- |
 | `vissim_network`(第1引数) | 対象の`.inpx`ネットワークファイルのパス | 省略不可 | なし |
@@ -194,8 +198,10 @@ CARLAだけを起動した状態で行います(ブリッジ・Autowareは起動
 ```bash
 cd ~/autoware.1.9.0/src/universe/autoware_universe/simulator/autoware_carla_interface
 python3 tools/carla_fleet/measure_blueprint_mesh.py \
-    --out src/autoware_carla_interface/data/carla_fleet/mesh_measurements_carla<版>.json
+    --out src/autoware_carla_interface/data/carla_fleet/mesh_measurements_carla<版>.json   # ← 生成物
 ```
+
+> 📄 **生成物:** `src/autoware_carla_interface/data/carla_fleet/mesh_measurements_carla<版>.json`
 
 `<版>`は、計測するCARLAサーバーの版。CARLAを起動した状態で、次のコマンドで確かめられる。
 
@@ -208,8 +214,10 @@ CARLAの版が0.9.15のときのコマンド:
 ```bash
 cd ~/autoware.1.9.0/src/universe/autoware_universe/simulator/autoware_carla_interface
 python3 tools/carla_fleet/measure_blueprint_mesh.py \
-    --out src/autoware_carla_interface/data/carla_fleet/mesh_measurements_carla0.9.15.json
+    --out src/autoware_carla_interface/data/carla_fleet/mesh_measurements_carla0.9.15.json   # ← 生成物
 ```
+
+> 📄 **生成物:** `src/autoware_carla_interface/data/carla_fleet/mesh_measurements_carla0.9.15.json`
 
 - 0.9.15の計測結果は、すでにリポジトリに入っている(2026-11-16に測ったもの)。出力先のファイルがあるとツールはエラーで止まるので、0.9.15で測り直すときは、先に古いファイルを消すか、日付を付けた別の名前(例: `mesh_measurements_carla0.9.15_20261201.json`)にする。別の名前にしたときは、(2)の`--geometry`もその名前にする。
 - ブリッジが照合するのは、ファイル名ではなく、ファイルの中に記録された版(`carla_server_version`。ツールが接続先のCARLAから書き込む)。
@@ -231,8 +239,10 @@ Windows PCで実際に読まれる`.inpx`(2.2の`--vissim-network`で指定し�
 1. 【Windows側/PowerShell】`.inpx`をLinuxへコピーする(LinuxはSSHを受け付けている。IPアドレスとユーザー名は使うPCに合わせる)。
 
    ```powershell
-   scp C:\Users\divp\SBIR\Vissim\work_muraki\CARLA\Town01.inpx divp@192.168.16.33:/tmp/Town01.inpx
+   scp C:\Users\divp\SBIR\Vissim\work_muraki\CARLA\Town01.inpx divp@192.168.16.33:/tmp/Town01.inpx   # ← 生成物(Linux側)
    ```
+
+   > 📄 **生成物:** Linux側の`/tmp/Town01.inpx`(2の入力)
 
    - USBメモリや共有フォルダで写してもよい。Linux側の置き場所は`/tmp/Town01.inpx`とする(下のコマンドに合わせる)。
    - Vissimで`.inpx`を開いている間に保存したばかりのときは、保存が終わってから写す。
@@ -246,8 +256,10 @@ Windows PCで実際に読まれる`.inpx`(2.2の`--vissim-network`で指定し�
        --inpx-ref "Windows PC C:\Users\divp\SBIR\Vissim\work_muraki\CARLA\Town01.inpx" \
        --geometry src/autoware_carla_interface/data/carla_fleet/mesh_measurements_carla0.9.15.json \
        --rules src/autoware_carla_interface/data/carla_fleet/carla_variant_rules.yaml \
-       --out src/autoware_carla_interface/vissim_integration/data/carla_variants_town01.yaml
+       --out src/autoware_carla_interface/vissim_integration/data/carla_variants_town01.yaml   # ← 生成物
    ```
+
+   > 📄 **生成物:** `src/autoware_carla_interface/vissim_integration/data/carla_variants_town01.yaml`
 
    - `--inpx-ref`には、写す前のWindows側のパスを書く。表には`/tmp`のパスの代わりにこれが記録される(`.inpx`のsha256は自動で記録される)。
    - (1)で別の名前の計測結果を作ったときは、`--geometry`をその名前にする。
@@ -505,8 +517,12 @@ CARLAが管理している信号の状態(赤・黄・青)を、カメラ画像�
 
 ```bash
 cd ~/autoware.1.9.0/src/universe/autoware_universe/simulator/autoware_carla_interface
-python3 tools/carla_tl_to_lanelet2.py ~/autoware_map/Town01/lanelet2_map.osm --dump-json ~/autoware_map/Town01/carla_tl.json --stop-line-before-junction 1.0
+python3 tools/carla_tl_to_lanelet2.py ~/autoware_map/Town01/lanelet2_map.osm --dump-json ~/autoware_map/Town01/carla_tl.json --stop-line-before-junction 1.0   # ← 生成物(2つ)
 ```
+
+> 📄 **生成物:**
+> - `~/autoware_map/Town01/lanelet2_map_with_tl.osm`(信号入りの地図。既定の出力先で、`-o`/`--output`で変えられる)
+> - `~/autoware_map/Town01/carla_tl.json`(`--dump-json`。CARLAの信号の記録)
 
 - CARLAなしで作り直すときは、`--dump-json ...`のかわりに`--from-json ~/autoware_map/Town01/carla_tl.json`を付ける。
 - 停止線の位置を変えたときは、VissimのsignalHeadも`align_signal_heads.py`で移し直す(2.4.3)。
