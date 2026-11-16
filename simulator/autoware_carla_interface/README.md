@@ -488,7 +488,7 @@ Vissim 2D/3D model, instead of a random model of its vehicle type (design and re
 
 See the start-up guide (`docs/Vissim(win)-CARLA-Autoware_co-sim_起動手順.md`, 2.4.3) for regenerating
 the table (only needed after changing the Vissim vehicles, the rules or the CARLA version) and
-2.8 for the meaning of each `<code>`.
+3.3 for the meaning of each `<code>`.
 
 ## Tips
 

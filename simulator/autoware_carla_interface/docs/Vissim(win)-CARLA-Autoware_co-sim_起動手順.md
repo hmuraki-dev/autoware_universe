@@ -38,7 +38,7 @@
 `autoware_carla_interface` は独立したリポジトリではなく、`autoware_universe` リポジトリ配下の
 パッケージである。
 
-## 2. 実行コマンド
+## 2. 起動・終了の手順
 ### 2.1 【Windows側】ファイアウォールの受信規則
 このコマンドは、Windowsファイアウォールに受信規則を追加し、指定したLinux機のIPアドレスからのみ、TCPポート5555(2項で起動するVissimアダプタ`server.py`のZeroMQ待受ポート)への接続を許可します。この規則を先に登録しておかないと、Linux側の`run_synchronization.py`からのZeroMQ接続がWindows側ファイアウォールでブロックされてしまいます。
 
@@ -90,7 +90,7 @@ python server.py `
 
 **シミュレーション期間・分解能について**:
 - アダプタはLinux側からconnectリクエストを受け取ると、`--vissim-network`で指定した.inpxと**同じフォルダ**に`<元のファイル名>.cosim.inpx`(例: `Town01.inpx` → `Town01.cosim.inpx`)を作り、そのコピーでVissimを起動する。コピーでは`<simulation>`要素の次の3つの値だけが書き換わる(元の.inpxは変更されない)。
-  - `simPeriod`: Linux側の`vissim_sim_period`(2.6.1参照) + 余裕10秒。ウォームアップを使う場合は、さらに`vissim_warmup_time`と`ego_spawn_wait_timeout`を足した値(2.6.3参照)
+  - `simPeriod`: Linux側の`vissim_sim_period`(2.6.1参照) + 余裕10秒。ウォームアップを使う場合は、さらに`vissim_warmup_time`と`ego_spawn_wait_timeout`を足した値(3.1参照)
   - `simRes`: Linux側の`fixed_delta_seconds`から求めた値(`1 / fixed_delta_seconds`。既定の0.05秒なら20)
   - `numRuns`: 常に1
 - このため、**.inpxのあるフォルダには書き込み権限が必要**(書き込めないとconnectがエラーになる)。`.cosim.inpx`は起動のたびに上書きされる。
@@ -126,7 +126,7 @@ python3 config.py --map Town01
 
 **注意**:
 - **マップをロード済みである必要があります**(このコマンドの直前にマップ設定を行うこと)。CARLAが同期モードで誰もtickしていないときは、1回だけtickしてから信号を読みます。
-- **`.inpx`側の信号配置を変更した場合のみ再実行すればよく**、毎回の起動時に実行する必要はありません。今の`Town01.inpx`の信号の構成は2.9を参照。
+- **`.inpx`側の信号配置を変更した場合のみ再実行すればよく**、毎回の起動時に実行する必要はありません。今の`Town01.inpx`の信号の構成は3.4を参照。
 - 横断歩道(歩行者エリアのlink)上の歩行者用signalHeadは、マッピングに入れません(CARLAには歩行者用の信号がないため)。1つのCARLA信号が2つ以上の信号グループに入るときは、ファイルを書き出さずにエラーで止まります。
 - 出力は、Linux側で実際に読まれる`autoware_carla_interface`の`vissim_integration/data/signal_mapping.json`にもコピーして、2か所を同じ内容にします。
 
@@ -151,7 +151,7 @@ python3 generate_signal_mapping.py ../examples/Town01/Town01.inpx   # ← 生成
 
 #### 2.4.3 Vissimの車両のCARLAブループリント表の生成
 Vissimの車両1台ごとに、どのCARLAのブループリントを使うかを決める表(`vissim_integration/data/carla_variants_town01.yaml`)を作ります。
-仕組みと今のTown01の割り当ては2.8を参照。
+仕組みと今のTown01の割り当ては3.3を参照。
 
 **注意**:
 - **次のどれかを変えたときだけ実行すればよく**、毎回の起動時に実行する必要はありません。今の表はリポジトリに入っています。
@@ -162,7 +162,7 @@ Vissimの車両1台ごとに、どのCARLAのブループリントを使うか�
   | 割り当ての規則(`src/autoware_carla_interface/data/carla_fleet/carla_variant_rules.yaml`) | (2)(3) |
   | CARLAの版(ブループリントの形が変わりうる) | (1)(2)(3) |
 
-- 変えたのに作り直さないと、co-simの起動時(規則・CARLAの版)か、走行中に表にない車が来たとき(`.inpx`)に、`Error: CARLA blueprint assignment: ...`で止まります(2.8.2)。
+- 変えたのに作り直さないと、co-simの起動時(規則・CARLAの版)か、走行中に表にない車が来たとき(`.inpx`)に、`Error: CARLA blueprint assignment: ...`で止まります(3.3.2)。
 - `.inpx`は、**Windows PCで実際に読まれるもの(2.2の`--vissim-network`)**をLinuxに写して使います((2)の1)。
 - 作り直した表(と、(1)を実行したときは計測結果)は、autoware_universeにコミットします。`--symlink-install`でビルドしていれば、ビルドし直さなくても使われます。
 
@@ -335,7 +335,7 @@ ros2 launch autoware_launch e2e_simulator.launch.xml \
   spectator_follow:=true
 ```
 
-(`spawn_point`の値は書式の例。実際の地点は2.6.3「スポーン地点の選び方」に従って決めること)
+(`spawn_point`の値は書式の例。実際の地点は3.1「スポーン地点の選び方」に従って決めること)
 
 | オプション | 説明 | 省略可/不可 | デフォルト値 |
 | --- | --- | --- | --- |
@@ -352,52 +352,65 @@ ros2 launch autoware_launch e2e_simulator.launch.xml \
 | `sync_traffic_lights` | 信号機の状態をVissimからCARLAへ同期する(Vissim→CARLA方向のみ) | 省略可 | `false` |
 | `vissim_sim_period` | co-simulationのシミュレーション期間(秒、1以上の整数)。経過すると、co-simulationを終了してVissimを閉じ、`e2e_simulator.launch.xml`で起動した全ノードを停止する | 省略可 | `600` |
 | `vissim_max_consecutive_failures` | Vissimアダプタとのtickが連続でこの回数失敗したら(タイムアウト・再接続失敗・アダプタのエラー)、期間の途中でも同様に終了する | 省略可 | `3` |
-| `vissim_carla_variants` | Vissimの車両に割り当てるCARLAのブループリントの表(carla_variants)。相対パスは`vissim_integration/data/`から探す。`legacy_vtypes`を指定すると、以前の`vtypes.json`と乱数での選び方に戻る。2.8参照 | 省略可 | `carla_variants_town01.yaml` |
+| `vissim_carla_variants` | Vissimの車両に割り当てるCARLAのブループリントの表(carla_variants)。相対パスは`vissim_integration/data/`から探す。`legacy_vtypes`を指定すると、以前の`vtypes.json`と乱数での選び方に戻る。3.3参照 | 省略可 | `carla_variants_town01.yaml` |
 | `spectator_follow` | CARLAスペクテーター(自由視点カメラ)をEGO車両のスポーンと同時に自動追従させる | 省略可 | `false` |
 | `vissim_warmup_time` | Vissimだけを先に進める時間(秒、0以上の整数)。0でウォームアップ無効(従来どおり起動直後にEGOをスポーン) | 省略可 | `0` |
 | `spawn_point` | EGOのスポーン地点。`x,y,z,roll,pitch,yaw`の6つの数値をカンマ区切りで指定(CARLAの座標、角度は度)。zには自動で+2 mされる | **ウォームアップ時は省略不可**(ランダムスポーンでは判定する位置が決まらないため、起動時エラー) | `None`(ランダム) |
 | `ego_spawn_front_margin` | EGOの前端と前方車の後端の間に必要な距離(m) | 省略可 | `20.0` |
 | `ego_spawn_rear_margin` | EGOの後端と後方車の前端の間に必要な距離(m) | 省略可 | `20.0` |
 | `ego_spawn_wait_timeout` | ウォームアップ後、空きを待つ上限(秒、1以上の整数)。超えたら試験開始失敗として終了する | 省略可 | `60` |
-| `lanelet2_map_file` | Autowareが読み込むLanelet2地図のファイル名(`map_path`内)。信号を使うときは信号入りの地図(2.7.1) | 省略可 | `lanelet2_map.osm` |
-| `traffic_light.publish` | CARLAの信号状態をAutowareへ直接通知する(カメラの信号認識は起動しない)。2.7参照 | 省略可 | `false` |
-| `traffic_light.force_green` | 起動時に全信号を緑にして固定する。`sync_traffic_lights:=true`とは同時に使えない(起動時エラー)。2.7.3参照 | 省略可 | `false` |
+| `lanelet2_map_file` | Autowareが読み込むLanelet2地図のファイル名(`map_path`内)。信号を使うときは信号入りの地図(3.2.1) | 省略可 | `lanelet2_map.osm` |
+| `traffic_light.publish` | CARLAの信号状態をAutowareへ直接通知する(カメラの信号認識は起動しない)。3.2参照 | 省略可 | `false` |
+| `traffic_light.force_green` | 起動時に全信号を緑にして固定する。`sync_traffic_lights:=true`とは同時に使えない(起動時エラー)。3.2.3参照 | 省略可 | `false` |
 
 **注意**:
 - Vissim側のシミュレーション分解能(`simRes`)は`fixed_delta_seconds`から自動で決まり、.inpxのコピーに書き込まれる(2.2参照)。そのため、以前のように.inpx側の`simRes`を手で合わせる必要はない。
   ただし`use_vissim:=true`のときは、`fixed_delta_seconds`を**1/N秒(Nは1〜20の整数)**にすること(既定の0.05秒はN=20)。それ以外の値では起動時にエラーになる。
-- Vissimを先に走らせて交通流を作ってからEGOを投入する場合は、ウォームアップの引数(`vissim_warmup_time`・`spawn_point`など)を追加する(2.6.3参照)。指定しなければ、従来どおり起動直後にEGOをスポーンする。
+- Vissimを先に走らせて交通流を作ってからEGOを投入する場合は、ウォームアップの引数(`vissim_warmup_time`・`spawn_point`など)を追加する(3.1参照)。指定しなければ、従来どおり起動直後にEGOをスポーンする。
 - `ego_spawn_front_margin`・`ego_spawn_rear_margin`は小数点付きで書くこと(`25`ではなく`25.0`)。整数で書くと型が合わず起動時にエラーになる。
 
-#### 2.6.2 終了時の動作
-`use_vissim:=true`のとき、次のいずれかで`autoware_carla_interface`ノードが終了し、それに伴って`e2e_simulator.launch.xml`で起動した**全ノードが停止する**(`autoware_carla_interface.launch.xml`の`on_exit="shutdown"`による)。
-
-| きっかけ | ログ | Vissimの状態 |
-| --- | --- | --- |
-| `vissim_sim_period`秒が経過した | `Vissim co-simulation period elapsed (<N> ticks), stopping.` | Linux側が終了を指示し(`disconnect`)、Vissimが閉じる |
-| Vissimアダプタとのtickが`vissim_max_consecutive_failures`回続けて失敗した | `Error: giving up after <N> consecutive failed vissim adapter tick(s), stopping. ...` | アダプタが応答しない状態のため、Vissimが閉じないことがある(下記参照) |
-| ウォームアップを使う場合の試験開始失敗(空きが`ego_spawn_wait_timeout`秒以内にできなかった、など。2.6.3参照) | `Error: test start failed: ...` | Linux側が終了を指示し、Vissimが閉じる。終了コードは1 |
-| ブループリントの表が使えない(起動時)。表がない、作ったときと規則・実メッシュが違う、など。2.8.2参照 | `Error: CARLA blueprint assignment: <code>: {...}` | **Vissimアダプタに接続する前に止まる**ので、Vissimは起動しない。終了コードは1 |
-| 走行中に、表にないVissimのモデルが来た(.inpxを変えたのに表を作り直していない、など)。2.8.2参照 | `Error: CARLA blueprint assignment: npc_model_unknown: {...}` など | Linux側が終了を指示し、Vissimが閉じる。終了コードは1 |
-| Ctrl+C、その他の異常終了 | - | 通常はLinux側が終了を指示し、Vissimが閉じる。ただし、下の「Ctrl+Cで止めるとき」を参照 |
-
-期間は、Vissimとのtickが成功した回数で数える(`vissim_sim_period / fixed_delta_seconds`回。既定なら600秒 × 20 = 12000回)。tickに失敗した分は数えないので、実時間やCARLAの時刻とは一致しないことがある。ウォームアップを使う場合は、EGOをスポーンした時点から数える(ウォームアップと空き待ちの時間は含まない)。
-
-`use_vissim:=false`(CARLA単体)の場合は、従来どおり、`autoware_carla_interface`ノードが終了しても他のノードは停止しない。
-
-**Ctrl+Cで止めるとき**: `e2e_simulator.launch.xml`全体を止めると、launchは各ノードにSIGINTを送り、5秒後にSIGTERM、さらに10秒後にSIGKILLを送る。
-`autoware_carla_interface`は、センサーなどの片付け(数秒)のあと、Vissimアダプタに`disconnect`を送ってVissimが閉じ終わるのを待つ。
-そのため、この15秒に間に合わずにSIGKILLされることがある(2026-11-16に確認。ブループリント割り当ての計画書F8)。
-その場合は`disconnect`が届かず、**Vissimが開いたまま残る**。手で閉じてから、アダプタを起動し直すこと。
-確実に止めるには、先に`autoware_carla_interface`だけを止める。自分で後片付けと`disconnect`を済ませてから終了し、そのあとlaunch全体が止まる(`on_exit="shutdown"`)。
+### 2.7 【Linux側/ターミナル2】終了
+#### 2.7.1 止め方
+`vissim_sim_period`秒が経つと、自動で止まる(2.7.2)。途中で止めるときは、**別のターミナルで次を実行する**(2.6.1を起動したターミナルでCtrl+Cを押さない)。
 
 ```bash
 pkill -INT -f "lib/autoware_carla_interface/autoware_carla_interface --ros-args"
 ```
 
-**連続失敗で停止した場合**: Vissimが異常終了したり、アダプタ(server.py)がDLL呼び出しの中で固まったりしている可能性がある。Windows側でserver.pyを止め(Ctrl+Cで止まらない場合はプロセスを終了する)、Vissimが残っていれば閉じてから、2.2の手順でアダプタを起動し直すこと。
+- `autoware_carla_interface`が、CARLAの車両・センサーの片付けと、Vissimアダプタへの`disconnect`を済ませてから終了する。Windows側のVissimはここで閉じる。
+- そのあと、`e2e_simulator.launch.xml`で起動した全ノードが自動で止まる(`autoware_carla_interface.launch.xml`の`on_exit="shutdown"`)。
+- 止まったことは、2.6.1のターミナルのログで確かめる: `Cleanup complete.`と`process has finished cleanly`。
+- 次に起動するときは、2.2の手順でWindows側のアダプタを起動し直す(Vissimを閉じると、アダプタも終了する)。
 
-#### 2.6.3 ウォームアップ・EGO安全スポーン
+**注意(Ctrl+Cで止めた場合)**: `e2e_simulator.launch.xml`全体を止めると、launchは各ノードにSIGINTを送り、5秒後にSIGTERM、さらに10秒後にSIGKILLを送る。
+`autoware_carla_interface`は、センサーなどの片付け(数秒)のあと、Vissimアダプタに`disconnect`を送ってVissimが閉じ終わるのを待つ。
+そのため、この15秒に間に合わずにSIGKILLされることがある(2026-11-16に確認。ブループリント割り当ての計画書F8)。
+その場合は`disconnect`が届かず、**Vissimが開いたまま残る**。Windows側でVissimを手で閉じてから、アダプタを起動し直すこと。
+
+#### 2.7.2 自動で止まるとき
+`use_vissim:=true`のとき、次のいずれかで`autoware_carla_interface`ノードが終了し、それに伴って`e2e_simulator.launch.xml`で起動した**全ノードが停止する**(`on_exit="shutdown"`による)。
+
+| きっかけ | ログ | Vissimの状態 |
+| --- | --- | --- |
+| `vissim_sim_period`秒が経過した | `Vissim co-simulation period elapsed (<N> ticks), stopping.` | Linux側が終了を指示し(`disconnect`)、Vissimが閉じる |
+| Vissimアダプタとのtickが`vissim_max_consecutive_failures`回続けて失敗した | `Error: giving up after <N> consecutive failed vissim adapter tick(s), stopping. ...` | アダプタが応答しない状態のため、Vissimが閉じないことがある(2.7.3) |
+| ウォームアップを使う場合の試験開始失敗(空きが`ego_spawn_wait_timeout`秒以内にできなかった、など。3.1参照) | `Error: test start failed: ...` | Linux側が終了を指示し、Vissimが閉じる。終了コードは1 |
+| ブループリントの表が使えない(起動時)。表がない、作ったときと規則・実メッシュが違う、など。3.3.2参照 | `Error: CARLA blueprint assignment: <code>: {...}` | **Vissimアダプタに接続する前に止まる**ので、Vissimは起動しない。終了コードは1 |
+| 走行中に、表にないVissimのモデルが来た(.inpxを変えたのに表を作り直していない、など)。3.3.2参照 | `Error: CARLA blueprint assignment: npc_model_unknown: {...}` など | Linux側が終了を指示し、Vissimが閉じる。終了コードは1 |
+| Ctrl+C、その他の異常終了 | - | 通常はLinux側が終了を指示し、Vissimが閉じる。ただし、2.7.1の注意を参照 |
+
+期間は、Vissimとのtickが成功した回数で数える(`vissim_sim_period / fixed_delta_seconds`回。既定なら600秒 × 20 = 12000回)。tickに失敗した分は数えないので、実時間やCARLAの時刻とは一致しないことがある。ウォームアップを使う場合は、EGOをスポーンした時点から数える(ウォームアップと空き待ちの時間は含まない)。
+
+`use_vissim:=false`(CARLA単体)の場合は、従来どおり、`autoware_carla_interface`ノードが終了しても他のノードは停止しない。
+
+#### 2.7.3 連続失敗で止まったとき
+Vissimが異常終了したり、アダプタ(server.py)がDLL呼び出しの中で固まったりしている可能性がある。Windows側でserver.pyを止め(Ctrl+Cで止まらない場合はプロセスを終了する)、Vissimが残っていれば閉じてから、2.2の手順でアダプタを起動し直すこと。
+
+## 3. 参考
+
+2章の手順で使う機能の説明と、今の設定の記録。起動のたびに読む必要はない。
+
+### 3.1 ウォームアップ・EGO安全スポーン
 Vissimだけを先に走らせて交通流を作り、EGOのスポーン地点の前後が空いたときにEGOを投入する。設計は`docs/Vissim_CARLA_Autoware_ウォームアップ_EGO安全スポーン_実装計画_v1.0.md`を参照。
 
 `vissim_warmup_time`に1以上を指定すると有効になる(`use_vissim:=true`のときのみ)。起動後の流れは次のとおり。
@@ -466,12 +479,12 @@ ROS(Autoware)の時刻は⑤から0で始まる。①〜④の間、Autowareに�
 | 原因 | 表示 | 対処 |
 | --- | --- | --- |
 | `ego_spawn_wait_timeout`秒以内に空きができなかった | `no safe gap found within ego_spawn_wait_timeout=... s (t=...): <最後の判定>` | 交通量の少ない地点を選ぶ、上限時間を延ばす、必要距離を見直す |
-| ウォームアップ中・空き待ち中に、Vissimアダプタとのtickが連続で失敗した | `giving up after <N> consecutive failed vissim adapter tick(s) during the warmup ...` など | 2.6.2の「連続失敗で停止した場合」と同じ |
+| ウォームアップ中・空き待ち中に、Vissimアダプタとのtickが連続で失敗した | `giving up after <N> consecutive failed vissim adapter tick(s) during the warmup ...` など | 2.7.3「連続失敗で止まったとき」と同じ |
 | `vehicle_type`に一致する車種がない、またはEGOの外形の計測やスポーンに失敗した | `vehicle_type ... matches no blueprint`、`could not spawn ...`、`failed to spawn the EGO vehicle ...` | `vehicle_type`・`spawn_point`を見直す |
 
 ウォームアップ中・空き待ち中にCtrl+Cを押した場合は、その時点で止まり、通常どおり終了する(試験開始失敗にはならない)。
 
-### 2.7 CARLAの信号状態をAutowareへ直接通知する
+### 3.2 CARLAの信号状態をAutowareへ直接通知する
 
 CARLAが管理している信号の状態(赤・黄・青)を、カメラ画像による信号認識を使わずに、
 ブリッジ(`autoware_carla_interface`)から`/perception/traffic_light_recognition/traffic_signals`へ
@@ -480,14 +493,14 @@ CARLAが管理している信号の状態(赤・黄・青)を、カメラ画像�
 `sync_traffic_lights:=true`のときは、Vissimが決めた信号状態がCARLA経由でそのままAutowareに届く
 (Vissim→CARLA→Autoware。CARLAの状態をpublishするのは、Vissimの状態をCARLAに書き込んだ次のtickの後)。
 
-#### 2.7.1 信号入りのLanelet2地図
+#### 3.2.1 信号入りのLanelet2地図
 
 標準のCARLA用Lanelet2地図(`~/autoware_map/Town01/lanelet2_map.osm`)には信号の情報がないため、
 そのままではAutowareが信号で止まらない。CARLAから信号を読み取って地図に追加したものを使う。
 
 - Town01は作成済み: `~/autoware_map/Town01/lanelet2_map_with_tl.osm`(36信号、停止線を各信号とも交差点の入口の1.0 m手前に置いたもの。2026-11-16)。
   同じフォルダの`carla_tl.json`は、地図を作ったときのCARLAの信号の記録(各信号の交差点`group`を含む)。
-  Vissimの車用signalHeadも同じ停止線の位置にあるので(2.9)、EGOとVissimの車がほぼ同じ位置で止まる。
+  Vissimの車用signalHeadも同じ停止線の位置にあるので(3.4)、EGOとVissimの車がほぼ同じ位置で止まる。
 - 作り直すときは、CARLAサーバーでTown01を読み込んだ状態で次を実行する(出力は元の地図と同じフォルダ。すでにある場合は`--force`)。
 
 ```bash
@@ -500,11 +513,11 @@ python3 tools/carla_tl_to_lanelet2.py ~/autoware_map/Town01/lanelet2_map.osm --d
 > - `~/autoware_map/Town01/carla_tl.json`(`--dump-json`。CARLAの信号の記録)
 
 - CARLAなしで作り直すときは、`--dump-json ...`のかわりに`--from-json ~/autoware_map/Town01/carla_tl.json`を付ける。
-- 停止線の位置を変えたときは、VissimのsignalHeadも`align_signal_heads.py`で移し直す(2.9)。
+- 停止線の位置を変えたときは、VissimのsignalHeadも`align_signal_heads.py`で移し直す(3.4)。
 
 - ツールの詳細(停止線をずらす量、`--group-id-offset`、Town05・Town10HD)はREADMEの「Adding traffic lights to the CARLA Lanelet2 maps」を参照。
 
-#### 2.7.2 起動とログの確認
+#### 3.2.2 起動とログの確認
 
 2.6.1の起動コマンドに、次の2つを足す(`sync_traffic_lights:=true`はそのまま)。
 
@@ -525,7 +538,7 @@ Traffic-light matching: 36 matched, 0 ambiguous, 0 too far, 0 overridden (map ha
   `autoware_carla_interface`の1つだけであること(カメラの信号認識は起動しない)。
 - ウォームアップ中はpublishしない(EGOのスポーン後のループから始まる)。
 
-#### 2.7.3 オプション
+#### 3.2.3 オプション
 
 | オプション | 説明 | 既定値 |
 | --- | --- | --- |
@@ -536,9 +549,9 @@ Traffic-light matching: 36 matched, 0 ambiguous, 0 too far, 0 overridden (map ha
 | `traffic_light.match_ratio` | 曖昧と判定するしきい値(小さいほど厳しい) | `0.6` |
 | `traffic_light.id_map` | 手動の対応付け`opendrive_id:group_id[\|group_id...],...`。位置の対応付けより優先する(`\|`を含むので引用符で囲む) | `""` |
 
-#### 2.7.4 注意点
+#### 3.2.4 注意点
 
-- **信号の構成**: Vissimの信号は交差点ごとのSignal Controllerで制御する(2.9)。オフセットは全交差点0なので、全交差点が同じ時刻に切り替わる
+- **信号の構成**: Vissimの信号は交差点ごとのSignal Controllerで制御する(3.4)。オフセットは全交差点0なので、全交差点が同じ時刻に切り替わる
   (交差点の中では、主道路と従道路が交互に青になる)。
 - **黄はAMBERとして届く**: Vissimの`AMBER`/`FLASHING_AMBER`はCARLAの黄になり、そのまま黄としてpublishされる
   (SUMO構成では1つの信号に状態の違うリンクがあると赤になったが、Vissimでは起きない)。黄で止まるか通過するかはAutowareの判断
@@ -561,7 +574,7 @@ Traffic-light matching: 36 matched, 0 ambiguous, 0 too far, 0 overridden (map ha
   赤で停止線の0.4 m手前(交差点の入口の約1.4 m手前)に、Vissimの車とほぼ同じ位置で止まり、青の約3.5秒後に発進すること、
   停止線の約24 m手前・5.5 m/sで黄になったときに止まること、目的地 (374.92, -330.61) に着くことを確認した(2026-11-16)。
 
-### 2.8 Vissimの車両のCARLAブループリント
+### 3.3 Vissimの車両のCARLAブループリント
 
 Vissimの車両1台をCARLAに出すとき、どのブループリントを使うかを、**Vissimの2D/3Dモデルの寸法に最も近いもの**に決める。
 設計と確認結果は`docs/Vissim_CARLA_Autoware_ブループリント割り当て_実装計画_v1.0.md`を参照(移植元: SBIR_simのブループリント割り当て処理)。
@@ -571,7 +584,7 @@ Vissimの車両1台をCARLAに出すとき、どのブループリントを使�
 - 1体で表せない大型車(トラック・トラクター・バス)は、`carlacola`を2〜3体重ねて全長を合わせる(重ね置き)。
 - 表にないモデルが来たら、黙って別のブループリントに替えずに止める。
 
-#### 2.8.1 Town01の割り当て
+#### 3.3.1 Town01の割り当て
 
 `vissim_integration/data/carla_variants_town01.yaml`(Windows PCの`Town01.inpx`(sha256 `2265ff82…`。CARLAリポジトリ`4213552`の版と同じ)から作成)。
 
@@ -593,7 +606,7 @@ Vissimの車両1台をCARLAに出すとき、どのブループリントを使�
 
 表の作り直し(Vissimの車両の設定・規則・CARLAの版を変えたときだけ)は、2.4.3の手順で行う。
 
-#### 2.8.2 止まったとき(`Error: CARLA blueprint assignment: <code>: ...`)
+#### 3.3.2 止まったとき(`Error: CARLA blueprint assignment: <code>: ...`)
 
 | code | 意味 | 直し方 |
 | --- | --- | --- |
@@ -610,7 +623,7 @@ Vissimの車両1台をCARLAに出すとき、どのブループリントを使�
 - 以前の選び方(車種ごとの候補から乱数で選ぶ。`vissim_integration/data/vtypes.json`)に戻すときは、`vissim_carla_variants:=legacy_vtypes`を付けて起動する。
 - 終了時に、ブループリントごとのspawn回数がログに1行出る(`CARLA bodies spawned for Vissim vehicles: ...`)。
 
-### 2.9 Vissimの信号の構成(Town01)
+### 3.4 Vissimの信号の構成(Town01)
 
 (参考情報。起動の手順ではない。信号の構成を変えるときは、ここのツールで`.inpx`を作り直し、2.4.2で信号マッピングjsonを作り直す。)
 
@@ -623,7 +636,7 @@ Vissimの車両1台をCARLAに出すとき、どのブループリントを使�
 | 信号グループ | 各SCにSG1(主道路、2信号)とSG2(従道路、1信号) |
 | 時間 | 周期94秒。SG1の青0〜42秒、SG2の青47〜89秒。どちらも黄3秒、全赤2秒。オフセットは全SCとも0(全交差点が同じ時刻に切り替わる) |
 | 歩行者用 | SC 5(372〜374)のSG3: 372の進入路を横切る横断歩道。青0〜34秒、青点滅34〜38秒。主道路(SG1)とは交差しない |
-| signalHeadの位置 | 車用は、進入路のlinkの上で、Lanelet2の停止線(交差点の入口の1.0 m手前、2.7.1)と同じ位置。進入路のすべての進路(connector)の手前にある |
+| signalHeadの位置 | 車用は、進入路のlinkの上で、Lanelet2の停止線(交差点の入口の1.0 m手前、3.2.1)と同じ位置。進入路のすべての進路(connector)の手前にある |
 | 投入量 | 車両7か所: 各100台/h、歩行者2か所: 各100人/h |
 
 作り直すときに使うツール(どれもCARLAリポジトリの`Co-Simulation/PTV-Vissim/util/`。`.inpx`は文字列のまま書き換え、改行(CRLF)も変えない):
@@ -631,7 +644,7 @@ Vissimの車両1台をCARLAに出すとき、どのブループリントを使�
 - `split_signal_controllers.py`: 1つのSCを、CARLAの交差点(`carla_tl.json`の`group`)ごとのSCに複製し、signalHeadの`sg`を書き換える。信号プログラムは`--template-from`で、Vissim GUIで直したSCを雛形にできる。
 - `align_signal_heads.py`: 車用signalHeadを、Lanelet2の停止線の位置の進入路linkに移す(`--lanelet2-map`)。
 - `generate_signal_mapping.py`: 2.4.2(信号マッピングjsonの生成)。
-- 確かめるとき: `autoware_carla_interface`の`tools/check_vissim_lanelet2_tl_ids.py`(2.7.4)。
+- 確かめるとき: `autoware_carla_interface`の`tools/check_vissim_lanelet2_tl_ids.py`(3.2.4)。
 
 注意:
 - Vissim GUIで`.inpx`を開いてSimulation runを回すときは、Driving Simulatorを無効にする。そのまま保存すると`drivSimActive="false"`になり、co-simのconnectがタイムアウトする。**co-simで使うファイルは`drivSimActive="true"`にしておく**(Vissimが複数起動しているときもタイムアウトする)。
