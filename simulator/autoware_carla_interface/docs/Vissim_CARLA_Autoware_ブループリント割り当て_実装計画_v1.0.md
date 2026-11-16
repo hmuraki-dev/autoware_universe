@@ -195,7 +195,7 @@ launchに `vissim_carla_variants`(生成物のパス)を足す。既定は `viss
 
 | #   | タスク | 場所 | 状態 |
 | --- | ------ | ---- | ---- |
-| F0  | 事前確認(使うinpx、`model_filename` の文字列、位置の基準、0.9.15での計測) | Windows・Linux・CARLA | 未着手 |
+| F0  | 事前確認(使うinpx、`model_filename` の文字列、位置の基準、0.9.15での計測) | Windows・Linux・CARLA | 完了(2026-11-16) |
 | F1  | 共通部品の取り込み(`carla_fleet.py`、規則の雛形、回帰テスト、PyYAMLの依存) | autoware_universe | 未着手 |
 | F2  | 計測ツールの移植と、全ブループリントの実メッシュ計測 | autoware_universe・CARLA | 未着手 |
 | F3  | 規則の確定(除外、fallback、大型車、二輪) | autoware_universe | 未着手 |
@@ -230,6 +230,33 @@ F1はF0と並行してよい。F3で規則を変えたら、F4の生成物を作
    - `world.wait_for_tick()` は非同期モードでしか返らない。CARLAを非同期モードで起動するか、ツールで1回tickするかを決める。
 
 完了条件: 使うinpxがCARLAリポジトリに入っている。`model_filename` と `model_key()` の対応が分かっている。位置の基準が分かっている。1体の計測値が出ている。
+
+#### 結果(F0、2026-11-16)
+
+| #   | 項目 | 結果 |
+| --- | ---- | ---- |
+| 1   | 使うinpx | **Windows PCの版とリポジトリの版は同じ**。Windows PC(`C:\Users\divp\SBIR\Vissim\work_muraki\CARLA\Town01.inpx`)のsha256は `2265FF82…B50F14` で、CARLAリポジトリ `feature/vissim_windows` の `4213552`(信号設置B4)の版と一致した。Golfは `Car - Volkswagen Golf (2007).fbx`(4.211 m)、バイクはモデル70。`c5df1a6` より前の版にも「Golf VIII (2022)」「モデル302」はない。`Vissim_車両寸法一覧.md` は別のinpxから作られたと考えられるので、F9でこの版の値に直す。1章の4の表は、この版で読んだもの。 |
+| 2   | `model_filename` の文字列 | アダプタにつないで空のtickを300秒分送った(scratchpadのプローブ。`vissim_warmup_probe.py` の `AdapterClient` を使用。コミットしない)。**Linux側には `bytes` で届き**、中身は**パスと拡張子のないファイル名**(例: `b'Car - Volkswagen Golf (2007)'`、`b'Bus - C2 Standard 2-doors'`)。inpxの `file3D` に `model_key()` をかけた値と、出てきた13組すべてが一致した。出なかったのはモデル2(Tesla Model Y、割合0.030)だけ。F5では、UTF-8でデコードしてから `model_key()` をかける(`.fbx`・`.u3dm` が付いても同じ結果になるように)。 |
+| 3   | 位置の基準 | **前端中央**。アダプタの `VISSIM_Veh_Data`(`DrivingSimulatorProxy.h` と同じ配置)のコメントが `Position_X  # front center of the vehicle in m`。今のブリッジの扱い(`get_carla_transform` で前端から `extent.x` だけ戻す)と同じなので、2.4のとおりに進める。見た目での確認はF7。 |
+| 4   | 0.9.15での計測 | **測れた**。束の `measure_blueprint_mesh.py` で `vehicle.lincoln.mkz_2017` を1体だけ測った(0.9.15に `vehicle.lincoln.mkz` はない)。`world.cast_ray` があり、`str(hit.label)` は `Car` を返した。地下(x=−4300、z=−60)は空いていた。結果はL 4.863 m、W 2.101 m、高さ1.465 m、メッシュ中心のずれ0.000 m(箱はL 4.902 m、W 2.128 m)。ただし、**起動中のCARLAは同期モード(dt 0.05)で、tickするクライアントがいないと `world.wait_for_tick()` が返らない**。試しでは、同期モードなら `world.tick()` を呼ぶように差し替えて動かした。F2の移植でこの処理を入れる。計測したactorは消え、ワールドの設定は変わっていない。 |
+
+出てきた (車種, `model_filename`) と台数(300秒):
+
+| 車種 | `model_filename` | 台数 | モデル |
+| ---: | ---------------- | ---: | -----: |
+| 100 | `Car - Volkswagen Golf (2007)` | 8 | 3 |
+| 100 | `SUV - Volkswagen Tiguan eHybrid (2022)` | 6 | 9 |
+| 100 | `Car - Audi A6 Avant (2021)` | 6 | 7 |
+| 100 | `Car - Mercedes B Class (2021)` | 4 | 4 |
+| 100 | `Car - Mercedes C Class (2021)` | 4 | 5 |
+| 100 | `SUV - Volkswagen ID 4 (2022)` | 3 | 10 |
+| 100 | `Car - Skoda Superb Combi (2022)` | 3 | 6 |
+| 100 | `SUV - Nissan Qashqai (2022)` | 2 | 8 |
+| 100 | `Car - Fiat 500 (2018)` | 1 | 1 |
+| 210 | `HGV - Delivery DAF LF (2014)` | 6 | 23 |
+| 220 | `HGV - Semi-Tractor Volvo E (2019)` | 5 | 22 |
+| 300 | `Bus - C2 Standard 2-doors` | 3 | 31 |
+| 700 | `Bike - Motorbike Yamaha MT 07 (2022)` | 7 | 70 |
 
 ### F1: 共通部品の取り込み
 
@@ -352,7 +379,7 @@ F2の値で1章の9の試算をやり直し、`carla_variant_rules.yaml` を次�
 
 | #   | 内容 | 推奨 | 決める時期 |
 | --- | ---- | ---- | ---------- |
-| 1   | 使うinpx | Windows PCで読まれる版を正にし、CARLAリポジトリに入れる(信号設置のB0と同じ) | F0 |
+| 1   | 使うinpx | 決定(F0): Windows PCとCARLAリポジトリの版が同じ(sha256 `2265ff82…`)なので、それを使う | F0 |
 | 2   | 大型車(トラクター22・バス31) | F2の実メッシュで試算し直してから決める。案は次の3つ。(a) fallbackを `european_hgv` にする(幅が太い側の許容内で、バスは2体の重ね置き。トラクターは救急車より短いので別に扱う)。(b) HGV・BUSの細い側の許容を広げる。(c) inpxでそのモデルの割合を0にする。推奨は(a)で、トラクターは長さの許容をそのモデルだけ広げる案と比べる | F3 |
 | 3   | 二輪 | 出す。ライダーは乗せない(Vissimの寸法はバイクだけ)。BIKEの許容はそのまま | F3 |
 | 4   | 乗用車にバンが割り当たる | 規則どおりにし、見た目で困るものだけ `excluded` で外す | F3(F7で見直す) |
