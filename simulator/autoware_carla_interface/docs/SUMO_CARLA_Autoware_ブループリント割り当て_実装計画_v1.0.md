@@ -140,7 +140,7 @@ Vissim構成のF5・F6と同じ作りにする。
 | S2  | SUMOのvTypeを作り、Town01の需要を差し替える | CARLA | 完了(2026-11-16、CARLA `main` の `6a1c918`) |
 | S3  | SUMOの読み込み(`sumo_fleet.py`)、生成ツールの `--sumocfg`、Town01の生成物 | autoware_universe | 完了(2026-11-16) |
 | S4  | ブリッジへの組み込み(検査、vType IDでの引き、配置、重ね置き、隙間の検査) | autoware_universe | 完了(2026-11-16) |
-| S5  | ブリッジ単体での実機確認(Autowareなし) | Linux | 未着手 |
+| S5  | ブリッジ単体での実機確認(Autowareなし) | Linux | 完了(2026-11-16)。既存の不具合を1件見つけた(結果の7) |
 | S6  | Autoware全体での実機確認(Vissim構成との比較を含む) | Linux | 未着手 |
 | S7  | ドキュメントとコミット | autoware_universe・CARLA | 未着手 |
 
@@ -384,6 +384,48 @@ Vissim計画のF7と同じ項目。SUMOはLinuxで動くので、すべて1台�
 6. S0の3で洗い出した値(スポーン地点、ウォームアップ、信号の確認)のうち、長さが変わって影響が出そうなものを確かめ直す。
 
 完了条件: 1〜6の結果が、この計画書にある。
+
+#### 結果(S5、2026-11-16、CARLA 0.9.15、SUMO 1.20.0、ブリッジ単体)
+
+起動は `ros2 launch autoware_carla_interface autoware_carla_interface.launch.xml` に、起動手順書のTown01と同じ引数(`tls_manager:=sumo`・`sync_vehicle_lights:=true`・`sync_vehicle_color:=true`・`spawn_point:=267.65,133.49,0.30,0.0,0.0,0.0`)を付けた。`sumo_gui` は付けていない。
+`sumo_carla_variants` は既定(`auto`)。CARLAの様子は、tickしない監視スクリプトで15〜20秒ごとに見た(scratchpad。コミットしない)。
+ブリッジは、ブリッジだけにSIGINTを送って止めた(`pkill -INT -f "lib/autoware_carla_interface/autoware_carla_interface --ros-args"`)。
+
+1. **起動時の検査**(リポジトリのファイルは変えず、scratchpadの写しを使った)
+   - 規則の写しに1行足し、`sumo_carla_variants` に絶対パスで渡した。結果は `Error: CARLA blueprint assignment: variant_source_changed: {'source': 'rules', ..., 'recorded_sha256': '08ba25bd…', 'current_sha256': 'ab9b50f4…'}` の1行で、ブリッジは終了コード1で止まった。
+   - `~/CARLA/Co-Simulation/Sumo/examples` の写しの `rou/Town01.rou.xml` に1行足し、その `Town01.sumocfg` を渡した(`auto` のまま)。結果は `variant_source_changed: {'source': 'route_files', ..., 'recorded': {... 'rou/Town01.rou.xml': '14e0b5cb6bc8'}, 'current': {... 'rou/Town01.rou.xml': 'b56a540668f4'}}` で、同じく終了コード1。
+   - どちらも、SUMOは起動していない(`SUMO co-simulation connected` の行がない)。
+   - 通常の起動では、`CARLA blueprints of SUMO vehicles: .../carla_variants_sumo_town01.yaml (14 models, sumo_carla_variants=auto)` が出た。
+2. **走行中**(ウォームアップなし。シミュレーション時間で約160秒、実時間で約9分。ブリッジ単体は実時間の約0.33倍の速さ)
+   - **エラーは0件**: `npc_model_unknown`・`variant_model_empty`・寸法の不一致、spawnの失敗、2体目以降の失敗はなかった。警告は、信号のランドマーク360・374に別々の状態が割り当てられている、という既知のものだけ。
+   - 終了時の要約: `carlacola` 18(38%、見込み36%)、`mini.cooper_s_2021` 7(15%、20%)、`tesla.model3` 7(15%、11%)、`audi.tt` 6(13%、13%)、`kawasaki.ninja` 5(11%、8%)、`dodge.charger_2020` 2(4%、6%)、`nissan.micra` 1(2%、3%)、`nissan.patrol` 1(2%、3%)。台数が少ないので多少ずれるが、見込みとおおむね合う。割り当て先の8種がすべて出た。
+   - 監視スクリプト: 同時に出ていた車は最大43台。新しく現れたactorの `role_name` は、`sumo_driver` 46と、`ego_vehicle` 1(`toyota.prius`)だけ。
+   - **地下に取り残された体は一度もなかった**(z < −50 mのactorが0)。
+   - **重なった `carlacola` の組128組は、すべて横ずれ0.05 m未満、向きの差0.5度未満で並んでいた**。監視スクリプトが「並びが崩れている」とした組は、横に4.0 m離れ、向きが約180度違う。反対車線ですれ違ったトラックどうしを拾っただけ(F7と同じ)。
+   - 終了: 要約のあと `Cleanup complete.`、`process has finished cleanly`。その後1回tickして、CARLAに車両・センサー・歩行者が残っていないことを確かめた。
+3. **見た目**: `docs/img/carla_blueprint_assignment/s5_bus_truck_with_sumo.webp`(左: バス `vissim.31.c2_standard` = `carlacola` 3体、右: トラック = `carlacola` 2体)。どちらも、SUMOの道路に沿って体が隙間なく並んで走っている。`sync_vehicle_color:=true` なので、同じ車の体はすべてSUMOの色になっていた。
+4. **ウォームアップあり**(`sumo_warmup_time:=600`、起動手順書と同じ)
+   - `[SUMO WARMUP] completed: t=600.0 s vehicles=37`(実時間24.2秒)
+   - `[SUMO WARMUP] caught up: carla_spawned=37 sumo_only=0`。重ね置きの車(2体の車5台)も、一括spawnで全部出た。
+   - `[EGO SPAWN CHECK] t=600.05 front=- rear=- overlap=none result=SAFE`、`[EGO SPAWN] ... waited=0.00 s`。
+   - 一括spawnの直後から約15分(シミュレーション時間で約300秒)見た。地下に残った体は0で、同じ向きで重なっているのに並びが崩れた組も0。3体の車(バス)は、2台が同時に出ていた。`role_name` は `sumo_driver` と `ego_vehicle` だけ。
+   - 要約(t=900秒で止まったとき): `carlacola` 34(29%、見込み36%)、`mini.cooper_s_2021` 28(24%、20%)、`audi.tt` 17(15%、13%)、`tesla.model3` 14(12%、11%)、`kawasaki.ninja` 9(8%、8%)、`nissan.micra` 6(5%、3%)、`dodge.charger_2020` 5(4%、6%)、`nissan.patrol` 3(3%、3%)。
+   - バスが出るのは、S2のSUMO単体の記録(既定のシード)では836秒・841秒。今回も同じころに出た。
+   - EGOの前後に車がいなかったので、重ね置きの車を全体の外形で見る隙間の検査は、実機では働いていない(テストでは確かめた)。
+5. **Town05**(`sumo_warmup_time:=60`、`spawn_point:=24.71,-51.03,0.30,0.0,0.0,91.5`、`sumo_carla_variants` は既定)
+   - `CARLA blueprints of SUMO vehicles: legacy (vType id, else vtypes.json) (sumo_carla_variants=auto: no carla_variants_sumo_town05.yaml for .../Town05.sumocfg)` が出て、今までの選び方で動いた。
+   - 一括spawn 51台(`sumo_only=0`)。1分後の車は66台(`sumo_driver` 65、`ego_vehicle` 1)で、ブループリントはvTypeの名前どおり26種(`cybertruck`・`charger_police`・`t2` など、生成物では外しているものも含む)。
+   - 要約の行は出ない(生成物を使っていないため)。`Cleanup complete.` まで通った。
+6. **長さに関わる、起動手順書の値**(S0の3)
+   - Town01のスポーン地点 `267.65,133.49` と `sumo_warmup_time:=600` では、ウォームアップ後すぐにSAFEになり、待ち時間は0秒だった。
+   - 既定の余裕(前後20 m)のまま、スポーンできた。
+   - 信号372の手前での停止・発進と、確認済みの地点の表(#37・#36・#144・#249)は、Autowareが要るのでS6で確かめる。
+7. **見つけた既存の不具合(今回の変更とは関係しない)**: 4の走行が、t=900.15秒でブリッジの異常終了で止まった。
+   - SUMOのログ: `Teleporting vehicle 'carla0'; waited too long (jam)` のあと、`Vehicle 'carla0' was removed though being controlled by TraCI`。
+   - `carla0` は、EGOをSUMOに写した車。Autowareなしなので、EGOはスポーンした場所(t=600.05秒)で止まったままだった。SUMOは、止まったまま300秒(SUMOの既定の `time-to-teleport`)たった車を、渋滞の原因とみなして消す。
+   - そのあとブリッジの `sync_carla_to_sumo()` が、消えた `carla0` の情報を読もうとして `KeyError: 79`(`traci.constants.VAR_TYPE`)で落ちた。
+   - 後片付けは通った(要約のあと `Cleanup complete.`。CARLAに車両・センサーは残っていない)。ブリッジの終了コードは1。
+   - 起こる条件: EGOがSUMOの車線の上で300秒続けて止まっていること。Autoware全体でも、EGOのスポーンから300秒以内に走り出さないと(または信号待ち・渋滞で300秒止まると)起こるはず。今回の変更(CARLA→SUMOで2体目以降を除くだけ)では、この経路は変わっていない。
 
 ### S6: Autoware全体での実機確認
 
