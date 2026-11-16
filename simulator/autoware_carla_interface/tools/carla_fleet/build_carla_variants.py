@@ -1,7 +1,8 @@
 #!/usr/bin/env python3
-"""Vissim の inpx から carla_variants(モデル -> CARLA の体の並び)を作る。CARLA は要らない。
+"""Vissim の inpx か SUMO の .sumocfg から carla_variants(モデル -> CARLA の体の並び)を作る。CARLA は要らない。
 
-See docs/Vissim_CARLA_Autoware_ブループリント割り当て_実装計画_v1.0.md (F4).
+See docs/Vissim_CARLA_Autoware_ブループリント割り当て_実装計画_v1.0.md (F4) and
+docs/SUMO_CARLA_Autoware_ブループリント割り当て_実装計画_v1.0.md (S3).
 
     python3 tools/carla_fleet/build_carla_variants.py \\
         --inpx <Town01.inpx> \\
@@ -10,6 +11,14 @@ See docs/Vissim_CARLA_Autoware_ブループリント割り当て_実装計画_v1
         --rules src/autoware_carla_interface/data/carla_fleet/carla_variant_rules.yaml \\
         --out src/autoware_carla_interface/vissim_integration/data/carla_variants_town01.yaml
 
+    python3 tools/carla_fleet/build_carla_variants.py \\
+        --sumocfg ~/CARLA/Co-Simulation/Sumo/examples/Town01.sumocfg \\
+        --sumocfg-ref "~/CARLA main <コミット> Co-Simulation/Sumo/examples/Town01.sumocfg" \\
+        --geometry src/autoware_carla_interface/data/carla_fleet/mesh_measurements_carla0.9.15.json \\
+        --rules src/autoware_carla_interface/data/carla_fleet/carla_variant_rules.yaml \\
+        --out src/autoware_carla_interface/sumo_integration/data/carla_variants_sumo_town01.yaml
+
+Vissim(--inpx):
 - モデル = inpx の 2D/3D モデル(model2D3D)。寸法は全セグメントを繋いだ車体全体
   (vissim_integration/inpx_models.py)。
 - 割合は「需要が使う車両構成の車種割合 × 車種ごとのモデル分布」。歩行者の車種と、自車(運転シミュレータ)の
@@ -19,9 +28,16 @@ See docs/Vissim_CARLA_Autoware_ブループリント割り当て_実装計画_v1
 - sources の geometry・rules のパスは、生成物のあるディレクトリからの相対パスで書く(ブリッジは起動時に sha256 を
   照合する)。inpx は記録だけ(Windows 側にあり、ブリッジは照合しない)。
 
+SUMO(--sumocfg。sumo_integration/sumo_fleet.py):
+- モデル = .sumocfg の route-files の vType を寸法(L・W)でまとめたもの(名前 L<長さ>_W<幅>)。割合は flow・vehicle の
+  台数 × vTypeDistribution の確率。歩行者の vType は対象にしない。
+- 生成物の各モデルには、まとめた vType の ID(vtypes)を書く。SUMO ブリッジは走行中、車の vType ID でモデルを引く。
+- sources には .sumocfg と、route-files の各ファイル(.sumocfg に書かれた名前)の sha256 を書く。SUMO ブリッジは
+  起動時に、渡された .sumocfg の route-files と照合する。
+
 移植元: SBIR_sim `tools/carla_fleet/build_carla_variants.py`(3ea1650)。変えたところ: 入力は --inpx の
-ファイルだけ(SUMO の --sumo-inputs と、網の登録簿 received_networks への依存を外した)、生成物に file・types・
-segments を書く、sources のパスの書き方。
+ファイルと、SUMO の --sumocfg(移植元の --sumo-inputs と網の登録簿 received_networks への依存を外した)、生成物に
+file・types(Vissim)・vtypes(SUMO)・segments を書く、sources のパスの書き方。
 """
 from __future__ import annotations
 
@@ -128,20 +144,36 @@ def _flow(mapping):
 
 
 def _identity(info):
-    """モデルを DSI から引くための項目(file・types・segments)。"""
+    """モデルを引くための項目。Vissim: file・types・segments(DSI から引く)。SUMO: vtypes・segments(vType ID で引く)。"""
+    if 'vtypes' in info:
+        return f"vtypes: [{', '.join(_scalar(v) for v in info['vtypes'])}], segments: {info['segments']}"
     types = ', '.join(f"'{t}': {_scalar(s)}"
                       for t, s in sorted(info['types'].items(), key=lambda item: carla_fleet._model_order(item[0])))
     return f"file: {json.dumps(info['file'], ensure_ascii=False)}, types: {{{types}}}, segments: {info['segments']}"
 
 
 def render(document, command) -> str:
-    lines = [f"# {document['name']} — 生成物。手で書き換えない",
-             '# 作り方:'] + [f'#   {line}' for line in command] + [
-        '#',
+    sumo = 'sumocfg' in document['sources']
+    model_lines = ([
+        '# assignment: モデル(SUMO の vType を寸法でまとめたもの。名前 L<長さ>_W<幅>) -> CARLA の体の並び',
+        '#   vtypes: まとめた vType の ID。share: 出現割合(flow・vehicle の台数 × vTypeDistribution の確率を読んだもの)',
+        '#           ブリッジは車の vType ID で引く。無ければ止める(npc_model_unknown)',
+    ] if sumo else [
         '# assignment: モデル(inpx の 2D/3D モデル番号) -> CARLA の体の並び',
         '#   file:  モデルの先頭セグメントのファイル名(パス・拡張子なし)。DSI の ModelFileName と同じ鍵',
         '#   types: {車種: 車種内のモデルの割合}、share: 網全体での割合(どちらも inpx の定義を読んだもの)',
         '#          ブリッジは (VehicleType, ModelFileName) を types と file で引く。無ければ止める(npc_model_unknown)',
+    ])
+    source_lines = ([
+        '#   sumocfg・route_files は .sumocfg と route-files の各ファイル(.sumocfg に書かれた名前)。ブリッジは起動時に、',
+        '#   渡された .sumocfg の route-files の sha256 と照合し、違えば止める(variant_source_changed)',
+    ] if sumo else [
+        '#   inpx は記録だけ(Windows 側にあり、ブリッジは照合しない。モデルが変われば走行中に npc_model_unknown で止まる)',
+    ])
+    lines = [f"# {document['name']} — 生成物。手で書き換えない",
+             '# 作り方:'] + [f'#   {line}' for line in command] + [
+        '#',
+        *model_lines,
         '#   front_offset_m: 車両の前端から、その actor の前端までの距離 [m]',
         '#   follows_path:   true なら車両の軌跡を遡った位置・向きに置く(連結の近似)',
         '#   dL・dW = CARLA の外形(LiDAR で測った外形、幅はミラー込み) − モデルの寸法 [m]',
@@ -151,7 +183,7 @@ def render(document, command) -> str:
         '',
         '# 生成元。ブリッジは起動時に geometry と rules の sha256 を照合し、違えば止める(variant_source_changed)',
         '#   geometry・rules のパスは、このファイルのあるディレクトリからの相対パス',
-        '#   inpx は記録だけ(Windows 側にあり、ブリッジは照合しない。モデルが変われば走行中に npc_model_unknown で止まる)',
+        *source_lines,
         'sources:']
     for key, source in document['sources'].items():
         lines.append(f'  {key}: ' + '{' + ', '.join(f'{k}: {_scalar(v)}' for k, v in source.items()) + '}')
@@ -167,7 +199,10 @@ def render(document, command) -> str:
     lines += ['', 'assignment:']
 
     def first_type(model):
-        return sorted(document['models'][model]['types'], key=carla_fleet._model_order)[0]
+        info = document['models'][model]
+        if 'vtypes' in info:      # SUMO: vTypeDistribution(無ければカテゴリ)でまとめる
+            return sorted(info.get('distributions') or info['categories'])[0]
+        return sorted(info['types'], key=carla_fleet._model_order)[0]
 
     group = None
     for model in sorted(document['assignment'],
@@ -176,7 +211,8 @@ def render(document, command) -> str:
         vehicle_type = first_type(model)
         if vehicle_type != group:
             group = vehicle_type
-            lines.append(f"  # --- 車種 {vehicle_type}({'/'.join(sorted(info['categories']))}) ---")
+            label = '車両グループ' if 'vtypes' in info else '車種'
+            lines.append(f"  # --- {label} {vehicle_type}({'/'.join(sorted(info['categories']))}) ---")
         indent = ' ' * 8
         lines.append(f"  '{model}': {{L: {_scalar(spec['L'])}, W: {_scalar(spec['W'])}, "
                      f"share: {_scalar(info['share'], digits=4)}, method: {spec['method']}, "
@@ -202,8 +238,11 @@ def render(document, command) -> str:
 
 def main(argv=None) -> int:
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    parser.add_argument('--inpx', type=Path, required=True, help='Vissim の inpx(Windows で読まれるものと同じ版)')
+    source = parser.add_mutually_exclusive_group(required=True)
+    source.add_argument('--inpx', type=Path, help='Vissim の inpx(Windows で読まれるものと同じ版)')
+    source.add_argument('--sumocfg', type=Path, help='SUMO の .sumocfg(co-sim で使うもの)。route-files を読む')
     parser.add_argument('--inpx-ref', help='inpx の出どころ(例: リポジトリ・コミット・パス)。渡すと、inpx のパスの代わりに記録する')
+    parser.add_argument('--sumocfg-ref', help='.sumocfg の出どころ(例: リポジトリ・コミット・パス)。渡すと、パスの代わりに記録する')
     parser.add_argument('--geometry', type=Path, required=True,
                         help='measure_blueprint_mesh.py の出力(mesh_measurements_*.json)')
     parser.add_argument('--rules', type=Path, required=True, help='carla_variant_rules.yaml')
@@ -216,18 +255,31 @@ def main(argv=None) -> int:
     try:
         rules = carla_fleet.load_rules(args.rules)
         mesh, meta = carla_fleet.load_mesh(args.geometry)
-        models = network_models(InpxModels.from_file(args.inpx))
+        if args.inpx:
+            models = network_models(InpxModels.from_file(args.inpx))
+        else:
+            # SUMO の読み込みは SUMO 構成のブランチにだけある(sumo_integration)
+            from autoware_carla_interface.sumo_integration import sumo_fleet
+            names = sumo_fleet.route_file_names(args.sumocfg)
+            models, _ = sumo_fleet.read_models([path for _, path in names])
         assignment, skipped = build(models, rules, mesh)
     except VariantError as exc:
         print(f'[build_carla_variants] 止めた: {exc}', file=sys.stderr)
         return 1
-    # --inpx-ref があれば、パスの代わりに出どころを記録する(渡すのが git から取り出した一時ファイルのとき)
-    inpx_source = (dict(ref=args.inpx_ref) if args.inpx_ref else dict(path=str(args.inpx)))
-    inpx_source['sha256'] = carla_fleet.digest(args.inpx)
+    if args.inpx:
+        # --inpx-ref があれば、パスの代わりに出どころを記録する(渡すのが git から取り出した一時ファイルのとき)
+        traffic = (dict(ref=args.inpx_ref) if args.inpx_ref else dict(path=str(args.inpx)))
+        traffic['sha256'] = carla_fleet.digest(args.inpx)
+        traffic_sources = dict(inpx=traffic)
+    else:
+        traffic = (dict(ref=args.sumocfg_ref) if args.sumocfg_ref else dict(path=str(args.sumocfg)))
+        traffic['sha256'] = carla_fleet.digest(args.sumocfg)
+        traffic_sources = dict(sumocfg=traffic,
+                               route_files={name: carla_fleet.digest(path) for name, path in names})
     document = dict(
         name=args.name or args.out.stem,
         generated_at=args.generated_at or datetime.now().astimezone().isoformat(timespec='seconds'),
-        sources=dict(inpx=inpx_source,
+        sources=dict(**traffic_sources,
                      geometry=dict(path=carla_fleet.relative_source(args.geometry, out_dir),
                                    sha256=carla_fleet.digest(args.geometry),
                                    carla_server_version=meta.get('carla_server_version')),
@@ -235,9 +287,14 @@ def main(argv=None) -> int:
                                 sha256=carla_fleet.digest(args.rules))),
         rules=rules, assignment=assignment, skipped=skipped, models=models,
         expected_bodies_per_100_vehicles=expected_bodies(models, assignment))
+    if args.inpx:
+        input_lines = [(f'    --inpx <{args.inpx_ref} を取り出したファイル> \\' if args.inpx_ref else f'    --inpx {args.inpx} \\'),
+                       *([f'    --inpx-ref {json.dumps(args.inpx_ref, ensure_ascii=False)} \\'] if args.inpx_ref else [])]
+    else:
+        input_lines = [f'    --sumocfg {args.sumocfg} \\',
+                       *([f'    --sumocfg-ref {json.dumps(args.sumocfg_ref, ensure_ascii=False)} \\'] if args.sumocfg_ref else [])]
     command = ['python3 tools/carla_fleet/build_carla_variants.py \\',
-               (f'    --inpx <{args.inpx_ref} を取り出したファイル> \\' if args.inpx_ref else f'    --inpx {args.inpx} \\'),
-               *([f'    --inpx-ref {json.dumps(args.inpx_ref, ensure_ascii=False)} \\'] if args.inpx_ref else []),
+               *input_lines,
                f'    --geometry {args.geometry} \\',
                f'    --rules {args.rules} \\',
                f'    --out {args.out}']
