@@ -107,8 +107,8 @@ cd ~/CARLA
 
 ### 2.4 【Linux側/ターミナル2】マップの設定 → 信号マッピングjsonの生成 → 車両のブループリント表の生成
 Town01マップを読み込んだうえで、そのマップの信号機情報からdata/signal_mapping.jsonを生成します。
-Vissimの車両の設定などを変えたときは、Vissimの車両に割り当てるCARLAのブループリントの表も作り直します(2.4.4)。
-2.4.2と2.4.4は、どちらも**対象の設定を変えたときだけ**実行する(毎回の起動では不要)。
+Vissimの車両の設定などを変えたときは、Vissimの車両に割り当てるCARLAのブループリントの表も作り直します(2.4.3)。
+2.4.2と2.4.3は、どちらも**対象の設定を変えたときだけ**実行する(毎回の起動では不要)。
 
 #### 2.4.1 CARLAで使用するマップの設定
 
@@ -126,7 +126,7 @@ python3 config.py --map Town01
 
 **注意**:
 - **マップをロード済みである必要があります**(このコマンドの直前にマップ設定を行うこと)。CARLAが同期モードで誰もtickしていないときは、1回だけtickしてから信号を読みます。
-- **`.inpx`側の信号配置を変更した場合のみ再実行すればよく**、毎回の起動時に実行する必要はありません。今の`Town01.inpx`の信号の構成は2.4.3を参照。
+- **`.inpx`側の信号配置を変更した場合のみ再実行すればよく**、毎回の起動時に実行する必要はありません。今の`Town01.inpx`の信号の構成は2.9を参照。
 - 横断歩道(歩行者エリアのlink)上の歩行者用signalHeadは、マッピングに入れません(CARLAには歩行者用の信号がないため)。1つのCARLA信号が2つ以上の信号グループに入るときは、ファイルを書き出さずにエラーで止まります。
 - 出力は、Linux側で実際に読まれる`autoware_carla_interface`の`vissim_integration/data/signal_mapping.json`にもコピーして、2か所を同じ内容にします。
 
@@ -149,32 +149,7 @@ python3 generate_signal_mapping.py ../examples/Town01/Town01.inpx   # ← 生成
 | `--output` | 生成するマッピングjsonの出力先パス | 省略可 | `../data/signal_mapping.json` |
 | `--debug` | デバッグメッセージを有効化するフラグ | 省略可(フラグ指定のみ、値は取らない) | 指定なし(`False`、無効) |
 
-#### 2.4.3 Vissimの信号の構成(Town01)
-
-`Town01.inpx`は、CARLAの交差点ごとに1つの信号制御(Signal Controller、Fixed time)を持つ(2026-11-16)。
-設計と確認結果は`docs/Vissim_CARLA_Autoware_信号設置_実装計画_v1.0.md`を参照。
-
-| 項目 | 内容 |
-| --- | --- |
-| 信号制御 | 12個(`J1 360-362`〜`J12 393-395`)。SC番号は交差点の小さいlandmarkの順 |
-| 信号グループ | 各SCにSG1(主道路、2信号)とSG2(従道路、1信号) |
-| 時間 | 周期94秒。SG1の青0〜42秒、SG2の青47〜89秒。どちらも黄3秒、全赤2秒。オフセットは全SCとも0(全交差点が同じ時刻に切り替わる) |
-| 歩行者用 | SC 5(372〜374)のSG3: 372の進入路を横切る横断歩道。青0〜34秒、青点滅34〜38秒。主道路(SG1)とは交差しない |
-| signalHeadの位置 | 車用は、進入路のlinkの上で、Lanelet2の停止線(交差点の入口の1.0 m手前、2.7.1)と同じ位置。進入路のすべての進路(connector)の手前にある |
-| 投入量 | 車両7か所: 各100台/h、歩行者2か所: 各100人/h |
-
-作り直すときに使うツール(どれもCARLAリポジトリの`Co-Simulation/PTV-Vissim/util/`。`.inpx`は文字列のまま書き換え、改行(CRLF)も変えない):
-
-- `split_signal_controllers.py`: 1つのSCを、CARLAの交差点(`carla_tl.json`の`group`)ごとのSCに複製し、signalHeadの`sg`を書き換える。信号プログラムは`--template-from`で、Vissim GUIで直したSCを雛形にできる。
-- `align_signal_heads.py`: 車用signalHeadを、Lanelet2の停止線の位置の進入路linkに移す(`--lanelet2-map`)。
-- `generate_signal_mapping.py`: 2.4.2。
-- 確かめるとき: `autoware_carla_interface`の`tools/check_vissim_lanelet2_tl_ids.py`(2.7.4)。
-
-注意:
-- Vissim GUIで`.inpx`を開いてSimulation runを回すときは、Driving Simulatorを無効にする。そのまま保存すると`drivSimActive="false"`になり、co-simのconnectがタイムアウトする。**co-simで使うファイルは`drivSimActive="true"`にしておく**(Vissimが複数起動しているときもタイムアウトする)。
-- VisSigでSGを足したときは、同時に青になってよい組(例: 主道路の車と、従道路を渡る歩行者)の中間時間を**空欄**にする(0は「交差する」の意味になり、`intergreen violated`になる)。interstageの終わりに青になるSGの最小青時間は0にする(`minimum green time violated`を避ける)。
-
-#### 2.4.4 Vissimの車両のCARLAブループリント表の生成
+#### 2.4.3 Vissimの車両のCARLAブループリント表の生成
 Vissimの車両1台ごとに、どのCARLAのブループリントを使うかを決める表(`vissim_integration/data/carla_variants_town01.yaml`)を作ります。
 仕組みと今のTown01の割り当ては2.8を参照。
 
@@ -512,7 +487,7 @@ CARLAが管理している信号の状態(赤・黄・青)を、カメラ画像�
 
 - Town01は作成済み: `~/autoware_map/Town01/lanelet2_map_with_tl.osm`(36信号、停止線を各信号とも交差点の入口の1.0 m手前に置いたもの。2026-11-16)。
   同じフォルダの`carla_tl.json`は、地図を作ったときのCARLAの信号の記録(各信号の交差点`group`を含む)。
-  Vissimの車用signalHeadも同じ停止線の位置にあるので(2.4.3)、EGOとVissimの車がほぼ同じ位置で止まる。
+  Vissimの車用signalHeadも同じ停止線の位置にあるので(2.9)、EGOとVissimの車がほぼ同じ位置で止まる。
 - 作り直すときは、CARLAサーバーでTown01を読み込んだ状態で次を実行する(出力は元の地図と同じフォルダ。すでにある場合は`--force`)。
 
 ```bash
@@ -525,7 +500,7 @@ python3 tools/carla_tl_to_lanelet2.py ~/autoware_map/Town01/lanelet2_map.osm --d
 > - `~/autoware_map/Town01/carla_tl.json`(`--dump-json`。CARLAの信号の記録)
 
 - CARLAなしで作り直すときは、`--dump-json ...`のかわりに`--from-json ~/autoware_map/Town01/carla_tl.json`を付ける。
-- 停止線の位置を変えたときは、VissimのsignalHeadも`align_signal_heads.py`で移し直す(2.4.3)。
+- 停止線の位置を変えたときは、VissimのsignalHeadも`align_signal_heads.py`で移し直す(2.9)。
 
 - ツールの詳細(停止線をずらす量、`--group-id-offset`、Town05・Town10HD)はREADMEの「Adding traffic lights to the CARLA Lanelet2 maps」を参照。
 
@@ -563,7 +538,7 @@ Traffic-light matching: 36 matched, 0 ambiguous, 0 too far, 0 overridden (map ha
 
 #### 2.7.4 注意点
 
-- **信号の構成**: Vissimの信号は交差点ごとのSignal Controllerで制御する(2.4.3)。オフセットは全交差点0なので、全交差点が同じ時刻に切り替わる
+- **信号の構成**: Vissimの信号は交差点ごとのSignal Controllerで制御する(2.9)。オフセットは全交差点0なので、全交差点が同じ時刻に切り替わる
   (交差点の中では、主道路と従道路が交互に青になる)。
 - **黄はAMBERとして届く**: Vissimの`AMBER`/`FLASHING_AMBER`はCARLAの黄になり、そのまま黄としてpublishされる
   (SUMO構成では1つの信号に状態の違うリンクがあると赤になったが、Vissimでは起きない)。黄で止まるか通過するかはAutowareの判断
@@ -616,21 +591,48 @@ Vissimの車両1台をCARLAに出すとき、どのブループリントを使�
 候補から外しているもの: パトカー・タクシー・消防車・救急車の塗装、見た目とLiDARの形が違う`european_hgv`、乗用車に合わないバン(`volkswagen.t2*`)、
 自車と同じ`toyota.prius`(`data/carla_fleet/carla_variant_rules.yaml`)。
 
-表の作り直し(Vissimの車両の設定・規則・CARLAの版を変えたときだけ)は、2.4.4の手順で行う。
+表の作り直し(Vissimの車両の設定・規則・CARLAの版を変えたときだけ)は、2.4.3の手順で行う。
 
 #### 2.8.2 止まったとき(`Error: CARLA blueprint assignment: <code>: ...`)
 
 | code | 意味 | 直し方 |
 | --- | --- | --- |
 | `variant_config_missing` | `vissim_carla_variants`のファイルがない | パスを確かめる |
-| `variant_source_changed` | 表を作ったときと、規則か実メッシュが違う | 表を作り直す(2.4.4の(2)) |
-| `variant_blueprint_missing` | 表のブループリントが、接続先のCARLAにない | CARLAの版を確かめ、外形を測り直して表を作り直す(2.4.4の(1)(2)) |
-| `variant_mesh_carla_version_changed` | 外形を測ったCARLAの版と、接続先の版が違う | 外形を測り直して表を作り直す(2.4.4の(1)(2)) |
-| `variant_articulated_unsupported` | 表に連結車(軌跡に沿う体)がある。このブリッジは扱わない | .inpxで連結車の割合を0にして作り直す(2.4.4の(2)) |
+| `variant_source_changed` | 表を作ったときと、規則か実メッシュが違う | 表を作り直す(2.4.3の(2)) |
+| `variant_blueprint_missing` | 表のブループリントが、接続先のCARLAにない | CARLAの版を確かめ、外形を測り直して表を作り直す(2.4.3の(1)(2)) |
+| `variant_mesh_carla_version_changed` | 外形を測ったCARLAの版と、接続先の版が違う | 外形を測り直して表を作り直す(2.4.3の(1)(2)) |
+| `variant_articulated_unsupported` | 表に連結車(軌跡に沿う体)がある。このブリッジは扱わない | .inpxで連結車の割合を0にして作り直す(2.4.3の(2)) |
 | `variant_model_ambiguous` | 同じ(車種, モデルファイル)が2つのモデルにある | .inpxのモデルを見直す |
-| `npc_model_unknown`(走行中) | 表にない(車種, モデルファイル)の車が来た | Windowsで使っている.inpxから、表を作り直す(2.4.4の(2)) |
+| `npc_model_unknown`(走行中) | 表にない(車種, モデルファイル)の車が来た | Windowsで使っている.inpxから、表を作り直す(2.4.3の(2)) |
 | `variant_model_empty`(走行中) | 表を作ったときに割合0だったモデルの車が来た | 同上 |
 
 - 起動時の検査は、Vissimアダプタに接続する前に行う。そのため、起動時に止まったときはVissimは起動していない。
 - 以前の選び方(車種ごとの候補から乱数で選ぶ。`vissim_integration/data/vtypes.json`)に戻すときは、`vissim_carla_variants:=legacy_vtypes`を付けて起動する。
 - 終了時に、ブループリントごとのspawn回数がログに1行出る(`CARLA bodies spawned for Vissim vehicles: ...`)。
+
+### 2.9 Vissimの信号の構成(Town01)
+
+(参考情報。起動の手順ではない。信号の構成を変えるときは、ここのツールで`.inpx`を作り直し、2.4.2で信号マッピングjsonを作り直す。)
+
+`Town01.inpx`は、CARLAの交差点ごとに1つの信号制御(Signal Controller、Fixed time)を持つ(2026-11-16)。
+設計と確認結果は`docs/Vissim_CARLA_Autoware_信号設置_実装計画_v1.0.md`を参照。
+
+| 項目 | 内容 |
+| --- | --- |
+| 信号制御 | 12個(`J1 360-362`〜`J12 393-395`)。SC番号は交差点の小さいlandmarkの順 |
+| 信号グループ | 各SCにSG1(主道路、2信号)とSG2(従道路、1信号) |
+| 時間 | 周期94秒。SG1の青0〜42秒、SG2の青47〜89秒。どちらも黄3秒、全赤2秒。オフセットは全SCとも0(全交差点が同じ時刻に切り替わる) |
+| 歩行者用 | SC 5(372〜374)のSG3: 372の進入路を横切る横断歩道。青0〜34秒、青点滅34〜38秒。主道路(SG1)とは交差しない |
+| signalHeadの位置 | 車用は、進入路のlinkの上で、Lanelet2の停止線(交差点の入口の1.0 m手前、2.7.1)と同じ位置。進入路のすべての進路(connector)の手前にある |
+| 投入量 | 車両7か所: 各100台/h、歩行者2か所: 各100人/h |
+
+作り直すときに使うツール(どれもCARLAリポジトリの`Co-Simulation/PTV-Vissim/util/`。`.inpx`は文字列のまま書き換え、改行(CRLF)も変えない):
+
+- `split_signal_controllers.py`: 1つのSCを、CARLAの交差点(`carla_tl.json`の`group`)ごとのSCに複製し、signalHeadの`sg`を書き換える。信号プログラムは`--template-from`で、Vissim GUIで直したSCを雛形にできる。
+- `align_signal_heads.py`: 車用signalHeadを、Lanelet2の停止線の位置の進入路linkに移す(`--lanelet2-map`)。
+- `generate_signal_mapping.py`: 2.4.2(信号マッピングjsonの生成)。
+- 確かめるとき: `autoware_carla_interface`の`tools/check_vissim_lanelet2_tl_ids.py`(2.7.4)。
+
+注意:
+- Vissim GUIで`.inpx`を開いてSimulation runを回すときは、Driving Simulatorを無効にする。そのまま保存すると`drivSimActive="false"`になり、co-simのconnectがタイムアウトする。**co-simで使うファイルは`drivSimActive="true"`にしておく**(Vissimが複数起動しているときもタイムアウトする)。
+- VisSigでSGを足したときは、同時に青になってよい組(例: 主道路の車と、従道路を渡る歩行者)の中間時間を**空欄**にする(0は「交差する」の意味になり、`intergreen violated`になる)。interstageの終わりに青になるSGの最小青時間は0にする(`minimum green time violated`を避ける)。
