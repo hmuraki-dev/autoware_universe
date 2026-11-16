@@ -196,6 +196,24 @@ cd ~/autoware.1.9.0/src/universe/autoware_universe/simulator/autoware_carla_inte
 python3 tools/carla_fleet/measure_blueprint_mesh.py \
     --out src/autoware_carla_interface/data/carla_fleet/mesh_measurements_carla<版>.json
 ```
+
+`<版>`は、計測するCARLAサーバーの版。CARLAを起動した状態で、次のコマンドで確かめられる。
+
+```bash
+python3 -c "import carla; c = carla.Client('localhost', 2000); c.set_timeout(10); print(c.get_server_version())"
+```
+
+CARLAの版が0.9.15のときのコマンド:
+
+```bash
+cd ~/autoware.1.9.0/src/universe/autoware_universe/simulator/autoware_carla_interface
+python3 tools/carla_fleet/measure_blueprint_mesh.py \
+    --out src/autoware_carla_interface/data/carla_fleet/mesh_measurements_carla0.9.15.json
+```
+
+- 0.9.15の計測結果は、すでにリポジトリに入っている(2026-11-16に測ったもの)。出力先のファイルがあるとツールはエラーで止まるので、0.9.15で測り直すときは、先に古いファイルを消すか、日付を付けた別の名前(例: `mesh_measurements_carla0.9.15_20261201.json`)にする。別の名前にしたときは、(2)の`--geometry`もその名前にする。
+- ブリッジが照合するのは、ファイル名ではなく、ファイルの中に記録された版(`carla_server_version`。ツールが接続先のCARLAから書き込む)。
+
 | オプション | 説明 | 省略可/不可 | デフォルト値 |
 | --- | --- | --- | --- |
 | `--out` | 計測結果(JSON)の出力先。すでにあるとエラー | 省略不可 | なし |
