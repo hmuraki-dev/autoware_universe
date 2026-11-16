@@ -237,6 +237,39 @@ python3 tools/carla_fleet/build_carla_variants.py \
     --rules src/autoware_carla_interface/data/carla_fleet/carla_variant_rules.yaml \
     --out src/autoware_carla_interface/vissim_integration/data/carla_variants_town01.yaml
 ```
+
+`<コミット>`は、CARLAリポジトリ(`~/CARLA`、ブランチ`feature/vissim_windows`)のうち、`Town01.inpx`がWindows PCで使っているものと同じ版になっているコミット。
+次のように探す。
+
+1. Windows PCで、使っている`.inpx`のハッシュを出す(PowerShell)。
+
+   ```powershell
+   Get-FileHash C:\Users\divp\SBIR\Vissim\work_muraki\CARLA\Town01.inpx -Algorithm SHA256
+   ```
+
+2. Linuxで、`Town01.inpx`を変えたコミットごとに、その版のハッシュを出す(新しい順)。1と先頭が同じ行のコミットを使う(大文字・小文字は違ってよい)。
+
+   ```bash
+   cd ~/CARLA && for c in $(git log --format=%h feature/vissim_windows -- Co-Simulation/PTV-Vissim/examples/Town01/Town01.inpx); do echo "$c $(git show $c:Co-Simulation/PTV-Vissim/examples/Town01/Town01.inpx | sha256sum | cut -c1-16)"; done
+   ```
+
+   どのコミットとも一致しないときは、Windowsの`.inpx`がリポジトリに入っていない。先にWindowsの`.inpx`をCARLAリポジトリにコミットしてから、そのコミットを使う。
+
+今の`.inpx`(2026-11-16。コミット`4213552`、sha256 `2265ff82…`)のときのコマンド:
+
+```bash
+cd ~/autoware.1.9.0/src/universe/autoware_universe/simulator/autoware_carla_interface
+git -C ~/CARLA show 4213552:Co-Simulation/PTV-Vissim/examples/Town01/Town01.inpx > /tmp/Town01.inpx
+python3 tools/carla_fleet/build_carla_variants.py \
+    --inpx /tmp/Town01.inpx \
+    --inpx-ref "~/CARLA feature/vissim_windows 4213552 Co-Simulation/PTV-Vissim/examples/Town01/Town01.inpx" \
+    --geometry src/autoware_carla_interface/data/carla_fleet/mesh_measurements_carla0.9.15.json \
+    --rules src/autoware_carla_interface/data/carla_fleet/carla_variant_rules.yaml \
+    --out src/autoware_carla_interface/vissim_integration/data/carla_variants_town01.yaml
+```
+
+- 今の表は、このコマンドで作ったもの。`.inpx`・規則・外形のどれも変えていなければ、作り直しても割り当ては変わらない(`generated_at`だけが変わる)。
+
 | オプション | 説明 | 省略可/不可 | デフォルト値 |
 | --- | --- | --- | --- |
 | `--inpx` | Vissimのネットワークファイル | 省略不可 | なし |
