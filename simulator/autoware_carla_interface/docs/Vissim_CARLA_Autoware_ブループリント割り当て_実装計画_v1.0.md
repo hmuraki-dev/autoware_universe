@@ -186,8 +186,9 @@ F3の結果で、重ね置きを使うモデル(1章の9ではバスとトラク
 ### 2.7 今の `vtypes.json` の扱い
 
 launchに `vissim_carla_variants`(生成物のパス)を足す。既定は `vissim_integration/data/carla_variants_town01.yaml`。
-**空文字を明示したときだけ**、今の `vtypes.json` と乱数の選び方に戻る(比べるためと、戻すため)。
-規定のファイルが見つからないときは、`vtypes.json` に戻さず、`variant_config_missing` で止める。
+**`legacy_vtypes` を明示したときだけ**、今の `vtypes.json` と乱数の選び方に戻る(比べるためと、戻すため)。
+最初は空文字にする案だったが、F5でキーワードに変えた(ROS 2のlaunchでは空文字のパラメータの扱いが不安定なため)。
+既定のファイルが見つからないときは、`vtypes.json` に戻さず、`variant_config_missing` で止める。
 
 ---
 
@@ -200,7 +201,7 @@ launchに `vissim_carla_variants`(生成物のパス)を足す。既定は `viss
 | F2  | 計測ツールの移植と、全ブループリントの実メッシュ計測 | autoware_universe・CARLA | 完了(2026-11-16。計測の基準をLiDARに変えた) |
 | F3  | 規則の確定(除外、fallback、大型車、二輪) | autoware_universe | 完了(2026-11-16) |
 | F4  | inpxの読み込み・生成ツールと、Town01の生成物 | autoware_universe | 完了(2026-11-16) |
-| F5  | ブリッジへの組み込み(起動時の検査、モデルの引き、実メッシュ中心での配置) | autoware_universe | 未着手 |
+| F5  | ブリッジへの組み込み(起動時の検査、モデルの引き、実メッシュ中心での配置) | autoware_universe | 完了(2026-11-16) |
 | F6  | 重ね置き(F3で必要になったときだけ) | autoware_universe | 未着手 |
 | F7  | ブリッジ単体での実機確認(Autowareなし) | Linux + Windows | 未着手 |
 | F8  | Autoware全体での実機確認 | Linux + Windows | 未着手 |
@@ -501,6 +502,54 @@ python3 tools/carla_fleet/build_carla_variants.py \
 
 完了条件: 全テストが通る。`colcon build` が通る。
 
+#### 結果(F5、2026-11-16)
+
+**計画から変えたこと**
+
+- 今の `vtypes.json` に戻す指定を、空文字から **`vissim_carla_variants:=legacy_vtypes`** に変えた(2.7)。ROS 2のlaunchでは、空文字のパラメータの扱いが不安定なため。
+- 止め方(5章の7): 今のブリッジは、初期化中の例外を `main()` の外へそのまま投げる(トレースバックが出る)。そこで、`EgoSpawnGateError` と同じ形にそろえた。
+  - `main()` で `carla_fleet.VariantError` を受け、`Error: CARLA blueprint assignment: <code>: <根拠>` の1行を出して、終了コード1で終わる。新しい例外クラスは作っていない。
+  - 起動時の検査は、**Vissimアダプタに接続する前**(`_init_vissim_integration()` の最初)に行う。そのため、生成物が古いときは、Windows側でVissimが起動しない。
+  - 走行中の `npc_model_unknown`・`variant_model_empty` も同じ1行で止まる。後片付け(`_cleanup()`)は通る。
+
+**変えたファイル**
+
+- `vissim_integration/fleet_plan.py`(新規): `FleetPlan`。
+  - 起動時の検査(2.5の表のすべて)に、次の3つを足した。
+    - `variant_blueprint_unmeasured`: 割り当てたブループリントに実メッシュがない。
+    - `variant_model_ambiguous`: 同じ (車種, ファイル名) が2つのモデルにある。移植元は先のものを使っていたが、こちらは止める。
+    - `variant_model_identity_missing`: 生成物に `file`・`types` がない。
+  - `model_for()`・`actors_for()`・`spec_for()`・`body()`、spawn回数の記録と要約。
+  - `resolve_variants_path()`: 相対パスを `vissim_integration/data/` から解決する。
+- `bridge_helper.py`:
+  - `body_origins()`(純粋関数): 2.4の配置。前端から `front_offset_m + L/2 + center_x` 後ろへ、横は `center_y` を戻す。高さは今の `get_carla_transform()` と同じく、ピッチで変える。
+  - `BridgeHelper.get_fleet_blueprints()`: 割り当てたブループリントを `blueprint_library.find()` で取る。色とドライバーは、今と同じく車両IDをシードにした乱数で選ぶ。重ね置きの体は同じ色にする。
+  - `BridgeHelper.get_fleet_transforms()`。
+- `simulation_synchronization.py`:
+  - spawn(通常・ウォームアップ後の一括)と更新を、`_vehicle_spawn()`・`_vehicle_transform()` にまとめた。
+  - `fleet`(クラス属性の既定は `None`)がなければ、今までの経路(`get_carla_blueprint()` と箱の `extent`)をそのまま通る。
+  - `fleet` があるときは、spawnの時点で最終の位置に置き、更新でも箱の寸法を使わない(`carla.get_actor()` を呼ばない)。
+  - **F5では、体の並びの1体目だけを使う**(トラック・トラクターは `carlacola` 1体、バスも1体)。重ね置きはF6。
+- `carla_autoware.py`: パラメータ `vissim_carla_variants`、`_load_vissim_fleet_plan()`、`main()` での `VariantError` の処理、終了時の要約。
+  - 要約は `CARLA bodies spawned for Vissim vehicles: <ブループリント> <回数> (<比率>, expected <生成物の比率>), ...` の1行。
+- `carla_ros.py`・launch: `vissim_carla_variants`(既定 `carla_variants_town01.yaml`)を、両方のnode宣言に足した。
+- 既存のスクリプト形式のテスト3本(`vissim_sim_period_test.py`・`vissim_warmup_ego_spawn_test.py`・`vissim_warmup_params_test.py`)のパラメータ表に、`vissim_carla_variants: legacy_vtypes` を足した。これらのテストが確かめている今までの動作は変えない。
+
+**確かめたこと**
+
+- `test/test_vissim_fleet_plan.py`(30件、新規):
+  - `FleetPlan`: モデルの引き方(bytes・パスや拡張子付き)、重ね置きの並び、止まる条件(未知、割合0、各検査、重複、`follows_path`)。
+  - 配置の計算: 向き0度・90度・180度、メッシュ中心のずれ、重ね置きの位置、坂。
+  - `get_carla_transform()` との前端の向きの一致。
+  - 同期処理: 割り当てたブループリントと位置でspawnし、同じtickで更新すること。色は車両IDだけで決まること。未知のモデルで止まること。ウォームアップ後の一括spawn。`fleet` がないときの今の動作。
+- `python3 -m pytest test`: 198件成功、2件スキップ。スクリプト形式の `test/vissim_*_test.py` 8本もすべて成功。
+- 実際のCARLA(0.9.15、Town01)でのスモークテスト(scratchpadのスクリプト。コミットしない)を行った。
+  - 本物のブループリントライブラリと版で `FleetPlan` を作り、検査を通った。
+  - Fiat 500・Yamaha・バスの1体目を、`get_fleet_blueprints()`・`get_fleet_transforms()` でspawnした。`micra`・`kawasaki.ninja`(ドライバーあり)・`carlacola` になり、`role_name` は `vissim_driver`。
+  - 消したあと、車両は残っていない。
+- `colcon build --packages-select autoware_carla_interface --symlink-install` が通った。
+- Vissimとつないだ実機の確認は、F6のあとのF7で行う。
+
 ### F6: 重ね置き(F3で必要になったときだけ)
 
 - 2.6のとおり、2体目以降を `vissim2carla_extra_ids` で持つ。spawn・destroy・更新・CARLA→Vissimの除外・close・終了時の削除(`carla_autoware.py`)を直す。
@@ -553,7 +602,7 @@ python3 tools/carla_fleet/build_carla_variants.py \
 | 4   | 乗用車にバンが割り当たる | 決定(F3): `volkswagen.t2*` を除外する(高さが合わない) | F3(F7で見直す) |
 | 5   | 塗装が特殊なもの | 決定(F3): パトカー2種・タクシー・消防車・救急車を外す。撮影して確かめた | F3 |
 | 6   | 自車を候補から外すか | 決定(F3): 外す(`vehicle.toyota.prius`)。自車と同じ形のNPCが近くにいると、カメラ・LiDARで見分けにくい | F3 |
-| 7   | 止めるときの例外 | 今のブリッジが異常で止まるときの経路(`vissim_max_consecutive_failures` など)をF5の最初に調べ、それにそろえる。できれば新しい例外クラスは作らない | F5 |
+| 7   | 止めるときの例外 | 決定(F5): `EgoSpawnGateError` と同じく、`main()` で `carla_fleet.VariantError` を受けて1行のエラーを出し、終了コード1で終わる。新しい例外クラスは作らない。起動時の検査はVissimアダプタへの接続より前に行う | F5 |
 | 8   | プール | 入れない(0.2)。spawn直後の落下などが出たら、別の計画で扱う | F7 |
 
 ---
