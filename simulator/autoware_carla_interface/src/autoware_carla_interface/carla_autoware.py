@@ -22,6 +22,7 @@ import time
 
 import carla
 
+from .carla_fleet import VariantError
 from .carla_ros import carla_ros2_interface
 from .modules.carla_data_provider import CarlaDataProvider
 from .modules.carla_data_provider import GameTime
@@ -166,6 +167,9 @@ class InitializeInterface(object):
         self.sync_vehicle_lights = self.param_["sync_vehicle_lights"]
         self.sync_vehicle_color = self.param_["sync_vehicle_color"]
         self.tls_manager = self.param_["tls_manager"]
+        # CARLA blueprints of SUMO vehicles (see
+        # docs/SUMO_CARLA_Autoware_ブループリント割り当て_実装計画_v1.0.md 2.4)
+        self.sumo_carla_variants = self.param_["sumo_carla_variants"]
         self.sumo_carla_sim = None
         self.sumo_sim = None
         self.sumo_sync = None
@@ -330,6 +334,10 @@ class InitializeInterface(object):
         from .sumo_integration.simulation_synchronization import SimulationSynchronization
         from .sumo_integration.sumo_simulation import SumoSimulation
 
+        # Checked before SUMO is started: a missing or outdated carla_variants file stops the
+        # bridge (VariantError) without starting SUMO.
+        fleet_plan = self._load_sumo_fleet_plan(client)
+
         sumo_host = None if self.sumo_host == "None" else self.sumo_host
         sumo_port = None if self.sumo_port == "None" else int(self.sumo_port)
 
@@ -349,10 +357,43 @@ class InitializeInterface(object):
             sync_vehicle_color=self.sync_vehicle_color,
             sync_vehicle_lights=self.sync_vehicle_lights,
             ego_role_name=self.agent_role_name,
+            fleet_plan=fleet_plan,
         )
         self.interface.logger.info(
             "SUMO co-simulation connected (sync engine ready; will be ticked each loop iteration)."
         )
+
+    def _load_sumo_fleet_plan(self, client):
+        """
+        Loads the carla_variants file named by `sumo_carla_variants` (see docs/
+        SUMO_CARLA_Autoware_ブループリント割り当て_実装計画_v1.0.md 2.4 and 5 #3), or returns None
+        for the old choice (the vType id as blueprint, else a random one of
+        sumo_integration/data/vtypes.json): with `legacy_vtypes`, and with `auto` (default) when
+        there is no carla_variants_sumo_<sumocfg name>.yaml (e.g. Town05, Town10HD).
+
+            :raises VariantError: if the file is missing or fails a startup check (blueprint not
+                in CARLA, mesh/rules or the .sumocfg route-files changed since it was made, CARLA
+                version differs, ...).
+        """
+        from .sumo_integration.fleet_plan import FleetPlan
+        from .sumo_integration.fleet_plan import resolve_variants_path
+
+        path, reason = resolve_variants_path(self.sumo_carla_variants, self.sumo_cfg_file)
+        if path is None:
+            print(f"CARLA blueprints of SUMO vehicles: legacy (vType id, else vtypes.json) "
+                  f"({reason})")
+            return None
+        fleet_plan = FleetPlan(
+            path,
+            [blueprint.id for blueprint in self.world.get_blueprint_library().filter("vehicle.*")],
+            client.get_server_version(),
+            self.sumo_cfg_file,
+        )
+        print(f"CARLA blueprints of SUMO vehicles: {fleet_plan.path} "
+              f"({len(fleet_plan.assignment)} models, {reason})")
+        if fleet_plan.version_note:
+            print(f"Warning: {fleet_plan.version_note}")
+        return fleet_plan
 
     def load_world(self):
         client = carla.Client(self.local_host, self.port)
@@ -668,9 +709,20 @@ class InitializeInterface(object):
         if self.sumo_sync is None:
             return
 
+        if self.sumo_sync.fleet is not None:
+            try:
+                counts = ", ".join(f"{name} {row['spawned']} ({row['share']:.0%}, expected "
+                                   f"{row['expected_share']:.0%})"
+                                   for name, row in self.sumo_sync.fleet.summary().items())
+                print(f"CARLA bodies spawned for SUMO vehicles: {counts}")
+            except Exception as e:
+                print(f"Warning: Failed to summarize the CARLA blueprints: {e}")
+
         # Destroy SUMO-origin actors mirrored into CARLA (background traffic
-        # spawned via sync_sumo_to_carla()).
-        for carla_actor_id in list(self.sumo_sync.sumo2carla_ids.values()):
+        # spawned via sync_sumo_to_carla()): every CARLA body of each SUMO vehicle
+        # (several for long vehicles, see
+        # docs/SUMO_CARLA_Autoware_ブループリント割り当て_実装計画_v1.0.md 2.4).
+        for carla_actor_id in sorted(self.sumo_sync.mirrored_carla_ids()):
             try:
                 self.sumo_carla_sim.destroy_actor(carla_actor_id)
             except Exception as e:
@@ -729,7 +781,15 @@ def main():
         # traceback, so the cause is easy to spot in the launch output.
         print(f"Error: invalid parameters: {e}", flush=True)
         return 1
-    carla_bridge.load_world()
+    try:
+        carla_bridge.load_world()
+    except VariantError as e:
+        # The carla_variants file is missing or failed a startup check (see docs/
+        # SUMO_CARLA_Autoware_ブループリント割り当て_実装計画_v1.0.md 2.4). Checked before SUMO is
+        # started. One line, no traceback.
+        print(f"Error: CARLA blueprint assignment: {e.code}: {e.evidence}", flush=True)
+        carla_bridge._cleanup()
+        return 1
 
     # Register signal handlers for graceful shutdown
     signal.signal(signal.SIGINT, carla_bridge._stop_loop)
@@ -748,6 +808,13 @@ def main():
     except EgoSpawnGateError as e:
         # Test start failure (section 2.8): one line instead of a traceback.
         print(f"\nError: test start failed: {e}")
+        exit_code = 1
+    except VariantError as e:
+        # A SUMO vehicle whose vType has no CARLA body in the carla_variants file (unknown vType,
+        # one that had a zero share when the file was made, or another size): stop rather than
+        # skip it or substitute another blueprint (see docs/
+        # SUMO_CARLA_Autoware_ブループリント割り当て_実装計画_v1.0.md 2.4).
+        print(f"\nError: CARLA blueprint assignment: {e.code}: {e.evidence}")
         exit_code = 1
     except Exception as e:
         if not carla_bridge.is_sumo_disconnect_after_stop(e):

@@ -234,6 +234,11 @@ def collect_gap_actors(sumo_sync):
 
     - SUMO vehicles mirrored in CARLA: center and heading of the CARLA actor transform, length and
       width of its bounding box (source 'carla'; the box center offset is ignored, S0 #4).
+    - SUMO vehicles mirrored by several CARLA bodies (carla_variants, docs/
+      SUMO_CARLA_Autoware_ブループリント割り当て_実装計画_v1.0.md 2.4): the first body's box alone
+      would miss the later ones, which reach further back. The whole outline instead: from the SUMO
+      front bumper to the rear of the last body, as wide as the widest body (measured mesh; source
+      'carla').
     - SUMO vehicles not in CARLA (no blueprint, failed spawn): SUMO front bumper converted to the
       CARLA center with the SUMO length, SUMO length/width (source 'sumo_only').
     - CARLA-origin vehicles (carla2sumo_ids) are skipped: only EGO is one, and it does not exist yet.
@@ -262,13 +267,23 @@ def collect_gap_actors(sumo_sync):
 
     sumo, carla_sim = sumo_sync.sumo, sumo_sync.carla
     carla_controlled = set(sumo_sync.carla2sumo_ids.values())
+    extra_ids = getattr(sumo_sync, 'sumo2carla_extra_ids', {})
     actors = []
     for sumo_id in sumo.get_vehicle_ids():
         if sumo_id in carla_controlled:
             continue
         carla_id = sumo_sync.sumo2carla_ids.get(sumo_id)
         carla_actor = carla_sim.get_actor(carla_id) if carla_id is not None else None
-        if carla_actor is not None:
+        if carla_actor is not None and extra_ids.get(sumo_id):
+            fleet = sumo_sync.fleet
+            bodies = fleet.actors_for(sumo.get_actor(sumo_id).type_id)
+            length = max(b['front_offset_m'] + fleet.body(b['blueprint'])['length'] for b in bodies)
+            width = max(fleet.body(b['blueprint'])['width'] for b in bodies)
+            x, y, angle, _, _ = sumo.get_vehicle_footprint(sumo_id)
+            actors.append(from_sumo('sumo:%s/carla:%d+%d' % (sumo_id, carla_id,
+                                                             len(extra_ids[sumo_id])),
+                                    (x, y, angle, length, width), 'carla', front_bumper=True))
+        elif carla_actor is not None:
             actors.append(from_carla('sumo:%s/carla:%d' % (sumo_id, carla_id), carla_actor,
                                      'carla'))
         else:

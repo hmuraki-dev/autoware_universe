@@ -139,7 +139,7 @@ Vissim構成のF5・F6と同じ作りにする。
 | S1  | 共通部品の整理(Vissimブランチ)と取り込み(SUMOブランチ) | autoware_universe(両ブランチ) | 完了(2026-11-16) |
 | S2  | SUMOのvTypeを作り、Town01の需要を差し替える | CARLA | 完了(2026-11-16、CARLA `main` の `6a1c918`) |
 | S3  | SUMOの読み込み(`sumo_fleet.py`)、生成ツールの `--sumocfg`、Town01の生成物 | autoware_universe | 完了(2026-11-16) |
-| S4  | ブリッジへの組み込み(検査、vType IDでの引き、配置、重ね置き、隙間の検査) | autoware_universe | 未着手 |
+| S4  | ブリッジへの組み込み(検査、vType IDでの引き、配置、重ね置き、隙間の検査) | autoware_universe | 完了(2026-11-16) |
 | S5  | ブリッジ単体での実機確認(Autowareなし) | Linux | 未着手 |
 | S6  | Autoware全体での実機確認(Vissim構成との比較を含む) | Linux | 未着手 |
 | S7  | ドキュメントとコミット | autoware_universe・CARLA | 未着手 |
@@ -347,6 +347,30 @@ S2(CARLAリポジトリの変更)とS5・S6(実機)では `main` が要るので
 - テスト: Vissim構成の `test_vissim_fleet_plan.py` と同じ項目を、SUMOの形で書く(`test_sumo_fleet_plan.py`)。今の `sumo_*_test.py` が通ること。
 
 完了条件: 全テストが通る。`colcon build` が通る。
+
+#### 結果(S4、2026-11-16)
+
+- **`sumo_integration/fleet_plan.py`**(新規): Vissim構成の `FleetPlan` と同じ作りで、引き方だけをvTypeのIDにした。
+  - 起動時の検査は、Vissim構成と同じもの(生成物がない、ブループリントがない、実メッシュ・規則の変更、連結車、CARLAの版、同じvTypeが2つのモデルにある、`vtypes` がない)に、次の2つを足した。
+    - 渡された `.sumocfg` の `route-files` が、生成時と同じ並び・同じsha256か(`variant_source_changed`、`source: route_files`)。
+    - `route-files` を `sumo_fleet.read_models()` で読み直し、`carla_fleet.check_models()` でモデルの寸法と、割合 > 0 のモデルに割り当てがあるかを見る。
+  - 走行中: vType IDからモデルを引く。表にないIDは `npc_model_unknown`、`skipped` のIDは `variant_model_empty`。spawnのときは、その車の寸法(`extent` × 2)がモデルのL・Wと合うかも見て、合わなければ `variant_source_changed`(`source: vehicle_dimensions`)で止める。
+  - `resolve_variants_path(value, sumo_cfg_file)`: `auto`(既定)は `sumo_integration/data/carla_variants_sumo_<.sumocfgの名前を小文字>.yaml` があれば使い、なければ今の選び方。`legacy_vtypes` は今の選び方。それ以外はファイルのパス(相対パスは `sumo_integration/data/` から)。
+- **`bridge_helper.py`**: `get_fleet_blueprints(fleet_plan, sumo_id, sumo_actor, sync_color)` と `get_fleet_transforms(fleet_plan, sumo_transform, actors)` を足した。
+  - 色と運転手は、SUMOのIDを種にした乱数で選ぶ(同じ車の体は同じ色)。`sync_vehicle_color` のときはSUMOの色。`role_name` は今までどおり `sumo_driver`。
+  - 配置は、`get_carla_transform(transform, extent=0)` で前端を出し、`carla_fleet.body_origins()` で実メッシュの中心に置く。SUMOの長さ(`extent`)は使わない。
+- **`simulation_synchronization.py`**: Vissim構成のF5・F6と同じ形。
+  - 引数 `fleet_plan`(なければ今の動作)。spawn(`sync_sumo_to_carla`、ウォームアップ後の `spawn_all_sumo_actors_in_carla`)・更新・削除・`close` で、2体目以降(`sumo2carla_extra_ids`)も扱う。
+  - 2体目以降は、車の真下の地下(−200 m から10 mずつ下)にspawnしてから、同じフレームで並べる。spawnできなければ、その車の体をすべて消して写さない。
+  - `sync_carla_to_sumo` は `mirrored_carla_ids()`(全部の体)を除いてCARLA由来の車を探す。2体目以降がSUMOに取り込まれることはない。
+- **`ego_spawn_gate.py`** `collect_gap_actors`: 重ね置きの車は、SUMOの前端から最後の体の後端までの長さ、いちばん広い体の幅で見る(バスは12.135 m)。
+- **`carla_autoware.py`・`carla_ros.py`・launch**: パラメータ `sumo_carla_variants`(既定 `auto`)。
+  - `_init_sumo_integration()` の最初、SUMOを起動する前に `FleetPlan` を作る。どの生成物を使うか(または今の選び方か、その理由)を1行出す。
+  - `main()`: 起動時・走行中の `VariantError` を受け、`Error: CARLA blueprint assignment: <コード>: <根拠>` を1行出して、終了コード1で終わる(Vissim構成と同じ)。
+  - 後片付け: 体の数の要約(`CARLA bodies spawned for SUMO vehicles: ...`)を出し、全部の体を消す。
+- **テスト `test/test_sumo_fleet_plan.py`**(32件): Vissim構成の `test_vissim_fleet_plan.py` と同じ項目を、SUMOの形で書いた。SUMO特有のものとして、`route-files` の照合(中身の変更・並びの変更、`~/CARLA` のTown01があるときだけ)、車の寸法の照合、`auto` の解決、`sync_vehicle_color` の色、Vissimと同じ割り当てを足した。
+- テスト: SUMOブランチは232件成功・3件スキップ。スクリプト形式の `sumo_*_test.py`・`pedestrian_sync_stub_test.py` もすべて通った。`colcon build` も通り、生成物がインストール先に入ることを確かめた。
+- 実際の Town01(`~/CARLA` `main` の `6a1c918`)の `.sumocfg` を渡して、`FleetPlan` の起動時の検査が通ることを確かめた(CARLAなし、ブループリントの一覧は生成物から)。
 
 ### S5: ブリッジ単体での実機確認(Autowareなし)
 

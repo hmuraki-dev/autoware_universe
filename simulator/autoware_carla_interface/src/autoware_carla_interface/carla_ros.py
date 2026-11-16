@@ -92,6 +92,9 @@ class carla_ros2_interface(object):
             # Defaults keep SUMO integration disabled unless explicitly enabled.
             "use_sumo": (rclpy.Parameter.Type.BOOL, False),
             "sumo_cfg_file": (rclpy.Parameter.Type.STRING, ""),
+            # CARLA blueprints of SUMO vehicles (docs/SUMO_CARLA_Autoware_ブループリント割り当て_実装計画_v1.0.md
+            # 2.4): auto (carla_variants_sumo_<sumocfg name>.yaml if any), legacy_vtypes, or a file.
+            "sumo_carla_variants": (rclpy.Parameter.Type.STRING, "auto"),
             "sumo_gui": (rclpy.Parameter.Type.BOOL, False),
             "sumo_host": (rclpy.Parameter.Type.STRING, "None"),
             "sumo_port": (rclpy.Parameter.Type.STRING, "None"),

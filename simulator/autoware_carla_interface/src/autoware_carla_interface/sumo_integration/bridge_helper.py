@@ -25,6 +25,7 @@ import random
 import carla  # pylint: disable=import-error
 import traci  # pylint: disable=import-error
 
+from ..carla_fleet import body_origins
 from .sumo_simulation import SumoSignalState, SumoVehSignal
 
 # ==================================================================================================
@@ -184,6 +185,53 @@ class BridgeHelper(object):
             sumo_actor.color if blueprint.has_attribute('color') else (-1, -1, -1))
 
         return blueprint
+
+    @staticmethod
+    def get_fleet_blueprints(fleet_plan, sumo_actor_id, sumo_actor, sync_color=False):
+        """
+        Returns the blueprints of the CARLA bodies for the received sumo vehicle, from the
+        carla_variants (see docs/SUMO_CARLA_Autoware_ブループリント割り当て_実装計画_v1.0.md
+        2.4). Not in upstream.
+
+        Unlike get_carla_blueprint(), the blueprint is not the vType id nor chosen at random: it is
+        the one FleetPlan assigns to the vehicle's vType, whose size is checked against the
+        vehicle's. Only the color (unless sync_color) and the driver are chosen, seeded by the sumo
+        id; every body of the same vehicle gets the same color.
+
+            :raises carla_fleet.VariantError: if the vehicle's vType is unknown, has no assignment
+                or another size (FleetPlan.actors_for()); never falls back to another blueprint.
+            :return: [(blueprint, actor spec), ...], front to rear.
+        """
+        rng = random.Random(str(sumo_actor_id))
+        color = driver_id = None
+        if sync_color:
+            color = "{},{},{}".format(sumo_actor.color[0], sumo_actor.color[1], sumo_actor.color[2])
+        result = []
+        for spec in fleet_plan.actors_for(sumo_actor.type_id, sumo_actor.extent):
+            blueprint = BridgeHelper.blueprint_library.find(spec['blueprint'])
+            if blueprint.has_attribute('color'):
+                if color is None:
+                    color = rng.choice(blueprint.get_attribute('color').recommended_values)
+                blueprint.set_attribute('color', color)
+            if blueprint.has_attribute('driver_id'):
+                if driver_id is None:
+                    driver_id = rng.choice(blueprint.get_attribute('driver_id').recommended_values)
+                blueprint.set_attribute('driver_id', driver_id)
+            blueprint.set_attribute('role_name', 'sumo_driver')
+            result.append((blueprint, spec))
+        return result
+
+    @staticmethod
+    def get_fleet_transforms(fleet_plan, in_sumo_transform, actors):
+        """
+        Returns the carla transforms of the given bodies of one sumo vehicle, placed by their
+        measured mesh (carla_fleet.body_origins()) from sumo's front-center-bumper position,
+        instead of by sumo's length (extent). Not in upstream.
+        """
+        front = BridgeHelper.get_carla_transform(in_sumo_transform, carla.Vector3D(0, 0, 0))
+        origins = body_origins((front.location.x, front.location.y, front.location.z),
+                               front.rotation.yaw, front.rotation.pitch, actors, fleet_plan.mesh)
+        return [carla.Transform(carla.Location(x, y, z), front.rotation) for x, y, z in origins]
 
     @staticmethod
     def _create_sumo_vtype(carla_actor):

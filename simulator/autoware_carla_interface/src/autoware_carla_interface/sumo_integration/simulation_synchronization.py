@@ -37,6 +37,8 @@
 
 import logging
 
+import carla  # pylint: disable=import-error
+
 from .bridge_helper import BridgeHelper
 from .constants import INVALID_ACTOR_ID
 
@@ -44,6 +46,16 @@ from .constants import INVALID_ACTOR_ID
 # (Prius, fixed-seed random choice) is a dark red that is hard to see in sumo-gui, so the EGO
 # is always drawn in this bright red instead, whether sync_vehicle_color is on or off.
 EGO_SUMO_COLOR = '255,60,60'
+
+# A sumo vehicle represented by several CARLA bodies (carla_variants, see docs/
+# SUMO_CARLA_Autoware_ブループリント割り当て_実装計画_v1.0.md 2.4): the 2nd and later bodies overlap
+# the 1st one, so spawning them at their position fails ("collision at spawn position"). They are
+# spawned this far below the vehicle instead (CarlaSimulation.spawn_actor() adds SPAWN_OFFSET_Z),
+# one EXTRA_BODY_PARK_STEP_M lower per body and per retry, and moved to their position in the same
+# frame, like every other mirrored vehicle. Same as the Vissim bridge. Not in upstream.
+EXTRA_BODY_PARK_Z_M = -200.0
+EXTRA_BODY_PARK_STEP_M = 10.0
+EXTRA_BODY_SPAWN_RETRIES = 3
 
 # ==================================================================================================
 # -- simulation synchronization ---------------------------------------------------------------------
@@ -55,13 +67,19 @@ class SimulationSynchronization(object):
     SimulationSynchronization class is responsible for the synchronization of sumo and carla
     simulations.
     """
+    # FleetPlan (fleet_plan.py) when the CARLA bodies of sumo vehicles come from a carla_variants
+    # file (see docs/SUMO_CARLA_Autoware_ブループリント割り当て_実装計画_v1.0.md 2.4), else None:
+    # the upstream behavior (the vType id as blueprint, else a random one of data/vtypes.json).
+    fleet = None
+
     def __init__(self,
                  sumo_simulation,
                  carla_simulation,
                  tls_manager='none',
                  sync_vehicle_color=False,
                  sync_vehicle_lights=False,
-                 ego_role_name=None):
+                 ego_role_name=None,
+                 fleet_plan=None):
 
         self.sumo = sumo_simulation
         self.carla = carla_simulation
@@ -70,6 +88,7 @@ class SimulationSynchronization(object):
         self.sync_vehicle_color = sync_vehicle_color
         self.sync_vehicle_lights = sync_vehicle_lights
         self.ego_role_name = ego_role_name
+        self.fleet = fleet_plan
 
         if tls_manager == 'carla':
             self.sumo.switch_off_traffic_lights()
@@ -79,6 +98,9 @@ class SimulationSynchronization(object):
         # Mapped actor ids.
         self.sumo2carla_ids = {}  # Contains only actors controlled by sumo.
         self.carla2sumo_ids = {}  # Contains only actors controlled by carla.
+        # sumo vehicle id -> [carla actor id, ...] of its 2nd and later CARLA bodies (stacked
+        # bodies of a long vehicle, FleetPlan only). The 1st body is in sumo2carla_ids.
+        self.sumo2carla_extra_ids = {}
 
         # Mapped pedestrian ids (sumo person -> carla walker). sumo-->carla direction only,
         # always enabled (no CLI flag), mirroring the vehicle sync design.
@@ -137,14 +159,13 @@ class SimulationSynchronization(object):
             self.sumo.subscribe(sumo_actor_id)
             sumo_actor = self.sumo.get_actor(sumo_actor_id)
 
-            carla_blueprint = BridgeHelper.get_carla_blueprint(sumo_actor, self.sync_vehicle_color)
+            carla_blueprint, carla_transform = self._vehicle_spawn(sumo_actor_id, sumo_actor)
             if carla_blueprint is not None:
-                carla_transform = BridgeHelper.get_carla_transform(sumo_actor.transform,
-                                                                   sumo_actor.extent)
-
                 carla_actor_id = self.carla.spawn_actor(carla_blueprint, carla_transform)
-                if carla_actor_id != INVALID_ACTOR_ID:
+                if (carla_actor_id != INVALID_ACTOR_ID and
+                        self._spawn_extra_bodies(sumo_actor_id, sumo_actor, carla_actor_id)):
                     self.sumo2carla_ids[sumo_actor_id] = carla_actor_id
+                    self._record_vehicle_spawn(sumo_actor_id, sumo_actor, carla_blueprint)
             else:
                 self.sumo.unsubscribe(sumo_actor_id)
 
@@ -152,6 +173,7 @@ class SimulationSynchronization(object):
         for sumo_actor_id in self.sumo.destroyed_actors:
             if sumo_actor_id in self.sumo2carla_ids:
                 self.carla.destroy_actor(self.sumo2carla_ids.pop(sumo_actor_id))
+                self._destroy_extra_bodies(sumo_actor_id)
 
         # Updating sumo actors in carla.
         for sumo_actor_id in self.sumo2carla_ids:
@@ -160,8 +182,7 @@ class SimulationSynchronization(object):
             sumo_actor = self.sumo.get_actor(sumo_actor_id)
             carla_actor = self.carla.get_actor(carla_actor_id)
 
-            carla_transform = BridgeHelper.get_carla_transform(sumo_actor.transform,
-                                                               sumo_actor.extent)
+            carla_transform = self._vehicle_transform(sumo_actor)
             if self.sync_vehicle_lights:
                 carla_lights = BridgeHelper.get_carla_lights_state(carla_actor.get_light_state(),
                                                                    sumo_actor.signals)
@@ -169,6 +190,7 @@ class SimulationSynchronization(object):
                 carla_lights = None
 
             self.carla.synchronize_vehicle(carla_actor_id, carla_transform, carla_lights)
+            self._synchronize_extra_bodies(sumo_actor_id, sumo_actor, carla_lights)
 
         # -----------------------------
         # sumo-->carla pedestrian sync
@@ -255,14 +277,13 @@ class SimulationSynchronization(object):
             self.sumo.subscribe(sumo_actor_id)
             sumo_actor = self.sumo.get_actor(sumo_actor_id)
 
-            carla_blueprint = BridgeHelper.get_carla_blueprint(sumo_actor, self.sync_vehicle_color)
+            carla_blueprint, carla_transform = self._vehicle_spawn(sumo_actor_id, sumo_actor)
             if carla_blueprint is not None:
-                carla_transform = BridgeHelper.get_carla_transform(sumo_actor.transform,
-                                                                   sumo_actor.extent)
-
                 carla_actor_id = self.carla.spawn_actor(carla_blueprint, carla_transform)
-                if carla_actor_id != INVALID_ACTOR_ID:
+                if (carla_actor_id != INVALID_ACTOR_ID and
+                        self._spawn_extra_bodies(sumo_actor_id, sumo_actor, carla_actor_id)):
                     self.sumo2carla_ids[sumo_actor_id] = carla_actor_id
+                    self._record_vehicle_spawn(sumo_actor_id, sumo_actor, carla_blueprint)
                     counts['vehicles'] += 1
                     continue
             else:
@@ -291,6 +312,112 @@ class SimulationSynchronization(object):
 
         return counts
 
+    def _vehicle_spawn(self, sumo_actor_id, sumo_actor):
+        """
+        Returns (blueprint, spawn transform) of the (first) CARLA body for the given sumo vehicle,
+        or (None, None) if the upstream path finds no blueprint.
+
+        With a FleetPlan (see docs/SUMO_CARLA_Autoware_ブループリント割り当て_実装計画_v1.0.md
+        2.4), the blueprint is the one assigned to the vehicle's vType and the transform places the
+        body by its measured mesh; an unknown or unassigned vType, or a vehicle of another size,
+        stops the co-simulation (carla_fleet.VariantError) instead of skipping the vehicle. The
+        other bodies (if any) are spawned by _spawn_extra_bodies() and kept in
+        sumo2carla_extra_ids. Without a FleetPlan, the upstream behavior: get_carla_blueprint(),
+        placed by sumo's length.
+        """
+        if self.fleet is None:
+            blueprint = BridgeHelper.get_carla_blueprint(sumo_actor, self.sync_vehicle_color)
+            if blueprint is None:
+                return None, None
+            return blueprint, BridgeHelper.get_carla_transform(sumo_actor.transform,
+                                                               sumo_actor.extent)
+        blueprint, spec = BridgeHelper.get_fleet_blueprints(self.fleet, sumo_actor_id, sumo_actor,
+                                                            self.sync_vehicle_color)[0]
+        transform, = BridgeHelper.get_fleet_transforms(self.fleet, sumo_actor.transform, [spec])
+        return blueprint, transform
+
+    def _vehicle_transform(self, sumo_actor):
+        """
+        Returns the carla transform of the (first) CARLA body mirroring the given sumo vehicle: by
+        the measured mesh with a FleetPlan, else (upstream) by sumo's length.
+        """
+        if self.fleet is None:
+            return BridgeHelper.get_carla_transform(sumo_actor.transform, sumo_actor.extent)
+        spec = self.fleet.actors_for(sumo_actor.type_id)[0]
+        transform, = BridgeHelper.get_fleet_transforms(self.fleet, sumo_actor.transform, [spec])
+        return transform
+
+    def mirrored_carla_ids(self):
+        """Every CARLA actor id that mirrors a sumo vehicle (all bodies; walkers excluded)."""
+        ids = set(self.sumo2carla_ids.values())
+        for extra_ids in self.sumo2carla_extra_ids.values():
+            ids.update(extra_ids)
+        return ids
+
+    def _spawn_extra_bodies(self, sumo_actor_id, sumo_actor, first_carla_actor_id):
+        """
+        Spawns the 2nd and later CARLA bodies of the given sumo vehicle, below it (see
+        EXTRA_BODY_PARK_Z_M); _synchronize_extra_bodies() moves them to their position in the same
+        frame. Returns True if the vehicle is complete (or has a single body). If a body cannot be
+        spawned, destroys every body of the vehicle already spawned (the first one included), logs
+        an error and returns False: the vehicle is then left without a CARLA counterpart, as when
+        the first body fails to spawn.
+        """
+        if self.fleet is None:
+            return True
+        bodies = BridgeHelper.get_fleet_blueprints(self.fleet, sumo_actor_id, sumo_actor,
+                                                   self.sync_vehicle_color)[1:]
+        if not bodies:
+            return True
+        front = BridgeHelper.get_carla_transform(sumo_actor.transform, carla.Vector3D(0, 0, 0))
+        extra_ids = []
+        for index, (blueprint, _) in enumerate(bodies, start=1):
+            carla_actor_id = INVALID_ACTOR_ID
+            for attempt in range(EXTRA_BODY_SPAWN_RETRIES + 1):
+                depth = EXTRA_BODY_PARK_STEP_M * (index + attempt * len(bodies))
+                parking = carla.Transform(
+                    carla.Location(front.location.x, front.location.y,
+                                   EXTRA_BODY_PARK_Z_M - depth),
+                    front.rotation)
+                carla_actor_id = self.carla.spawn_actor(blueprint, parking)
+                if carla_actor_id != INVALID_ACTOR_ID:
+                    break
+            if carla_actor_id == INVALID_ACTOR_ID:
+                logging.error('[sync] vehicle %s: CARLA body %d of %d (%s) could not be spawned; '
+                              'no CARLA counterpart for this vehicle', sumo_actor_id, index + 1,
+                              len(bodies) + 1, blueprint.id)
+                for spawned_id in [first_carla_actor_id] + extra_ids:
+                    self.carla.destroy_actor(spawned_id)
+                return False
+            extra_ids.append(carla_actor_id)
+        self.sumo2carla_extra_ids[sumo_actor_id] = extra_ids
+        self.fleet.record_spawn([blueprint.id for blueprint, _ in bodies])
+        return True
+
+    def _synchronize_extra_bodies(self, sumo_actor_id, sumo_actor, carla_lights):
+        """Moves the 2nd and later CARLA bodies of a sumo vehicle, if it has any."""
+        extra_ids = self.sumo2carla_extra_ids.get(sumo_actor_id)
+        if not extra_ids:
+            return
+        actors = self.fleet.actors_for(sumo_actor.type_id)
+        transforms = BridgeHelper.get_fleet_transforms(self.fleet, sumo_actor.transform, actors)
+        for carla_actor_id, carla_transform in zip(extra_ids, transforms[1:]):
+            self.carla.synchronize_vehicle(carla_actor_id, carla_transform, carla_lights)
+
+    def _destroy_extra_bodies(self, sumo_actor_id):
+        for carla_actor_id in self.sumo2carla_extra_ids.pop(sumo_actor_id, []):
+            self.carla.destroy_actor(carla_actor_id)
+
+    def _record_vehicle_spawn(self, sumo_actor_id, sumo_actor, blueprint):
+        """Counts the spawn for the end-of-run summary and logs the body/model residual."""
+        if self.fleet is None:
+            return
+        self.fleet.record_spawn([blueprint.id])
+        spec = self.fleet.spec_for(sumo_actor.type_id)
+        logging.debug('[sync] vehicle %s (vType %s): %s, dL=%+.3f dW=%+.3f', sumo_actor_id,
+                      sumo_actor.type_id, '+'.join(actor['blueprint'] for actor in spec['actors']),
+                      spec['dL'], spec['dW'])
+
     def sync_carla_to_sumo(self):
         """
         "carla-->sumo sync" half of the co-simulation step.
@@ -304,8 +431,9 @@ class SimulationSynchronization(object):
         """
         self.carla.update_actor_diff()
 
-        # Spawning new carla actors (not controlled by sumo)
-        carla_spawned_actors = self.carla.spawned_actors - set(self.sumo2carla_ids.values())
+        # Spawning new carla actors (not controlled by sumo). Every body of a sumo vehicle (the
+        # 2nd and later ones too) is a sumo actor, never a CARLA-origin vehicle to adopt into sumo.
+        carla_spawned_actors = self.carla.spawned_actors - self.mirrored_carla_ids()
         for carla_actor_id in carla_spawned_actors:
             carla_actor = self.carla.get_actor(carla_actor_id)
 
@@ -373,7 +501,7 @@ class SimulationSynchronization(object):
         self.carla.world.apply_settings(settings)
 
         # Destroying synchronized actors.
-        for carla_actor_id in self.sumo2carla_ids.values():
+        for carla_actor_id in self.mirrored_carla_ids():
             self.carla.destroy_actor(carla_actor_id)
 
         for carla_walker_id in self.sumo2carla_ped_ids.values():
