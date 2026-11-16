@@ -1,0 +1,107 @@
+# carla_variants_town01 — 生成物。手で書き換えない
+# 作り方:
+#   python3 tools/carla_fleet/build_carla_variants.py \
+#       --inpx <~/CARLA feature/vissim_windows 4213552 Co-Simulation/PTV-Vissim/examples/Town01/Town01.inpx を取り出したファイル> \
+#       --inpx-ref "~/CARLA feature/vissim_windows 4213552 Co-Simulation/PTV-Vissim/examples/Town01/Town01.inpx" \
+#       --geometry src/autoware_carla_interface/data/carla_fleet/mesh_measurements_carla0.9.15.json \
+#       --rules src/autoware_carla_interface/data/carla_fleet/carla_variant_rules.yaml \
+#       --out src/autoware_carla_interface/vissim_integration/data/carla_variants_town01.yaml
+#
+# assignment: モデル(inpx の 2D/3D モデル番号) -> CARLA の体の並び
+#   file:  モデルの先頭セグメントのファイル名(パス・拡張子なし)。DSI の ModelFileName と同じ鍵
+#   types: {車種: 車種内のモデルの割合}、share: 網全体での割合(どちらも inpx の定義を読んだもの)
+#          ブリッジは (VehicleType, ModelFileName) を types と file で引く。無ければ止める(npc_model_unknown)
+#   front_offset_m: 車両の前端から、その actor の前端までの距離 [m]
+#   follows_path:   true なら車両の軌跡を遡った位置・向きに置く(連結の近似)
+#   dL・dW = CARLA の外形(LiDAR で測った外形、幅はミラー込み) − モデルの寸法 [m]
+name: carla_variants_town01
+generated_by: tools/carla_fleet/build_carla_variants.py
+generated_at: '2026-11-16T13:13:32+09:00'
+
+# 生成元。ブリッジは起動時に geometry と rules の sha256 を照合し、違えば止める(variant_source_changed)
+#   geometry・rules のパスは、このファイルのあるディレクトリからの相対パス
+#   inpx は記録だけ(Windows 側にあり、ブリッジは照合しない。モデルが変われば走行中に npc_model_unknown で止まる)
+sources:
+  inpx: {ref: "~/CARLA feature/vissim_windows 4213552 Co-Simulation/PTV-Vissim/examples/Town01/Town01.inpx", sha256: "2265ff82928da408fcefee6848b565b8d8e3b647ed91e1cb9154250894b50f14"}
+  geometry: {path: ../../data/carla_fleet/mesh_measurements_carla0.9.15.json, sha256: c812bdab17a144cbb6f2b5bf57901f8481440f75845a2a8c04718b78dea60023, carla_server_version: "0.9.15"}
+  rules: {path: ../../data/carla_fleet/carla_variant_rules.yaml, sha256: "08ba25bd19577d02ced10d65a939d4c4f059d2c1b6c1772016de33fde8ac3017"}
+
+# 適用した規則の写し(読む人のため。ブリッジは使わない)
+rules:
+  length_tolerance_m: 0.75
+  width_over_tolerance_m: 0.35
+  width_under_tolerance_m: {CAR: 0.35, HGV: 0.10, BUS: 0.10, TRAM: 0.10, BIKE: 0.35}
+  select: nearest_length
+  fallback: {blueprint: vehicle.carlamotors.carlacola, kind: stack}
+  excluded: [vehicle.carlamotors.firetruck, vehicle.carlamotors.european_hgv, vehicle.ford.ambulance, "vehicle.dodge.charger_police*", vehicle.ford.crown, "vehicle.volkswagen.t2*", vehicle.toyota.prius]
+
+assignment:
+  # --- 車種 100(CAR) ---
+  '1': {L: 3.561, W: 1.883, share: 0.0360, method: nearest, dL: +0.013, dW: -0.072,
+        file: "Car - Fiat 500 (2018)", types: {'100': 0.060}, segments: 1,
+        actors: [{blueprint: vehicle.nissan.micra, front_offset_m: 0.0}]}   # Car - Fiat 500
+  '2': {L: 4.201, W: 1.910, share: 0.0300, method: nearest, dL: -0.049, dW: +0.059,
+        file: "Car - Tesla Model Y (2022)", types: {'100': 0.050}, segments: 1,
+        actors: [{blueprint: vehicle.audi.tt, front_offset_m: 0.0}]}   # Car - Tesla Model Y
+  '3': {L: 4.211, W: 2.004, share: 0.1080, method: nearest, dL: -0.059, dW: -0.035,
+        file: "Car - Volkswagen Golf (2007)", types: {'100': 0.180}, segments: 1,
+        actors: [{blueprint: vehicle.audi.tt, front_offset_m: 0.0}]}   # Car - Volkswagen Golf
+  '4': {L: 4.414, W: 2.047, share: 0.0660, method: nearest, dL: +0.088, dW: +0.114,
+        file: "Car - Mercedes B Class (2021)", types: {'100': 0.110}, segments: 1,
+        actors: [{blueprint: vehicle.mini.cooper_s_2021, front_offset_m: 0.0}]}   # Car - Mercedes B Class
+  '5': {L: 4.751, W: 2.032, share: 0.0840, method: nearest, dL: -0.002, dW: +0.065,
+        file: "Car - Mercedes C Class (2021)", types: {'100': 0.140}, segments: 1,
+        actors: [{blueprint: vehicle.tesla.model3, front_offset_m: 0.0}]}   # Car - Mercedes C Class
+  '6': {L: 4.781, W: 2.022, share: 0.0300, method: nearest, dL: -0.033, dW: +0.075,
+        file: "Car - Skoda Superb Combi (2022)", types: {'100': 0.050}, segments: 1,
+        actors: [{blueprint: vehicle.tesla.model3, front_offset_m: 0.0}]}   # Car - Skoda Superb Combi
+  '7': {L: 4.991, W: 2.118, share: 0.0660, method: nearest, dL: +0.011, dW: -0.217,
+        file: "Car - Audi A6 Avant (2021)", types: {'100': 0.110}, segments: 1,
+        actors: [{blueprint: vehicle.dodge.charger_2020, front_offset_m: 0.0}]}   # Car - Audi A6 Avant
+  '8': {L: 4.328, W: 1.992, share: 0.0420, method: nearest, dL: +0.175, dW: +0.169,
+        file: "SUV - Nissan Qashqai (2022)", types: {'100': 0.070}, segments: 1,
+        actors: [{blueprint: vehicle.mini.cooper_s_2021, front_offset_m: 0.0}]}   # SUV - Nissan Qashqai
+  '9': {L: 4.500, W: 2.107, share: 0.1080, method: nearest, dL: +0.002, dW: +0.054,
+        file: "SUV - Volkswagen Tiguan eHybrid (2022)", types: {'100': 0.180}, segments: 1,
+        actors: [{blueprint: vehicle.mini.cooper_s_2021, front_offset_m: 0.0}]}   # SUV - Volkswagen Tiguan
+  '10': {L: 4.600, W: 2.037, share: 0.0300, method: nearest, dL: -0.038, dW: -0.123,
+        file: "SUV - Volkswagen ID 4 (2022)", types: {'100': 0.050}, segments: 1,
+        actors: [{blueprint: vehicle.nissan.patrol, front_offset_m: 0.0}]}   # SUV - Volkswagen ID 4
+  # --- 車種 210(HGV) ---
+  '23': {L: 7.930, W: 2.550, share: 0.1000, method: fallback_stack, dL: +0.000, dW: +0.010,
+        file: "HGV - Delivery DAF LF (2014)", types: {'210': 1.000}, segments: 1,
+        actors: [{blueprint: vehicle.carlamotors.carlacola, front_offset_m: 0.0},
+                 {blueprint: vehicle.carlamotors.carlacola, front_offset_m: 2.821142}]}   # HGV - Delivery DAF LF
+  # --- 車種 220(HGV) ---
+  '22': {L: 5.960, W: 2.550, share: 0.1000, method: fallback_stack, dL: +0.000, dW: +0.010,
+        file: "HGV - Semi-Tractor Volvo E (2019)", types: {'220': 1.000}, segments: 1,
+        actors: [{blueprint: vehicle.carlamotors.carlacola, front_offset_m: 0.0},
+                 {blueprint: vehicle.carlamotors.carlacola, front_offset_m: 0.851142}]}   # HGV - Semi-Tractor Volvo E
+  # --- 車種 300(BUS) ---
+  '31': {L: 12.135, W: 2.550, share: 0.1000, method: fallback_stack, dL: +0.000, dW: +0.010,
+        file: "Bus - C2 Standard 2-doors", types: {'300': 1.000}, segments: 1,
+        actors: [{blueprint: vehicle.carlamotors.carlacola, front_offset_m: 0.0},
+                 {blueprint: vehicle.carlamotors.carlacola, front_offset_m: 3.513071},
+                 {blueprint: vehicle.carlamotors.carlacola, front_offset_m: 7.026142}]}   # Bus - C2 Standard
+  # --- 車種 700(BIKE) ---
+  '70': {L: 2.098, W: 0.907, share: 0.1000, method: nearest, dL: -0.082, dW: -0.033,
+        file: "Bike - Motorbike Yamaha MT 07 (2022)", types: {'700': 1.000}, segments: 1,
+        actors: [{blueprint: vehicle.kawasaki.ninja, front_offset_m: 0.0}]}   # Bike - Motorbike Yamaha MT 07
+
+# 割り当てなし(割合 0 のモデル。交通シムが出さない。走行中に来たら variant_model_empty で止まる)
+skipped:
+  '61': {L: 1.775, W: 0.628, reason: share_zero,
+        file: "Bike - Cycle Man 02", types: {'610': 1.000}, segments: 1}   # Bike - Cycle Man
+  '62': {L: 1.775, W: 0.656, reason: share_zero,
+        file: "Bike - Cycle Woman", types: {'620': 1.000}, segments: 1}   # Bike - Cycle Woman
+
+# 100 台あたりのブループリントの体数(レビュー用。ブリッジは使わない)
+expected_bodies_per_100_vehicles:
+  vehicle.carlamotors.carlacola:   70.0
+  vehicle.mini.cooper_s_2021:      21.6
+  vehicle.audi.tt:                 13.8
+  vehicle.tesla.model3:            11.4
+  vehicle.kawasaki.ninja:          10.0
+  vehicle.dodge.charger_2020:       6.6
+  vehicle.nissan.micra:             3.6
+  vehicle.nissan.patrol:            3.0
