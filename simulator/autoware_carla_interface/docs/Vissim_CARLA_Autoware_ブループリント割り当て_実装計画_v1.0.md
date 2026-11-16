@@ -203,7 +203,7 @@ launchに `vissim_carla_variants`(生成物のパス)を足す。既定は `viss
 | F4  | inpxの読み込み・生成ツールと、Town01の生成物 | autoware_universe | 完了(2026-11-16) |
 | F5  | ブリッジへの組み込み(起動時の検査、モデルの引き、実メッシュ中心での配置) | autoware_universe | 完了(2026-11-16) |
 | F6  | 重ね置き(F3で必要になったときだけ) | autoware_universe | 完了(2026-11-16) |
-| F7  | ブリッジ単体での実機確認(Autowareなし) | Linux + Windows | 未着手 |
+| F7  | ブリッジ単体での実機確認(Autowareなし) | Linux + Windows | 完了(2026-11-16) |
 | F8  | Autoware全体での実機確認 | Linux + Windows | 未着手 |
 | F9  | ドキュメントとコミット、SUMO計画への引き継ぎ | autoware_universe | 未着手 |
 
@@ -608,6 +608,50 @@ python3 tools/carla_fleet/build_carla_variants.py \
 5. 自車(CARLA→Vissim)の動きが今と変わらないこと。
 
 完了条件: 1〜5の結果を、この計画書に書いてある。
+
+#### 結果(F7、2026-11-16、CARLA 0.9.15、Town01、Vissim(Windows)、ブリッジ単体)
+
+起動は信号設置のB6と同じ引数(`use_vissim:=true`・`sync_traffic_lights:=true`・`spawn_point:=334.74,263.00,0.30,0.0,0.0,90.0`)。`vissim_carla_variants` は既定(`carla_variants_town01.yaml`)。CARLAの様子は、tickしない監視スクリプトで20秒ごとに見た(scratchpad。コミットしない)。
+
+1. **起動時の検査**
+   - 生成物と生成元の写しをscratchpadに作り、規則に1行足して、`vissim_carla_variants` に絶対パスで渡した。リポジトリのファイルは変えていない。
+   - 結果: `Error: CARLA blueprint assignment: variant_source_changed: {'source': 'rules', ..., 'recorded_sha256': '08ba25bd…', 'current_sha256': '17776f50…'}` の1行を出し、終了コード1で止まった。launch全体も止まった(`on_exit="shutdown"`)。
+   - ログに接続の行はなく、**Vissimアダプタには接続していない**。プロセスも残っていない。
+   - 止まるときに出る `republish` の `exit code -11` は、11/12の起動ログにも出ている。今回の変更とは関係しない。
+   - 通常の起動では、`CARLA blueprints of Vissim vehicles: .../carla_variants_town01.yaml (14 models)` が出た。
+2. **走行中**(`vissim_sim_period:=240`。シミュレーション時間240秒、実時間で約9分)
+   - `Vissim co-simulation period elapsed (4800 ticks), stopping.` のあと、後片付けまで通った。launchの終了コードは0。
+   - **エラーは0件**: `npc_model_unknown`・`variant_model_empty`、spawnの失敗、2体目以降の失敗はなかった。出てきたVissimの車は、すべて生成物の表で引けた。
+   - 終了時の要約(体の数。比率の見込みは `expected_bodies_per_100_vehicles` から):
+
+     | ブループリント | 体の数 | 比率 | 見込み |
+     | -------------- | -----: | ---: | -----: |
+     | `carlamotors.carlacola` | 27 | 44% | 50% |
+     | `mini.cooper_s_2021` | 10 | 16% | 15% |
+     | `audi.tt` | 6 | 10% | 10% |
+     | `dodge.charger_2020` | 6 | 10% | 5% |
+     | `kawasaki.ninja` | 5 | 8% | 7% |
+     | `tesla.model3` | 5 | 8% | 8% |
+     | `nissan.patrol` | 2 | 3% | 2% |
+     | `nissan.micra` | 1 | 2% | 3% |
+
+     台数が少ないので多少のずれはあるが、見込みとおおむね合う。割り当て先8種がすべて出た。各車がどのモデルだったかはdebugログにしか出ないので、モデル単位では数えていない。
+   - 監視スクリプト(約180秒分): 同時に出ていた車は最大49台。新しく現れたactorの `role_name` は、`vissim_driver` 48と、`ego_vehicle` 1(`toyota.prius`)だけ。
+   - **地下に取り残された体は一度もなかった**(z < −50 mのactorが0)。
+   - **重なった `carlacola` の組228組は、すべて横ずれ0.05 m未満、向きの差0.5度未満で並んでいた**。監視スクリプトが「並びが崩れている」とした3組は、横に4.0 m離れ、向きが180度違う。反対車線ですれ違ったトラックどうしを拾っただけ。
+   - 終了後、CARLAに車両・センサーは残っていない(1回tickして確かめた)。
+3. **見た目**: 走っているバスを4枚撮影した(`docs/img/carla_blueprint_assignment/f7_bus_with_vissim.webp`)。どれも、Vissimの道路に沿って `carlacola` 3体が隙間なく並んで走っている。Vissim GUIとの並べた比較はしていない(前端の位置はF0の3とF6で確かめた)。
+4. **ウォームアップあり**(`vissim_warmup_time:=100`、`vissim_sim_period:=120`。アダプタは起動し直した)
+   - `[VISSIM WARMUP] completed: t=100.0 s vehicles=14 pedestrians=2 (wall 33.4 s)`
+   - `[VISSIM WARMUP] caught up: carla_spawned=14 vissim_only=0 pedestrians=2 pedestrians_vissim_only=0 spawn_retries=0`。重ね置きの車も、一括spawnで全部出た。
+   - `[EGO SPAWN CHECK] t=100.00 s front=none rear=none overlap=none result=SAFE`
+   - 一括spawnの直後から90秒見た。重なった `carlacola` の組44組はすべて並びが合い、地下に残った体はなかった。`role_name` は `vissim_driver` 33と `ego_vehicle` 1だけ。
+   - 終了: `period elapsed (4400 ticks)`、要約(`carlacola` 27(48%)など)、`Cleanup complete.`、launchの終了コード0、CARLAに車両・センサーなし。
+   - EGOの前後に車がいなかったので、重ね置きの車を全体の外形で見る隙間の検査(F6)は、実機では働いていない(テストでは確かめた)。
+5. **自車(CARLA→Vissim)**
+   - EGO(`prius`、`ego_vehicle`)は、2回とも出て走行が終わった。
+   - 2体目以降がCARLA由来の車として誤ってVissimへ送られると、自車の枠(`vissim_simulator_vehicles=1`)が足りなくなるはず。しかし、ログに警告もエラーもなかった。
+   - Vissim側で自車が正しく扱われたかを直接見るログはない。Autowareで走らせるF8で、EGOとVissimの車の動きを見る。
 
 ### F8: Autoware全体での実機確認
 
