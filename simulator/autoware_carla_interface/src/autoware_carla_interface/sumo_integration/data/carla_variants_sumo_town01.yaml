@@ -1,0 +1,188 @@
+# carla_variants_sumo_town01 — 生成物。手で書き換えない
+# 作り方:
+#   python3 tools/carla_fleet/build_carla_variants.py \
+#       --sumocfg /home/divp/CARLA/Co-Simulation/Sumo/examples/Town01.sumocfg \
+#       --sumocfg-ref "~/CARLA main 6a1c918 Co-Simulation/Sumo/examples/Town01.sumocfg" \
+#       --geometry src/autoware_carla_interface/data/carla_fleet/mesh_measurements_carla0.9.15.json \
+#       --rules src/autoware_carla_interface/data/carla_fleet/carla_variant_rules.yaml \
+#       --out src/autoware_carla_interface/sumo_integration/data/carla_variants_sumo_town01.yaml
+#
+# assignment: モデル(SUMO の vType を寸法でまとめたもの。名前 L<長さ>_W<幅>) -> CARLA の体の並び
+#   vtypes: まとめた vType の ID。share: 出現割合(flow・vehicle の台数 × vTypeDistribution の確率を読んだもの)
+#           ブリッジは車の vType ID で引く。無ければ止める(npc_model_unknown)
+#   front_offset_m: 車両の前端から、その actor の前端までの距離 [m]
+#   follows_path:   true なら車両の軌跡を遡った位置・向きに置く(連結の近似)
+#   dL・dW = CARLA の外形(LiDAR で測った外形、幅はミラー込み) − モデルの寸法 [m]
+name: carla_variants_sumo_town01
+generated_by: tools/carla_fleet/build_carla_variants.py
+generated_at: '2026-11-16T17:09:18+09:00'
+
+# 生成元。ブリッジは起動時に geometry と rules の sha256 を照合し、違えば止める(variant_source_changed)
+#   geometry・rules のパスは、このファイルのあるディレクトリからの相対パス
+#   sumocfg・route_files は .sumocfg と route-files の各ファイル(.sumocfg に書かれた名前)。ブリッジは起動時に、
+#   渡された .sumocfg の route-files の sha256 と照合し、違えば止める(variant_source_changed)
+sources:
+  sumocfg: {ref: "~/CARLA main 6a1c918 Co-Simulation/Sumo/examples/Town01.sumocfg", sha256: ae7329a5e830b876f7a4038f717fe3c718e469befdfb43017e34afb2c2801584}
+  route_files: {carlavtypes.rou.xml: "74d4f9b79ca14d61f6e70cf121e61d8eb92cdc9cf00257f74035e0a7809f5621", vissim_fleet_vtypes.rou.xml: "950a9b99b8a8908a8a44dc8a4fbb0e1a836b74a5bf969db12a363fb445d4409e", rou/Town01.rou.xml: "14e0b5cb6bc81c39f4ccd4e8b009366396168478d375a851fb6b31bcda9f5ae1"}
+  geometry: {path: ../../data/carla_fleet/mesh_measurements_carla0.9.15.json, sha256: c812bdab17a144cbb6f2b5bf57901f8481440f75845a2a8c04718b78dea60023, carla_server_version: "0.9.15"}
+  rules: {path: ../../data/carla_fleet/carla_variant_rules.yaml, sha256: "08ba25bd19577d02ced10d65a939d4c4f059d2c1b6c1772016de33fde8ac3017"}
+
+# 適用した規則の写し(読む人のため。ブリッジは使わない)
+rules:
+  length_tolerance_m: 0.75
+  width_over_tolerance_m: 0.35
+  width_under_tolerance_m: {CAR: 0.35, HGV: 0.10, BUS: 0.10, TRAM: 0.10, BIKE: 0.35}
+  select: nearest_length
+  fallback: {blueprint: vehicle.carlamotors.carlacola, kind: stack}
+  excluded: [vehicle.carlamotors.firetruck, vehicle.carlamotors.european_hgv, vehicle.ford.ambulance, "vehicle.dodge.charger_police*", vehicle.ford.crown, "vehicle.volkswagen.t2*", vehicle.toyota.prius]
+
+assignment:
+  # --- 車両グループ A_car(CAR) ---
+  'L3.561_W1.883': {L: 3.561, W: 1.883, share: 0.0420, method: nearest, dL: +0.013, dW: -0.072,
+        vtypes: [vissim.1.fiat_500], segments: 1,
+        actors: [{blueprint: vehicle.nissan.micra, front_offset_m: 0.0}]}   # CAR 3.561x1.883 m (vissim.1.fiat_500)
+  'L4.201_W1.910': {L: 4.201, W: 1.910, share: 0.0350, method: nearest, dL: -0.049, dW: +0.059,
+        vtypes: [vissim.2.tesla_model_y], segments: 1,
+        actors: [{blueprint: vehicle.audi.tt, front_offset_m: 0.0}]}   # CAR 4.201x1.910 m (vissim.2.tesla_model_y)
+  'L4.211_W2.004': {L: 4.211, W: 2.004, share: 0.1260, method: nearest, dL: -0.059, dW: -0.035,
+        vtypes: [vissim.3.volkswagen_golf], segments: 1,
+        actors: [{blueprint: vehicle.audi.tt, front_offset_m: 0.0}]}   # CAR 4.211x2.004 m (vissim.3.volkswagen_golf)
+  'L4.328_W1.992': {L: 4.328, W: 1.992, share: 0.0490, method: nearest, dL: +0.175, dW: +0.169,
+        vtypes: [vissim.8.nissan_qashqai], segments: 1,
+        actors: [{blueprint: vehicle.mini.cooper_s_2021, front_offset_m: 0.0}]}   # CAR 4.328x1.992 m (vissim.8.nissan_qashqai)
+  'L4.414_W2.047': {L: 4.414, W: 2.047, share: 0.0770, method: nearest, dL: +0.088, dW: +0.114,
+        vtypes: [vissim.4.mercedes_b_class], segments: 1,
+        actors: [{blueprint: vehicle.mini.cooper_s_2021, front_offset_m: 0.0}]}   # CAR 4.414x2.047 m (vissim.4.mercedes_b_class)
+  'L4.500_W2.107': {L: 4.500, W: 2.107, share: 0.1260, method: nearest, dL: +0.002, dW: +0.054,
+        vtypes: [vissim.9.volkswagen_tiguan], segments: 1,
+        actors: [{blueprint: vehicle.mini.cooper_s_2021, front_offset_m: 0.0}]}   # CAR 4.500x2.107 m (vissim.9.volkswagen_tiguan)
+  'L4.600_W2.037': {L: 4.600, W: 2.037, share: 0.0350, method: nearest, dL: -0.038, dW: -0.123,
+        vtypes: [vissim.10.volkswagen_id_4], segments: 1,
+        actors: [{blueprint: vehicle.nissan.patrol, front_offset_m: 0.0}]}   # CAR 4.600x2.037 m (vissim.10.volkswagen_id_4)
+  'L4.751_W2.032': {L: 4.751, W: 2.032, share: 0.0980, method: nearest, dL: -0.002, dW: +0.065,
+        vtypes: [vissim.5.mercedes_c_class], segments: 1,
+        actors: [{blueprint: vehicle.tesla.model3, front_offset_m: 0.0}]}   # CAR 4.751x2.032 m (vissim.5.mercedes_c_class)
+  'L4.781_W2.022': {L: 4.781, W: 2.022, share: 0.0350, method: nearest, dL: -0.033, dW: +0.075,
+        vtypes: [vissim.6.skoda_superb_combi], segments: 1,
+        actors: [{blueprint: vehicle.tesla.model3, front_offset_m: 0.0}]}   # CAR 4.781x2.022 m (vissim.6.skoda_superb_combi)
+  'L4.991_W2.118': {L: 4.991, W: 2.118, share: 0.0770, method: nearest, dL: +0.011, dW: -0.217,
+        vtypes: [vissim.7.audi_a6_avant], segments: 1,
+        actors: [{blueprint: vehicle.dodge.charger_2020, front_offset_m: 0.0}]}   # CAR 4.991x2.118 m (vissim.7.audi_a6_avant)
+  # --- 車両グループ B_truck(HGV) ---
+  'L7.930_W2.550': {L: 7.930, W: 2.550, share: 0.1000, method: fallback_stack, dL: +0.000, dW: +0.010,
+        vtypes: [vissim.23.delivery_daf_lf], segments: 1,
+        actors: [{blueprint: vehicle.carlamotors.carlacola, front_offset_m: 0.0},
+                 {blueprint: vehicle.carlamotors.carlacola, front_offset_m: 2.821142}]}   # HGV 7.930x2.550 m (vissim.23.delivery_daf_lf)
+  # --- 車両グループ C_trailer(HGV) ---
+  'L5.960_W2.550': {L: 5.960, W: 2.550, share: 0.0500, method: fallback_stack, dL: +0.000, dW: +0.010,
+        vtypes: [vissim.22.semi_tractor_volvo_e], segments: 1,
+        actors: [{blueprint: vehicle.carlamotors.carlacola, front_offset_m: 0.0},
+                 {blueprint: vehicle.carlamotors.carlacola, front_offset_m: 0.851142}]}   # HGV 5.960x2.550 m (vissim.22.semi_tractor_volvo_e)
+  # --- 車両グループ D_bus(BUS) ---
+  'L12.135_W2.550': {L: 12.135, W: 2.550, share: 0.0500, method: fallback_stack, dL: +0.000, dW: +0.010,
+        vtypes: [vissim.31.c2_standard], segments: 1,
+        actors: [{blueprint: vehicle.carlamotors.carlacola, front_offset_m: 0.0},
+                 {blueprint: vehicle.carlamotors.carlacola, front_offset_m: 3.513071},
+                 {blueprint: vehicle.carlamotors.carlacola, front_offset_m: 7.026142}]}   # BUS 12.135x2.550 m (vissim.31.c2_standard)
+  # --- 車両グループ E_bike(BIKE) ---
+  'L2.098_W0.907': {L: 2.098, W: 0.907, share: 0.1000, method: nearest, dL: -0.082, dW: -0.033,
+        vtypes: [vissim.70.motorbike_yamaha_mt_07], segments: 1,
+        actors: [{blueprint: vehicle.kawasaki.ninja, front_offset_m: 0.0}]}   # BIKE 2.098x0.907 m (vissim.70.motorbike_yamaha_mt_07)
+
+# 割り当てなし(割合 0 のモデル。交通シムが出さない。走行中に来たら variant_model_empty で止まる)
+skipped:
+  'L1.509_W0.866': {L: 1.509, W: 0.866, reason: share_zero,
+        vtypes: [vehicle.bh.crossbike], segments: 1}   # BIKE 1.509x0.866 m (vehicle.bh.crossbike)
+  'L1.656_W0.582': {L: 1.656, W: 0.582, reason: share_zero,
+        vtypes: [vehicle.diamondback.century], segments: 1}   # BIKE 1.656x0.582 m (vehicle.diamondback.century)
+  'L1.817_W0.866': {L: 1.817, W: 0.866, reason: share_zero,
+        vtypes: [vehicle.vespa.zx125], segments: 1}   # BIKE 1.817x0.866 m (vehicle.vespa.zx125)
+  'L1.843_W0.659': {L: 1.843, W: 0.659, reason: share_zero,
+        vtypes: [vehicle.gazelle.omafiets], segments: 1}   # BIKE 1.843x0.659 m (vehicle.gazelle.omafiets)
+  'L10.273_W3.944': {L: 10.273, W: 3.944, reason: share_zero,
+        vtypes: [vehicle.mitsubishi.fusorosa], segments: 1}   # BUS 10.273x3.944 m (vehicle.mitsubishi.fusorosa)
+  'L2.044_W0.797': {L: 2.044, W: 0.797, reason: share_zero,
+        vtypes: [vehicle.kawasaki.ninja], segments: 1}   # BIKE 2.044x0.797 m (vehicle.kawasaki.ninja)
+  'L2.191_W0.866': {L: 2.191, W: 0.866, reason: share_zero,
+        vtypes: [vehicle.yamaha.yzf], segments: 1}   # BIKE 2.191x0.866 m (vehicle.yamaha.yzf)
+  'L2.207_W1.481': {L: 2.207, W: 1.481, reason: share_zero,
+        vtypes: [vehicle.micro.microlino], segments: 1}   # CAR 2.207x1.481 m (vehicle.micro.microlino)
+  'L2.350_W0.766': {L: 2.350, W: 0.766, reason: share_zero,
+        vtypes: [vehicle.harley-davidson.low_rider], segments: 1}   # BIKE 2.350x0.766 m (vehicle.harley-davidson.low_rider)
+  'L3.633_W1.845': {L: 3.633, W: 1.845, reason: share_zero,
+        vtypes: [vehicle.nissan.micra], segments: 1}   # CAR 3.633x1.845 m (vehicle.nissan.micra)
+  'L3.705_W1.789': {L: 3.705, W: 1.789, reason: share_zero,
+        vtypes: [vehicle.audi.a2], segments: 1}   # CAR 3.705x1.789 m (vehicle.audi.a2)
+  'L3.806_W1.970': {L: 3.806, W: 1.970, reason: share_zero,
+        vtypes: [vehicle.mini.cooper_s], segments: 1}   # CAR 3.806x1.970 m (vehicle.mini.cooper_s)
+  'L3.866_W1.905': {L: 3.866, W: 1.905, reason: share_zero,
+        vtypes: [vehicle.jeep.wrangler_rubicon], segments: 1}   # CAR 3.866x1.905 m (vehicle.jeep.wrangler_rubicon)
+  'L3.988_W1.851': {L: 3.988, W: 1.851, reason: share_zero,
+        vtypes: [vehicle.citroen.c3], segments: 1}   # CAR 3.988x1.851 m (vehicle.citroen.c3)
+  'L4.181_W1.994': {L: 4.181, W: 1.994, reason: share_zero,
+        vtypes: [vehicle.audi.tt], segments: 1}   # CAR 4.181x1.994 m (vehicle.audi.tt)
+  'L4.193_W1.816': {L: 4.193, W: 1.816, reason: share_zero,
+        vtypes: [vehicle.seat.leon], segments: 1}   # CAR 4.193x1.816 m (vehicle.seat.leon)
+  'L4.442_W1.775': {L: 4.442, W: 1.775, reason: share_zero,
+        vtypes: [vehicle.volkswagen.t2_2021], segments: 1}   # CAR 4.442x1.775 m (vehicle.volkswagen.t2_2021)
+  'L4.480_W2.069': {L: 4.480, W: 2.069, reason: share_zero,
+        vtypes: [vehicle.volkswagen.t2], segments: 1}   # CAR 4.480x2.069 m (vehicle.volkswagen.t2)
+  'L4.514_W2.007': {L: 4.514, W: 2.007, reason: share_zero,
+        vtypes: [vehicle.toyota.prius], segments: 1}   # CAR 4.514x2.007 m (vehicle.toyota.prius)
+  'L4.553_W2.097': {L: 4.553, W: 2.097, reason: share_zero,
+        vtypes: [vehicle.mini.cooper_s_2021], segments: 1}   # CAR 4.553x2.097 m (vehicle.mini.cooper_s_2021)
+  'L4.605_W1.932': {L: 4.605, W: 1.932, reason: share_zero,
+        vtypes: [vehicle.nissan.patrol], segments: 1}   # CAR 4.605x1.932 m (vehicle.nissan.patrol)
+  'L4.611_W2.242': {L: 4.611, W: 2.242, reason: share_zero,
+        vtypes: [vehicle.bmw.grandtourer], segments: 1}   # CAR 4.611x2.242 m (vehicle.bmw.grandtourer)
+  'L4.674_W1.812': {L: 4.674, W: 1.812, reason: share_zero,
+        vtypes: [vehicle.mercedes.coupe_2020], segments: 1}   # CAR 4.674x1.812 m (vehicle.mercedes.coupe_2020)
+  'L4.718_W1.895': {L: 4.718, W: 1.895, reason: share_zero,
+        vtypes: [vehicle.ford.mustang], segments: 1}   # CAR 4.718x1.895 m (vehicle.ford.mustang)
+  'L4.792_W2.163': {L: 4.792, W: 2.163, reason: share_zero,
+        vtypes: [vehicle.tesla.model3], segments: 1}   # CAR 4.792x2.163 m (vehicle.tesla.model3)
+  'L4.856_W2.033': {L: 4.856, W: 2.033, reason: share_zero,
+        vtypes: [vehicle.audi.etron], segments: 1}   # CAR 4.856x2.033 m (vehicle.audi.etron)
+  'L4.892_W1.837': {L: 4.892, W: 1.837, reason: share_zero,
+        vtypes: [vehicle.lincoln.mkz_2020], segments: 1}   # CAR 4.892x1.837 m (vehicle.lincoln.mkz_2020)
+  'L4.902_W2.128': {L: 4.902, W: 2.128, reason: share_zero,
+        vtypes: [vehicle.lincoln.mkz_2017], segments: 1}   # CAR 4.902x2.128 m (vehicle.lincoln.mkz_2017)
+  'L4.974_W2.038': {L: 4.974, W: 2.038, reason: share_zero,
+        vtypes: [vehicle.dodge.charger_police], segments: 1}   # CAR 4.974x2.038 m (vehicle.dodge.charger_police)
+  'L5.000_W1.800': {L: 5.000, W: 1.800, reason: share_zero,
+        vtypes: [DEFAULT_VEHTYPE], segments: 1}   # CAR 5.000x1.800 m (DEFAULT_VEHTYPE)
+  'L5.008_W1.882': {L: 5.008, W: 1.882, reason: share_zero,
+        vtypes: [vehicle.dodge.charger_2020], segments: 1}   # CAR 5.008x1.882 m (vehicle.dodge.charger_2020)
+  'L5.027_W2.152': {L: 5.027, W: 2.152, reason: share_zero,
+        vtypes: [vehicle.mercedes.coupe], segments: 1}   # CAR 5.027x2.152 m (vehicle.mercedes.coupe)
+  'L5.204_W2.627': {L: 5.204, W: 2.627, reason: share_zero,
+        vtypes: [vehicle.carlamotors.carlacola], segments: 1}   # HGV 5.204x2.627 m (vehicle.carlamotors.carlacola)
+  'L5.238_W1.930': {L: 5.238, W: 1.930, reason: share_zero,
+        vtypes: [vehicle.dodge.charger_police_2020], segments: 1}   # CAR 5.238x1.930 m (vehicle.dodge.charger_police_2020)
+  'L5.357_W2.033': {L: 5.357, W: 2.033, reason: share_zero,
+        vtypes: [vehicle.chevrolet.impala], segments: 1}   # CAR 5.357x2.033 m (vehicle.chevrolet.impala)
+  'L5.366_W1.801': {L: 5.366, W: 1.801, reason: share_zero,
+        vtypes: [vehicle.ford.crown], segments: 1}   # CAR 5.366x1.801 m (vehicle.ford.crown)
+  'L5.566_W2.150': {L: 5.566, W: 2.150, reason: share_zero,
+        vtypes: [vehicle.nissan.patrol_2021], segments: 1}   # CAR 5.566x2.150 m (vehicle.nissan.patrol_2021)
+  'L5.915_W1.988': {L: 5.915, W: 1.988, reason: share_zero,
+        vtypes: [vehicle.mercedes.sprinter], segments: 1}   # HGV 5.915x1.988 m (vehicle.mercedes.sprinter)
+  'L6.274_W2.390': {L: 6.274, W: 2.390, reason: share_zero,
+        vtypes: [vehicle.tesla.cybertruck], segments: 1}   # HGV 6.274x2.390 m (vehicle.tesla.cybertruck)
+  'L6.366_W2.351': {L: 6.366, W: 2.351, reason: share_zero,
+        vtypes: [vehicle.ford.ambulance], segments: 1}   # HGV 6.366x2.351 m (vehicle.ford.ambulance)
+  'L7.936_W2.891': {L: 7.936, W: 2.891, reason: share_zero,
+        vtypes: [vehicle.carlamotors.european_hgv], segments: 1}   # HGV 7.936x2.891 m (vehicle.carlamotors.european_hgv)
+  'L8.468_W2.891': {L: 8.468, W: 2.891, reason: share_zero,
+        vtypes: [vehicle.carlamotors.firetruck], segments: 1}   # HGV 8.468x2.891 m (vehicle.carlamotors.firetruck)
+
+# 100 台あたりのブループリントの体数(レビュー用。ブリッジは使わない)
+expected_bodies_per_100_vehicles:
+  vehicle.carlamotors.carlacola:   45.0
+  vehicle.mini.cooper_s_2021:      25.2
+  vehicle.audi.tt:                 16.1
+  vehicle.tesla.model3:            13.3
+  vehicle.kawasaki.ninja:          10.0
+  vehicle.dodge.charger_2020:       7.7
+  vehicle.nissan.micra:             4.2
+  vehicle.nissan.patrol:            3.5
