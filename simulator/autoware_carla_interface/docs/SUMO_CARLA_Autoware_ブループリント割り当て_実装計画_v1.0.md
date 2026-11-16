@@ -136,7 +136,7 @@ Vissim構成のF5・F6と同じ作りにする。
 | #   | タスク | 場所 | 状態 |
 | --- | ------ | ---- | ---- |
 | S0  | 事前確認(TraCIが返すvType IDと寸法、SUMO単体での今の交通) | Linux | 完了(2026-11-16) |
-| S1  | 共通部品の整理(Vissimブランチ)と取り込み(SUMOブランチ) | autoware_universe(両ブランチ) | 未着手 |
+| S1  | 共通部品の整理(Vissimブランチ)と取り込み(SUMOブランチ) | autoware_universe(両ブランチ) | 完了(2026-11-16) |
 | S2  | SUMOのvTypeを作り、Town01の需要を差し替える | CARLA | 未着手 |
 | S3  | SUMOの読み込み(`sumo_fleet.py`)、生成ツールの `--sumocfg`、Town01の生成物 | autoware_universe | 未着手 |
 | S4  | ブリッジへの組み込み(検査、vType IDでの引き、配置、重ね置き、隙間の検査) | autoware_universe | 未着手 |
@@ -207,6 +207,31 @@ S2(CARLAリポジトリの変更)とS5・S6(実機)では `main` が要るので
    - 写したテストが通ることを確かめる。`test_build_carla_variants.py` のうち、Vissimの生成物(`vissim_integration/data/carla_variants_town01.yaml`)を見るテストは、SUMOブランチにはファイルがないのでスキップさせる(テストを直すのはVissimブランチで行い、写し直す)。
 
 完了条件: SUMOブランチで、写したテストが通る。写したファイルが、Vissimブランチと同じ中身(`git diff feature/vissim_windows_co-sim -- <パス>` が空)。
+
+#### 結果(S1、2026-11-16)
+
+1. **Vissimブランチ**(`2abb67729`、`refactor(autoware_carla_interface): ...`)
+   - `body_origins()` を `vissim_integration/bridge_helper.py` から `carla_fleet.py` へ移した。`bridge_helper.py` は `from ..carla_fleet import body_origins` で読み込むだけにしたので、動作は変わらない。
+   - 純粋な関数のテスト4件を `test_vissim_fleet_plan.py` から `test_carla_fleet.py` へ移した。
+   - `test_build_carla_variants.py` で、Vissimの生成物を見る2件を、生成物がないブランチではスキップするようにした。
+   - Vissimブランチのテスト: 203件成功・2件スキップで、移す前と同じ。スクリプト形式の `vissim_*_test.py` 8本もすべて成功。
+2. **SUMOブランチ**(`307e60e1d`、`feat(autoware_carla_interface): ...(SUMO S1)`)
+   - `git checkout feature/vissim_windows_co-sim -- <パス>` で、次の11ファイルを写した。
+     - `carla_fleet.py`
+     - `data/carla_fleet/`(規則・外形)
+     - `tools/carla_fleet/`(計測・生成)
+     - `vissim_integration/__init__.py`・`inpx_models.py`
+     - `test/test_carla_fleet.py`・`test_build_carla_variants.py`・`test/fixtures/carla_fleet/`
+   - `package.xml` に `python3-yaml` の1行を足した。Vissimブランチと同じ中身になった。
+   - 確かめたこと:
+     - 写したファイルと `package.xml` について、`git diff feature/vissim_windows_co-sim -- <パス>` が空。
+     - 写したテストは80件成功、2件スキップ(Vissimの生成物を見るもの)。
+     - `colcon build` が通った。
+3. **以前からあったテストの失敗**(`5a5ea7f48`、`test(autoware_carla_interface): ...`)
+   - SUMOブランチの `sumo_warmup_catchup_stub_test.py` の `test_collect_gap_actors` が、S1の変更の前から失敗していた。変更を退避した状態でも同じように失敗することを確かめた。
+   - 原因は、`carla.Vector3D` がfloat32で値を持つため、幅2.2が `2.200000047…` になり、`==` での比較が合わないこと。コードの誤りではない。
+   - このテストは、S4で手を入れる関数(`collect_gap_actors`)のテストなので、`math.isclose` で比べるように直した。
+   - 直したあとのSUMOブランチのテスト: 190件成功・3件スキップ。スクリプト形式の `sumo_*_test.py` 4本もすべて成功。
 
 ### S2: SUMOのvTypeとTown01の需要(CARLAリポジトリ)
 
