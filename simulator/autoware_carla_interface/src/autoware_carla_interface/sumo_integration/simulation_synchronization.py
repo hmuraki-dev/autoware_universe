@@ -418,6 +418,26 @@ class SimulationSynchronization(object):
                       sumo_actor.type_id, '+'.join(actor['blueprint'] for actor in spec['actors']),
                       spec['dL'], spec['dW'])
 
+    def _drop_carla_vehicles_removed_by_sumo(self):
+        """
+        Removes from carla2sumo_ids the CARLA-origin vehicles whose sumo vehicle sumo removed by
+        itself in the last sumo step (sumo.destroyed_actors), and returns the ids of those still
+        in CARLA, to be adopted into sumo again. Logs a warning for each.
+        """
+        readopt = set()
+        for carla_actor_id, sumo_actor_id in list(self.carla2sumo_ids.items()):
+            if sumo_actor_id not in self.sumo.destroyed_actors:
+                continue
+            del self.carla2sumo_ids[carla_actor_id]
+            alive = carla_actor_id not in self.carla.destroyed_actors
+            logging.warning('[sync] sumo removed CARLA-origin vehicle %s (CARLA actor %s), e.g. '
+                            'a teleport after standing still for time-to-teleport; %s',
+                            sumo_actor_id, carla_actor_id,
+                            'adopting it into sumo again' if alive else 'it is gone in CARLA too')
+            if alive:
+                readopt.add(carla_actor_id)
+        return readopt
+
     def sync_carla_to_sumo(self):
         """
         "carla-->sumo sync" half of the co-simulation step.
@@ -431,9 +451,18 @@ class SimulationSynchronization(object):
         """
         self.carla.update_actor_diff()
 
+        # CARLA-origin vehicles (EGO) that sumo removed by itself in the last sumo step: sumo
+        # teleports - and here removes, "teleports beyond arrival edge" - a vehicle that has stood
+        # still for time-to-teleport (300 s by default), e.g. an EGO waiting before Autoware
+        # engages. Their sumo id is gone, so reading it below would fail (KeyError on the
+        # subscription results). Drop the mapping and adopt the CARLA vehicle into sumo again in
+        # this same step, under a new sumo id. Not in upstream.
+        readopted = self._drop_carla_vehicles_removed_by_sumo()
+
         # Spawning new carla actors (not controlled by sumo). Every body of a sumo vehicle (the
         # 2nd and later ones too) is a sumo actor, never a CARLA-origin vehicle to adopt into sumo.
         carla_spawned_actors = self.carla.spawned_actors - self.mirrored_carla_ids()
+        carla_spawned_actors.update(readopted)
         for carla_actor_id in carla_spawned_actors:
             carla_actor = self.carla.get_actor(carla_actor_id)
 

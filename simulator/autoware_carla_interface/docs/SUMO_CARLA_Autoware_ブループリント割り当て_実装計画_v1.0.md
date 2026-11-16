@@ -140,7 +140,7 @@ Vissim構成のF5・F6と同じ作りにする。
 | S2  | SUMOのvTypeを作り、Town01の需要を差し替える | CARLA | 完了(2026-11-16、CARLA `main` の `6a1c918`) |
 | S3  | SUMOの読み込み(`sumo_fleet.py`)、生成ツールの `--sumocfg`、Town01の生成物 | autoware_universe | 完了(2026-11-16) |
 | S4  | ブリッジへの組み込み(検査、vType IDでの引き、配置、重ね置き、隙間の検査) | autoware_universe | 完了(2026-11-16) |
-| S5  | ブリッジ単体での実機確認(Autowareなし) | Linux | 完了(2026-11-16)。既存の不具合を1件見つけた(結果の7) |
+| S5  | ブリッジ単体での実機確認(Autowareなし) | Linux | 完了(2026-11-16)。見つけた既存の不具合(結果の7)も直した |
 | S6  | Autoware全体での実機確認(Vissim構成との比較を含む) | Linux | 未着手 |
 | S7  | ドキュメントとコミット | autoware_universe・CARLA | 未着手 |
 
@@ -426,6 +426,11 @@ Vissim計画のF7と同じ項目。SUMOはLinuxで動くので、すべて1台�
    - そのあとブリッジの `sync_carla_to_sumo()` が、消えた `carla0` の情報を読もうとして `KeyError: 79`(`traci.constants.VAR_TYPE`)で落ちた。
    - 後片付けは通った(要約のあと `Cleanup complete.`。CARLAに車両・センサーは残っていない)。ブリッジの終了コードは1。
    - 起こる条件: EGOがSUMOの車線の上で300秒続けて止まっていること。Autoware全体でも、EGOのスポーンから300秒以内に走り出さないと(または信号待ち・渋滞で300秒止まると)起こるはず。今回の変更(CARLA→SUMOで2体目以降を除くだけ)では、この経路は変わっていない。
+   - **直した**(2026-11-16、利用者の判断でS6の前に): `sync_carla_to_sumo()` の最初に、直前のSUMOのstepでSUMOが消した車(`destroyed_actors`)のうち、CARLA由来のもの(`carla2sumo_ids`)を対応から外す。CARLAにまだいれば、同じstepのうちに、新しいSUMOのIDでSUMOへ入れ直す。警告を1行出す。
+     - SUMOのteleportを止める案(`--time-to-teleport -1`)は採らなかった。SUMO全体の渋滞の扱いが変わり、S2で測った交通と変わるため。
+     - テスト `test/test_sumo_readopt_removed_ego.py`(4件。入れ直す、CARLAでも消えていれば入れ直さない、消えていなければ何もしない、SUMOの車の到着では変わらない)。直す前のコードでは、入れ直すテストが落ちることを確かめた。全体は236件成功・3件スキップ。
+     - 実機(4と同じ条件で起動し直した): EGOは同じt=600.05秒にスポーンし、t=900.15秒にSUMOが `carla0` を消した。ブリッジは `[sync] sumo removed CARLA-origin vehicle carla0 (CARLA actor 6584), ...; adopting it into sumo again` を出して走り続けた(その後2分以上、エラーなし)。止めると、要約のあと `Cleanup complete.`、`process has finished cleanly`。新しいID(`carla1`)の削除も警告なしで通り、CARLAに車両・センサーは残らなかった。
+     - 残ること: EGOがSUMOの中で300秒止まると、そのたびにSUMOの中のEGOがいったん消えて入れ直される(IDが `carla1`・`carla2` … と変わる)。止まっている間、後ろのSUMOの車が詰まるのは今までどおり。
 
 ### S6: Autoware全体での実機確認
 
