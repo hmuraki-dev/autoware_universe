@@ -46,11 +46,18 @@ class SimulationSynchronization(object):
     SimulationSynchronization class is responsible for the synchronization of ptv-vissim and carla
     simulations.
     """
+    # FleetPlan (fleet_plan.py) when the CARLA bodies of vissim vehicles come from a carla_variants
+    # file (see docs/Vissim_CARLA_Autoware_ブループリント割り当て_実装計画_v1.0.md F5), else None:
+    # the upstream behavior (data/vtypes.json, a random model per vehicle type). A class attribute
+    # so that instances built without __init__ (tests) get the upstream behavior.
+    fleet = None
+
     def __init__(self, vissim_simulation, carla_simulation, args):
         self.args = args
 
         self.vissim = vissim_simulation
         self.carla = carla_simulation
+        self.fleet = getattr(args, 'fleet_plan', None)
 
         # NOTE: weather is no longer hardcoded here. autoware_carla_interface
         # (InitializeInterface.load_world()) already applies the `weather` ROS parameter to the
@@ -207,13 +214,13 @@ class SimulationSynchronization(object):
         for vissim_actor_id in vissim_spawned_actors:
             vissim_actor = self.vissim.get_actor(vissim_actor_id)
 
-            carla_blueprint = BridgeHelper.get_carla_blueprint(vissim_actor)
+            carla_blueprint, carla_transform = self._vehicle_spawn(vissim_actor)
             if carla_blueprint is not None:
-                carla_transform = BridgeHelper.get_carla_transform(vissim_actor.get_transform())
                 carla_actor_id = self.carla.spawn_actor(carla_blueprint, carla_transform)
 
                 if carla_actor_id != INVALID_ACTOR_ID:
                     self.vissim2carla_ids[vissim_actor_id] = carla_actor_id
+                    self._record_vehicle_spawn(vissim_actor, carla_blueprint)
 
         # Destroying vissim controlled vehicles in carla.
         for vissim_actor_id in self.vissim.destroyed_vehicles:
@@ -225,10 +232,8 @@ class SimulationSynchronization(object):
             carla_actor_id = self.vissim2carla_ids[vissim_actor_id]
 
             vissim_actor = self.vissim.get_actor(vissim_actor_id)
-            carla_actor = self.carla.get_actor(carla_actor_id)
 
-            carla_transform = BridgeHelper.get_carla_transform(vissim_actor.get_transform(),
-                                                               carla_actor.bounding_box.extent)
+            carla_transform = self._vehicle_transform(vissim_actor, carla_actor_id)
             carla_velocity = BridgeHelper.get_carla_velocity(vissim_actor.get_velocity())
             self.carla.synchronize_vehicle(carla_actor_id, carla_transform, carla_velocity)
 
@@ -353,16 +358,16 @@ class SimulationSynchronization(object):
         for vissim_actor_id in sorted(vehicles_to_spawn):
             vissim_actor = self.vissim.get_actor(vissim_actor_id)
 
-            carla_blueprint = BridgeHelper.get_carla_blueprint(vissim_actor)
+            carla_blueprint, carla_transform = self._vehicle_spawn(vissim_actor)
             carla_actor_id = INVALID_ACTOR_ID
             if carla_blueprint is not None:
-                carla_transform = BridgeHelper.get_carla_transform(vissim_actor.get_transform())
                 carla_actor_id, retries = self._spawn_retrying_higher(carla_blueprint,
                                                                      carla_transform)
                 spawn_retries += retries
 
             if carla_actor_id != INVALID_ACTOR_ID:
                 self.vissim2carla_ids[vissim_actor_id] = carla_actor_id
+                self._record_vehicle_spawn(vissim_actor, carla_blueprint)
                 vehicles_spawned.append(vissim_actor_id)
             else:
                 vehicles_not_spawned.add(vissim_actor_id)
@@ -373,10 +378,8 @@ class SimulationSynchronization(object):
             carla_actor_id = self.vissim2carla_ids[vissim_actor_id]
 
             vissim_actor = self.vissim.get_actor(vissim_actor_id)
-            carla_actor = self.carla.get_actor(carla_actor_id)
 
-            carla_transform = BridgeHelper.get_carla_transform(vissim_actor.get_transform(),
-                                                               carla_actor.bounding_box.extent)
+            carla_transform = self._vehicle_transform(vissim_actor, carla_actor_id)
             carla_velocity = BridgeHelper.get_carla_velocity(vissim_actor.get_velocity())
             self.carla.synchronize_vehicle(carla_actor_id, carla_transform, carla_velocity)
 
@@ -418,6 +421,54 @@ class SimulationSynchronization(object):
             'pedestrians_not_spawned': pedestrians_not_spawned,
             'spawn_retries': spawn_retries,
         }
+
+    def _vehicle_spawn(self, vissim_actor):
+        """
+        Returns (blueprint, spawn transform) of the CARLA body for the given vissim vehicle, or
+        (None, None) if the upstream path finds no blueprint (unknown vehicle type).
+
+        With a FleetPlan (see docs/Vissim_CARLA_Autoware_ブループリント割り当て_実装計画_v1.0.md
+        F5), the blueprint is the one assigned to the vehicle's model and the transform is already
+        the body's final position (by its measured mesh); an unknown or unassigned model stops the
+        co-simulation (carla_fleet.VariantError) instead of skipping the vehicle. Only the first
+        body of the assignment is used here (several bodies per vehicle: F6). Without a FleetPlan,
+        the upstream behavior: a random model of the vehicle type (data/vtypes.json), spawned at
+        vissim's front-center-bumper position.
+        """
+        if self.fleet is None:
+            blueprint = BridgeHelper.get_carla_blueprint(vissim_actor)
+            if blueprint is None:
+                return None, None
+            return blueprint, BridgeHelper.get_carla_transform(vissim_actor.get_transform())
+        blueprint, spec = BridgeHelper.get_fleet_blueprints(self.fleet, vissim_actor)[0]
+        transform, = BridgeHelper.get_fleet_transforms(self.fleet, vissim_actor.get_transform(),
+                                                       [spec])
+        return blueprint, transform
+
+    def _vehicle_transform(self, vissim_actor, carla_actor_id):
+        """
+        Returns the carla transform of the CARLA body mirroring the given vissim vehicle: by the
+        measured mesh with a FleetPlan, else (upstream) by the actor's own bounding box.
+        """
+        if self.fleet is None:
+            carla_actor = self.carla.get_actor(carla_actor_id)
+            return BridgeHelper.get_carla_transform(vissim_actor.get_transform(),
+                                                    carla_actor.bounding_box.extent)
+        spec = self.fleet.actors_for(vissim_actor.type, vissim_actor.model_filename)[0]
+        transform, = BridgeHelper.get_fleet_transforms(self.fleet, vissim_actor.get_transform(),
+                                                       [spec])
+        return transform
+
+    def _record_vehicle_spawn(self, vissim_actor, blueprint):
+        """Counts the spawn for the end-of-run summary and logs the body/model residual."""
+        if self.fleet is None:
+            return
+        self.fleet.record_spawn([blueprint.id])
+        spec = self.fleet.spec_for(vissim_actor.type, vissim_actor.model_filename)
+        logging.debug('[sync] vehicle %s (type %s, %r): %s, dL=%+.3f dW=%+.3f', vissim_actor.id,
+                      vissim_actor.type, vissim_actor.model_filename,
+                      '+'.join(actor['blueprint'] for actor in spec['actors']), spec['dL'],
+                      spec['dW'])
 
     def _spawn_retrying_higher(self, blueprint, transform):
         """

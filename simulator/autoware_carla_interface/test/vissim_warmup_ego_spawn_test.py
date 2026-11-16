@@ -83,6 +83,9 @@ _BASE_PARAMS = {
     'sync_traffic_lights': False,
     'vissim_sim_period': 600,
     'vissim_max_consecutive_failures': 3,
+    # The old random choice from vtypes.json: these tests do not cover the carla_variants file
+    # (see test_vissim_fleet_plan.py).
+    'vissim_carla_variants': 'legacy_vtypes',
     'vissim_warmup_time': 0,
     'ego_spawn_front_margin': 20.0,
     'ego_spawn_rear_margin': 20.0,

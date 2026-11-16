@@ -112,6 +112,11 @@ class carla_ros2_interface(object):
             # fixed_delta_seconds.
             "vissim_sim_period": (rclpy.Parameter.Type.INTEGER, 600),
             "vissim_max_consecutive_failures": (rclpy.Parameter.Type.INTEGER, 3),
+            # CARLA blueprints of Vissim vehicles (see docs/
+            # Vissim_CARLA_Autoware_ブループリント割り当て_実装計画_v1.0.md): a carla_variants file
+            # (relative paths are looked up in vissim_integration/data/), or "legacy_vtypes" for the
+            # old random choice from vissim_integration/data/vtypes.json.
+            "vissim_carla_variants": (rclpy.Parameter.Type.STRING, "carla_variants_town01.yaml"),
             # Vissim warmup / EGO safe spawn (see docs/
             # Vissim_CARLA_Autoware_ウォームアップ_EGO安全スポーン_実装計画_v1.0.md): Vissim runs
             # alone for vissim_warmup_time seconds, then the EGO is spawned only once the gap to

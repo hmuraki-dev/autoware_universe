@@ -23,6 +23,7 @@ from types import SimpleNamespace
 
 import carla
 
+from .carla_fleet import VariantError
 from .carla_ros import carla_ros2_interface
 from .modules.carla_data_provider import CarlaDataProvider
 from .modules.carla_data_provider import GameTime
@@ -146,6 +147,8 @@ class InitializeInterface(object):
         # See docs/Vissim_CARLA_Autoware_シミュレーション期間管理_実装計画_v1.0.md.
         self.vissim_sim_period = self.param_["vissim_sim_period"]
         self.vissim_max_consecutive_failures = self.param_["vissim_max_consecutive_failures"]
+        # See docs/Vissim_CARLA_Autoware_ブループリント割り当て_実装計画_v1.0.md (F5).
+        self.vissim_carla_variants = self.param_["vissim_carla_variants"]
         # See docs/Vissim_CARLA_Autoware_ウォームアップ_EGO安全スポーン_実装計画_v1.0.md.
         # vissim_warmup_time=0 (default) disables the warmup / EGO safe spawn entirely.
         self.vissim_warmup_time = self.param_["vissim_warmup_time"]
@@ -385,8 +388,13 @@ class InitializeInterface(object):
         # Vissim_CARLA_Autoware_シミュレーション期間管理_実装計画_v1.0.md. With the warmup enabled,
         # warmup_time/wait_timeout extend that period so that Vissim cannot end before the test
         # does (see docs/Vissim_CARLA_Autoware_ウォームアップ_EGO安全スポーン_実装計画_v1.0.md).
+        # Built (and checked) before connecting to the vissim adapter, so that a stale or missing
+        # carla_variants file stops the bridge before Vissim is started on the Windows side.
+        fleet_plan = self._load_vissim_fleet_plan(client)
+
         warmup_time, wait_timeout = self._vissim_warmup_periods()
         vissim_args = SimpleNamespace(
+            fleet_plan=fleet_plan,
             simulator_vehicles=self.vissim_simulator_vehicles,
             vissim_adapter_host=self.vissim_adapter_host,
             vissim_adapter_port=self.vissim_adapter_port,
@@ -404,6 +412,34 @@ class InitializeInterface(object):
         self.vissim_sync = SimulationSynchronization(
             self.vissim_sim, self.vissim_carla_sim, vissim_args
         )
+
+    def _load_vissim_fleet_plan(self, client):
+        """
+        Loads the carla_variants file named by `vissim_carla_variants` (see docs/
+        Vissim_CARLA_Autoware_ブループリント割り当て_実装計画_v1.0.md F5), or returns None for
+        `legacy_vtypes` (the old random choice from vissim_integration/data/vtypes.json).
+
+            :raises VariantError: if the file is missing or fails a startup check (blueprint not
+                in CARLA, mesh/rules changed since it was made, CARLA version differs, ...).
+        """
+        from .vissim_integration.fleet_plan import FleetPlan
+        from .vissim_integration.fleet_plan import LEGACY_VTYPES
+        from .vissim_integration.fleet_plan import resolve_variants_path
+
+        if self.vissim_carla_variants == LEGACY_VTYPES:
+            print("CARLA blueprints of Vissim vehicles: legacy vtypes.json (random model per "
+                  "vehicle type)")
+            return None
+        fleet_plan = FleetPlan(
+            resolve_variants_path(self.vissim_carla_variants),
+            [blueprint.id for blueprint in self.world.get_blueprint_library().filter("vehicle.*")],
+            client.get_server_version(),
+        )
+        print(f"CARLA blueprints of Vissim vehicles: {fleet_plan.path} "
+              f"({len(fleet_plan.assignment)} models)")
+        if fleet_plan.version_note:
+            print(f"Warning: {fleet_plan.version_note}")
+        return fleet_plan
 
     def _apply_weather_preset(self):
         """Apply the `weather` parameter (name of a carla.WeatherParameters preset) to the world."""
@@ -758,6 +794,15 @@ class InitializeInterface(object):
         if not self.vissim_sync:
             return
 
+        if self.vissim_sync.fleet is not None:
+            try:
+                counts = ", ".join(f"{name} {row['spawned']} ({row['share']:.0%}, expected "
+                                   f"{row['expected_share']:.0%})"
+                                   for name, row in self.vissim_sync.fleet.summary().items())
+                print(f"CARLA bodies spawned for Vissim vehicles: {counts}")
+            except Exception as e:
+                print(f"Warning: Failed to summarize the CARLA blueprints: {e}")
+
         for carla_actor_id in list(self.vissim_sync.vissim2carla_ids.values()):
             try:
                 self.vissim_carla_sim.destroy_actor(carla_actor_id)
@@ -846,7 +891,15 @@ def main():
         # traceback, so the cause is easy to spot in the launch output.
         print(f"Error: invalid parameters: {e}", flush=True)
         return 1
-    carla_bridge.load_world()
+    try:
+        carla_bridge.load_world()
+    except VariantError as e:
+        # The carla_variants file is missing or failed a startup check (see docs/
+        # Vissim_CARLA_Autoware_ブループリント割り当て_実装計画_v1.0.md 2.5). Checked before
+        # connecting to the vissim adapter, so Vissim was not started. One line, no traceback.
+        print(f"Error: CARLA blueprint assignment: {e.code}: {e.evidence}", flush=True)
+        carla_bridge._cleanup()
+        return 1
 
     # Register signal handlers for graceful shutdown
     signal.signal(signal.SIGINT, carla_bridge._stop_loop)
@@ -862,6 +915,13 @@ def main():
         # Vissim_CARLA_Autoware_ウォームアップ_EGO安全スポーン_実装計画_v1.0.md section 2.8): an
         # expected outcome rather than a bug, so no traceback, but a non-zero exit code.
         print(f"Error: test start failed: {e}")
+        exit_code = 1
+    except VariantError as e:
+        # A Vissim vehicle whose model has no CARLA body in the carla_variants file (unknown
+        # model, or one that had a zero share when the file was made): stop rather than skip it
+        # or substitute another blueprint (see docs/
+        # Vissim_CARLA_Autoware_ブループリント割り当て_実装計画_v1.0.md 2.5).
+        print(f"Error: CARLA blueprint assignment: {e.code}: {e.evidence}")
         exit_code = 1
     except Exception as e:
         print(f"\nError during bridge operation: {e}")

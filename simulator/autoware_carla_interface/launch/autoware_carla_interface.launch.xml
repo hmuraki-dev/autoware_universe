@@ -35,6 +35,11 @@
          fixed_delta_seconds (which must be 1/N s with N in [1, 20] when use_vissim is true). -->
     <arg name="vissim_sim_period" default="600" description="Co-simulation period (s). Once elapsed, the co-simulation stops, closes Vissim and shuts down this whole launch (use_vissim only)"/>
     <arg name="vissim_max_consecutive_failures" default="3" description="Stop the co-simulation (and this whole launch) after this many consecutive failed vissim adapter ticks (use_vissim only)"/>
+    <!-- CARLA blueprints of Vissim vehicles (see docs/Vissim_CARLA_Autoware_ブループリント割り当て_実装計画_v1.0.md).
+         A carla_variants file made by tools/carla_fleet/build_carla_variants.py: each Vissim 2D/3D model gets the
+         CARLA body closest to its size. A relative path is looked up in vissim_integration/data/.
+         legacy_vtypes uses the old data/vtypes.json (a random model per vehicle type) instead. -->
+    <arg name="vissim_carla_variants" default="carla_variants_town01.yaml" description="carla_variants file that assigns CARLA blueprints to Vissim models (relative to vissim_integration/data/), or legacy_vtypes for the old random choice from vtypes.json (use_vissim only)"/>
     <!-- Vissim warmup / EGO safe spawn (see docs/Vissim_CARLA_Autoware_ウォームアップ_EGO安全スポーン_実装計画_v1.0.md).
          vissim_warmup_time=0 (default) disables it: the EGO is spawned at startup as before.
          The margins are doubles: write them with a decimal point (e.g. 25.0, not 25). -->
@@ -117,6 +122,7 @@
       <param name="sync_traffic_lights" value="$(var sync_traffic_lights)"/>
       <param name="vissim_sim_period" value="$(var vissim_sim_period)"/>
       <param name="vissim_max_consecutive_failures" value="$(var vissim_max_consecutive_failures)"/>
+      <param name="vissim_carla_variants" value="$(var vissim_carla_variants)"/>
       <param name="vissim_warmup_time" value="$(var vissim_warmup_time)"/>
       <param name="ego_spawn_front_margin" value="$(var ego_spawn_front_margin)"/>
       <param name="ego_spawn_rear_margin" value="$(var ego_spawn_rear_margin)"/>
@@ -153,6 +159,7 @@
       <param name="sync_traffic_lights" value="$(var sync_traffic_lights)"/>
       <param name="vissim_sim_period" value="$(var vissim_sim_period)"/>
       <param name="vissim_max_consecutive_failures" value="$(var vissim_max_consecutive_failures)"/>
+      <param name="vissim_carla_variants" value="$(var vissim_carla_variants)"/>
       <param name="vissim_warmup_time" value="$(var vissim_warmup_time)"/>
       <param name="ego_spawn_front_margin" value="$(var ego_spawn_front_margin)"/>
       <param name="ego_spawn_rear_margin" value="$(var ego_spawn_rear_margin)"/>

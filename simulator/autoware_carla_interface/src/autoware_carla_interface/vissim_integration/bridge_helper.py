@@ -49,6 +49,40 @@ _VISSIM_TO_CARLA_SIGNAL_STATE = {
 }
 
 
+def body_origins(front, yaw_deg, pitch_deg, actors, mesh):
+    """
+    Actor origins (CARLA coordinates) of the CARLA bodies that represent one vissim vehicle.
+
+    Not in upstream; see docs/Vissim_CARLA_Autoware_ブループリント割り当て_実装計画_v1.0.md 2.4.
+    Pure function (no carla), so that it can be tested on its own.
+
+        :param front: (x, y, z) of the vehicle's front-center in CARLA coordinates (vissim reports
+            the front-center of the vehicle, see VISSIM_Veh_Data.Position_X).
+        :param yaw_deg: / :param pitch_deg: the vehicle's CARLA rotation.
+        :param actors: [{blueprint, front_offset_m}, ...] from the carla_variants (FleetPlan).
+        :param mesh: {blueprint: {length, width, center_x, center_y}}: the body as a LiDAR sees it,
+            and where it sits relative to the actor origin (FleetPlan.mesh).
+        :return: [(x, y, z), ...], one per actor, in the same order.
+
+    Each body's front is `front_offset_m` behind the vehicle's front, so its center is
+    `front_offset_m + length/2` behind it; the actor origin is then that center minus the mesh
+    center offset, rotated by the vehicle's yaw. Height follows the pitch the same way as
+    get_carla_transform() does with the bounding box (only the along-track distance changes).
+    """
+    yaw, pitch = math.radians(yaw_deg), math.radians(pitch_deg)
+    forward = (math.cos(yaw), math.sin(yaw))
+    right = (-math.sin(yaw), math.cos(yaw))  # CARLA's y axis points to the right of x
+    origins = []
+    for actor in actors:
+        body = mesh[actor['blueprint']]
+        back = float(actor['front_offset_m']) + body['length'] / 2.0 + body.get('center_x', 0.0)
+        side = body.get('center_y', 0.0)
+        origins.append((front[0] - forward[0] * back - right[0] * side,
+                        front[1] - forward[1] * back - right[1] * side,
+                        front[2] - math.sin(pitch) * back))
+    return origins
+
+
 class BridgeHelper(object):
     """
     BridgeHelper provides methos to ease the co-simulation between vissim and carla.
@@ -221,6 +255,50 @@ class BridgeHelper(object):
             logging.error(
                 'vissim type %s unknown. No vehicle will be spawned in carla', type_id)
             return None
+
+    @staticmethod
+    def get_fleet_blueprints(fleet_plan, vissim_actor):
+        """
+        Returns the blueprints of the CARLA bodies for the received vissim vehicle, from the
+        carla_variants (see docs/Vissim_CARLA_Autoware_ブループリント割り当て_実装計画_v1.0.md
+        F5). Not in upstream.
+
+        Unlike get_carla_blueprint(), the model is not chosen at random: it is the one
+        FleetPlan assigns to the vehicle's (VehicleType, ModelFileName). Only the color and the
+        driver are chosen, seeded by the vissim id as in get_carla_blueprint(); every body of the
+        same vehicle gets the same color.
+
+            :raises carla_fleet.VariantError: if the vehicle's model is unknown or has no
+                assignment (FleetPlan.actors_for()); never falls back to another blueprint.
+            :return: [(blueprint, actor spec), ...], front to rear.
+        """
+        rng = random.Random(int(vissim_actor.id))
+        color = driver_id = None
+        result = []
+        for spec in fleet_plan.actors_for(vissim_actor.type, vissim_actor.model_filename):
+            blueprint = BridgeHelper.blueprint_library.find(spec['blueprint'])
+            if blueprint.has_attribute('color'):
+                if color is None:
+                    color = rng.choice(blueprint.get_attribute('color').recommended_values)
+                blueprint.set_attribute('color', color)
+            if blueprint.has_attribute('driver_id'):
+                if driver_id is None:
+                    driver_id = rng.choice(blueprint.get_attribute('driver_id').recommended_values)
+                blueprint.set_attribute('driver_id', driver_id)
+            blueprint.set_attribute('role_name', 'vissim_driver')
+            result.append((blueprint, spec))
+        return result
+
+    @staticmethod
+    def get_fleet_transforms(fleet_plan, in_vissim_transform, actors):
+        """
+        Returns the carla transforms of the given bodies of one vissim vehicle, placed by their
+        measured mesh (see body_origins()) instead of by the bounding box. Not in upstream.
+        """
+        front = BridgeHelper.get_carla_transform(in_vissim_transform)
+        origins = body_origins((front.location.x, front.location.y, front.location.z),
+                               front.rotation.yaw, front.rotation.pitch, actors, fleet_plan.mesh)
+        return [carla.Transform(carla.Location(x, y, z), front.rotation) for x, y, z in origins]
 
     @staticmethod
     def get_carla_pedestrian_blueprint(vissim_pedestrian):
