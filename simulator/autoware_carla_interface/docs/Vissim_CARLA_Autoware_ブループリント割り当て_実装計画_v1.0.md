@@ -124,7 +124,7 @@ Vissimの車両1台をCARLAに出すとき、**どのブループリントを使
 | 実メッシュ | `src/autoware_carla_interface/data/carla_fleet/mesh_measurements_carla0.9.15.json` | F2で測る |
 | inpxのモデル読み込み | `src/autoware_carla_interface/vissim_integration/inpx_models.py` | 束の `reference/vissim/net.py` のモデル部分だけ(`model_key`・`model_body`・`_load_vehicle_models`・`model_shares`) |
 | 生成物 | `src/autoware_carla_interface/vissim_integration/data/carla_variants_town01.yaml` | F4で作る |
-| 計測ツール | `tools/carla_fleet/measure_blueprint_mesh.py` | 束(自車の除外を引数にする) |
+| 計測ツール | `tools/carla_fleet/measure_blueprint_mesh.py` | 束(自車の除外を引数にする。F2で計測の基準をLiDARに変えた) |
 | 生成ツール | `tools/carla_fleet/build_carla_variants.py` | 束(`--inpx` でファイルを直接受ける。登録簿を外す) |
 | テスト | `test/test_carla_fleet.py`、`test/test_build_carla_variants.py`、`test/vissim_carla_variants_test.py` | 束の `tests/core/test_carla_variants.py` の規則の部分 + 新規 |
 | テスト用の実メッシュ | `test/fixtures/carla_fleet/mesh_measurements_carla0.10_20260921.json` | 束(0.10の値。規則の回帰テスト用) |
@@ -197,7 +197,7 @@ launchに `vissim_carla_variants`(生成物のパス)を足す。既定は `viss
 | --- | ------ | ---- | ---- |
 | F0  | 事前確認(使うinpx、`model_filename` の文字列、位置の基準、0.9.15での計測) | Windows・Linux・CARLA | 完了(2026-11-16) |
 | F1  | 共通部品の取り込み(`carla_fleet.py`、規則の雛形、回帰テスト、PyYAMLの依存) | autoware_universe | 完了(2026-11-16) |
-| F2  | 計測ツールの移植と、全ブループリントの実メッシュ計測 | autoware_universe・CARLA | 未着手 |
+| F2  | 計測ツールの移植と、全ブループリントの実メッシュ計測 | autoware_universe・CARLA | 完了(2026-11-16。計測の基準をLiDARに変えた) |
 | F3  | 規則の確定(除外、fallback、大型車、二輪) | autoware_universe | 未着手 |
 | F4  | inpxの読み込み・生成ツールと、Town01の生成物 | autoware_universe | 未着手 |
 | F5  | ブリッジへの組み込み(起動時の検査、モデルの引き、実メッシュ中心での配置) | autoware_universe | 未着手 |
@@ -302,6 +302,64 @@ F1はF0と並行してよい。F3で規則を変えたら、F4の生成物を作
 
 完了条件: 実メッシュのファイルに `carla_server_version` が記録されている。二輪を含む全ブループリントの値、または測れない理由がある。
 
+#### 結果(F2、2026-11-16)
+
+**計測の基準を、`cast_ray` からセマンティックLiDARに変えた**(移植元からの変更)。
+
+- 移植元の方法(`world.cast_ray`)のまま測ると、次のことが分かった。
+  - 0.9.15の `cast_ray` は、1本のレイが通った面をすべて返す。移植元のツールは「最初の面だけを返す」(0.10の動作)前提で書かれている。
+  - 二輪は、どのレイも最初にラベル `NONE` の面(LiDARには映らない当たり判定の殻)に当たる。
+- そこで、車の周りと上にセマンティックLiDAR(`sensor.lidar.ray_cast_semantic`)を置き、その車の点だけから寸法を出して比べた。Autowareが使うLiDARと同じレイの仕組み。
+  - 乗用車の多くは、`cast_ray` とLiDARの差が数cm以内だった。
+  - 次のものは、LiDARを密にしても食い違いが残った。向きもばらばら。
+
+    | ブループリント | LiDAR | cast_ray | 箱 |
+    | -------------- | ----: | -------: | -: |
+    | `mitsubishi.fusorosa` の幅 | 3.176 | 3.893 | 3.944 |
+    | `volkswagen.t2` の幅 | 2.058 | 2.204 | 2.069 |
+    | `mercedes.coupe_2020` の幅 | 1.999 | 1.797 | 1.812 |
+    | `vespa.zx125` の長さ | 1.810 | 2.064 | 1.817 |
+    | 二輪4種(`diamondback`・`gazelle`・`kawasaki`・`harley`)の幅 | 0.69〜0.87 | 0.49〜0.76 | 0.58〜0.80 |
+
+    fusorosaのLiDARの幅3.176 mは、移植元が0.10で測ったメッシュ(3.181 m)と合う。`cast_ray` は当たり判定の箱を拾っていると考えられる。二輪はライダーの腕などをLiDARだけが拾っている。
+- 割り当ての目的は「LiDARに映る大きさ」に合わせることなので、`mesh_*_m` をLiDARの値にした。`cast_ray` の値は `castray_*_m` として比べるために残した(`cast_ray` は、各レイで `NONE` を飛ばした最も近い車両ラベルの面だけを使う形に直した)。
+- LiDARの配置: 車の上14 mに1台、半径8 mの円周に16方位 × 高さ4段(0.5・1.2・2.0・3.0 m)。128 ch、毎秒400万点、1回転以上回す。8方位 × 2段から密にしても、乗用車の寸法の変化は数cm以内だった。
+
+**ツールと計測結果**
+
+- `tools/carla_fleet/measure_blueprint_mesh.py`: 上の変更のほか、`--exclude`(fnmatch)、同期モードでのtick、`--out` をファイルにした。
+- `src/autoware_carla_interface/data/carla_fleet/mesh_measurements_carla0.9.15.json`: 41ブループリントすべて(除外なし)を、Town01・CARLA 0.9.15で測った。かかった時間は73秒。計測後、ワールドに車両・センサーは残っていない。
+- 気づいたこと:
+  - `carlamotors.european_hgv` と `carlamotors.firetruck` は、LiDARでも点の数(1,787,820)まで同じ形に見える。0.9.15では同じ形を使っていると考えられる。箱の寸法は違う(7.936 m と 8.468 m)。
+  - 箱との差が大きいもの: `european_hgv`(L +0.49、W +0.45)、`ford.ambulance`(W +0.27、中心が後ろへ0.32 m)、`mercedes.sprinter`(W +0.34)、`nissan.patrol_2021`(W +0.27)、`fusorosa`(L −0.49、W −0.77、中心が後ろへ0.51 m)、`jeep.wrangler_rubicon`(L −0.28)。
+  - 中心のずれ(`mesh_center_x_m`)が0.1 mを超えるもの: `fusorosa` −0.514、`ford.ambulance` −0.322、`european_hgv`・`firetruck` −0.268、`ford.crown` +0.152、`jeep.wrangler_rubicon` +0.117。
+
+**試算(暫定の規則のまま)**
+
+暫定の規則(F1の雛形)と、この実メッシュで、1章の4の14モデルを割り当てた。**14モデルすべてに割り当てが作れた**。
+
+| モデル | 割り当て | dL | dW |
+| -----: | -------- | -: | -: |
+| 1 Fiat 500 | `nissan.micra` | +0.01 | −0.07 |
+| 2 Tesla Model Y | `audi.tt` | −0.05 | +0.06 |
+| 3 Golf (2007) | `audi.tt` | −0.06 | −0.03 |
+| 4 Mercedes B Class | `volkswagen.t2_2021` | −0.05 | −0.31 |
+| 5 Mercedes C Class | `tesla.model3` | −0.00 | +0.06 |
+| 6 Skoda Superb Combi | `tesla.model3` | −0.03 | +0.07 |
+| 7 Audi A6 Avant | `dodge.charger_2020` | +0.01 | −0.22 |
+| 8 Nissan Qashqai | `volkswagen.t2_2021` | +0.04 | −0.25 |
+| 9 VW Tiguan | `mini.cooper_s_2021` | +0.00 | +0.05 |
+| 10 VW ID 4 | `nissan.patrol` | −0.04 | −0.12 |
+| 22 Semi-Tractor Volvo E | `ford.ambulance` | +0.35 | +0.07 |
+| 23 Delivery DAF LF | `ford.ambulance` × 2(重ね置き) | 0.00 | +0.07 |
+| 31 Bus C2 Standard | `ford.ambulance` × 2(重ね置き) | 0.00 | +0.07 |
+| 70 Yamaha MT 07 | `kawasaki.ninja` | −0.08 | −0.03 |
+
+- 箱の寸法での試算(1章の9)と違い、トラクターとバスにも割り当てが作れた。救急車の実際の幅(2.623 m)が箱(2.351 m)より広く、HGV・BUSの細い側の許容に入ったため。
+- トラックとバスは救急車2体の重ね置きになる。**F6(重ね置き)が必要**。
+- `european_hgv` は幅が +0.79 m で、太い側の許容(0.35 m)の外。
+- 見た目の問題(トラック・バスが救急車になる、乗用車にバンの `t2_2021` が入る)は、F3で決める。
+
 ### F3: 規則の確定
 
 F2の値で1章の9の試算をやり直し、`carla_variant_rules.yaml` を次のように決める。
@@ -398,7 +456,7 @@ F2の値で1章の9の試算をやり直し、`carla_variant_rules.yaml` を次�
 | #   | 内容 | 推奨 | 決める時期 |
 | --- | ---- | ---- | ---------- |
 | 1   | 使うinpx | 決定(F0): Windows PCとCARLAリポジトリの版が同じ(sha256 `2265ff82…`)なので、それを使う | F0 |
-| 2   | 大型車(トラクター22・バス31) | F2の実メッシュで試算し直してから決める。案は次の3つ。(a) fallbackを `european_hgv` にする(幅が太い側の許容内で、バスは2体の重ね置き。トラクターは救急車より短いので別に扱う)。(b) HGV・BUSの細い側の許容を広げる。(c) inpxでそのモデルの割合を0にする。推奨は(a)で、トラクターは長さの許容をそのモデルだけ広げる案と比べる | F3 |
+| 2   | 大型車(トラクター22・トラック23・バス31) | F2の試算では、暫定の規則のままで割り当てが作れた(トラクターは救急車1体、トラックとバスは救急車2体の重ね置き)。規則は変えず、見た目(救急車の塗装)を受け入れるかをF3で決める。受け入れないなら、fallbackを変える案(`european_hgv` は幅が+0.79 mで許容の外)を比べる | F3 |
 | 3   | 二輪 | 出す。ライダーは乗せない(Vissimの寸法はバイクだけ)。BIKEの許容はそのまま | F3 |
 | 4   | 乗用車にバンが割り当たる | 規則どおりにし、見た目で困るものだけ `excluded` で外す | F3(F7で見直す) |
 | 5   | 塗装が特殊なもの | パトカー・タクシー・消防車を外す(移植元と同じ考え方)。撮影して決めた結果を規則のコメントに書く | F3 |
