@@ -178,7 +178,7 @@ python3 tools/carla_fleet/measure_blueprint_mesh.py \
     --out src/autoware_carla_interface/data/carla_fleet/mesh_measurements_carla<版>.json   # ← 生成物
 ```
 
-> 生成物: src/autoware_carla_interface/data/carla_fleet/mesh_measurements_carla<版>.json  CARLAブループリントの外形(LiDARで測った長さ・幅)一覧
+> 生成物: src/autoware_carla_interface/data/carla_fleet/mesh_measurements_carla<版>.json # CARLAブループリントの外形(LiDARで測った長さ・幅)一覧
 
 `<版>`は、計測するCARLAサーバーの版。CARLAを起動した状態で、次のコマンドで確かめられる。
 
