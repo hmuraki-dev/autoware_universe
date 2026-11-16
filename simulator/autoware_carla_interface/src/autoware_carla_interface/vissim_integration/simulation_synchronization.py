@@ -36,6 +36,16 @@ from .constants import INVALID_ACTOR_ID
 CATCH_UP_SPAWN_RETRIES = 10
 CATCH_UP_SPAWN_LIFT_STEP_M = 4.0
 
+# A vissim vehicle represented by several CARLA bodies (carla_variants, see docs/
+# Vissim_CARLA_Autoware_ブループリント割り当て_実装計画_v1.0.md F6): the 2nd and later bodies
+# overlap the 1st one, so spawning them at their position fails ("collision at spawn position").
+# They are spawned this far below the vehicle instead (CarlaSimulation.spawn_actor() adds
+# CARLA_SPAWN_OFFSET_Z), one EXTRA_BODY_PARK_STEP_M lower per body and per retry, and moved to
+# their position in the same frame, like every other mirrored vehicle. Not in upstream.
+EXTRA_BODY_PARK_Z_M = -200.0
+EXTRA_BODY_PARK_STEP_M = 10.0
+EXTRA_BODY_SPAWN_RETRIES = 3
+
 # ==================================================================================================
 # -- synchronization_loop --------------------------------------------------------------------------
 # ==================================================================================================
@@ -218,7 +228,8 @@ class SimulationSynchronization(object):
             if carla_blueprint is not None:
                 carla_actor_id = self.carla.spawn_actor(carla_blueprint, carla_transform)
 
-                if carla_actor_id != INVALID_ACTOR_ID:
+                if (carla_actor_id != INVALID_ACTOR_ID and
+                        self._spawn_extra_bodies(vissim_actor, carla_actor_id)):
                     self.vissim2carla_ids[vissim_actor_id] = carla_actor_id
                     self._record_vehicle_spawn(vissim_actor, carla_blueprint)
 
@@ -226,6 +237,7 @@ class SimulationSynchronization(object):
         for vissim_actor_id in self.vissim.destroyed_vehicles:
             if vissim_actor_id in self.vissim2carla_ids:
                 self.carla.destroy_actor(self.vissim2carla_ids.pop(vissim_actor_id))
+                self._destroy_extra_bodies(vissim_actor_id)
 
         # Updating vissim controlled vehicles in carla.
         for vissim_actor_id in self.vissim2carla_ids:
@@ -236,6 +248,7 @@ class SimulationSynchronization(object):
             carla_transform = self._vehicle_transform(vissim_actor, carla_actor_id)
             carla_velocity = BridgeHelper.get_carla_velocity(vissim_actor.get_velocity())
             self.carla.synchronize_vehicle(carla_actor_id, carla_transform, carla_velocity)
+            self._synchronize_extra_bodies(vissim_actor_id, vissim_actor, carla_velocity)
 
         # -------------------------
         # vissim-->carla pedestrian sync
@@ -365,7 +378,8 @@ class SimulationSynchronization(object):
                                                                      carla_transform)
                 spawn_retries += retries
 
-            if carla_actor_id != INVALID_ACTOR_ID:
+            if (carla_actor_id != INVALID_ACTOR_ID and
+                    self._spawn_extra_bodies(vissim_actor, carla_actor_id)):
                 self.vissim2carla_ids[vissim_actor_id] = carla_actor_id
                 self._record_vehicle_spawn(vissim_actor, carla_blueprint)
                 vehicles_spawned.append(vissim_actor_id)
@@ -382,6 +396,7 @@ class SimulationSynchronization(object):
             carla_transform = self._vehicle_transform(vissim_actor, carla_actor_id)
             carla_velocity = BridgeHelper.get_carla_velocity(vissim_actor.get_velocity())
             self.carla.synchronize_vehicle(carla_actor_id, carla_transform, carla_velocity)
+            self._synchronize_extra_bodies(vissim_actor_id, vissim_actor, carla_velocity)
 
         pedestrians_to_spawn = self.vissim.pedestrian_ids - set(self.vissim2carla_ped_ids.keys())
         pedestrians_not_spawned = set()
@@ -430,8 +445,9 @@ class SimulationSynchronization(object):
         With a FleetPlan (see docs/Vissim_CARLA_Autoware_ブループリント割り当て_実装計画_v1.0.md
         F5), the blueprint is the one assigned to the vehicle's model and the transform is already
         the body's final position (by its measured mesh); an unknown or unassigned model stops the
-        co-simulation (carla_fleet.VariantError) instead of skipping the vehicle. Only the first
-        body of the assignment is used here (several bodies per vehicle: F6). Without a FleetPlan,
+        co-simulation (carla_fleet.VariantError) instead of skipping the vehicle. This is the
+        first body of the assignment, kept in vissim2carla_ids; the others (if any) are spawned by
+        _spawn_extra_bodies() and kept in vissim2carla_extra_ids (F6). Without a FleetPlan,
         the upstream behavior: a random model of the vehicle type (data/vtypes.json), spawned at
         vissim's front-center-bumper position.
         """
@@ -458,6 +474,76 @@ class SimulationSynchronization(object):
         transform, = BridgeHelper.get_fleet_transforms(self.fleet, vissim_actor.get_transform(),
                                                        [spec])
         return transform
+
+    @property
+    def vissim2carla_extra_ids(self):
+        """
+        vissim vehicle id -> [carla actor id, ...] of its 2nd and later CARLA bodies (F6). Empty
+        without a FleetPlan, and for vehicles represented by one body. A property (created on
+        first use) so that instances built without __init__ (tests) have it too.
+        """
+        return self.__dict__.setdefault('_vissim2carla_extra_ids', {})
+
+    def mirrored_carla_ids(self):
+        """Every CARLA actor id that mirrors a vissim vehicle (all bodies)."""
+        ids = set(self.vissim2carla_ids.values())
+        for extra_ids in self.vissim2carla_extra_ids.values():
+            ids.update(extra_ids)
+        return ids
+
+    def _spawn_extra_bodies(self, vissim_actor, first_carla_actor_id):
+        """
+        Spawns the 2nd and later CARLA bodies of the given vissim vehicle (F6), below it (see
+        EXTRA_BODY_PARK_Z_M); _synchronize_extra_bodies() moves them to their position in the
+        same frame. Returns True if the vehicle is complete (or has a single body). If a body cannot be
+        spawned, destroys every body of the vehicle already spawned (the first one included),
+        logs an error and returns False: the vehicle is then left without a CARLA counterpart, as
+        when the first body fails to spawn.
+        """
+        if self.fleet is None:
+            return True
+        bodies = BridgeHelper.get_fleet_blueprints(self.fleet, vissim_actor)[1:]
+        if not bodies:
+            return True
+        front = BridgeHelper.get_carla_transform(vissim_actor.get_transform())
+        extra_ids = []
+        for index, (blueprint, _) in enumerate(bodies, start=1):
+            carla_actor_id = INVALID_ACTOR_ID
+            for attempt in range(EXTRA_BODY_SPAWN_RETRIES + 1):
+                depth = EXTRA_BODY_PARK_STEP_M * (index + attempt * len(bodies))
+                parking = carla.Transform(
+                    carla.Location(front.location.x, front.location.y,
+                                   EXTRA_BODY_PARK_Z_M - depth),
+                    front.rotation)
+                carla_actor_id = self.carla.spawn_actor(blueprint, parking)
+                if carla_actor_id != INVALID_ACTOR_ID:
+                    break
+            if carla_actor_id == INVALID_ACTOR_ID:
+                logging.error('[sync] vehicle %s: CARLA body %d of %d (%s) could not be spawned; '
+                              'no CARLA counterpart for this vehicle', vissim_actor.id, index + 1,
+                              len(bodies) + 1, blueprint.id)
+                for spawned_id in [first_carla_actor_id] + extra_ids:
+                    self.carla.destroy_actor(spawned_id)
+                return False
+            extra_ids.append(carla_actor_id)
+        self.vissim2carla_extra_ids[vissim_actor.id] = extra_ids
+        self.fleet.record_spawn([blueprint.id for blueprint, _ in bodies])
+        return True
+
+    def _synchronize_extra_bodies(self, vissim_actor_id, vissim_actor, carla_velocity):
+        """Moves the 2nd and later CARLA bodies of a vissim vehicle (F6), if it has any."""
+        extra_ids = self.vissim2carla_extra_ids.get(vissim_actor_id)
+        if not extra_ids:
+            return
+        actors = self.fleet.actors_for(vissim_actor.type, vissim_actor.model_filename)
+        transforms = BridgeHelper.get_fleet_transforms(self.fleet, vissim_actor.get_transform(),
+                                                       actors)
+        for carla_actor_id, carla_transform in zip(extra_ids, transforms[1:]):
+            self.carla.synchronize_vehicle(carla_actor_id, carla_transform, carla_velocity)
+
+    def _destroy_extra_bodies(self, vissim_actor_id):
+        for carla_actor_id in self.vissim2carla_extra_ids.pop(vissim_actor_id, []):
+            self.carla.destroy_actor(carla_actor_id)
 
     def _record_vehicle_spawn(self, vissim_actor, blueprint):
         """Counts the spawn for the end-of-run summary and logs the body/model residual."""
@@ -507,7 +593,9 @@ class SimulationSynchronization(object):
 
         # Spawning carla controlled vehicles in vissim. This also takes into account carla vehicles
         # that could not be spawned in vissim in previous time steps.
-        carla_spawned_actors = self.carla.spawned_actors - set(self.vissim2carla_ids.values())
+        # Every body of a vissim vehicle (the 2nd and later ones too, F6) is a vissim actor, never
+        # a CARLA-origin vehicle to adopt into vissim.
+        carla_spawned_actors = self.carla.spawned_actors - self.mirrored_carla_ids()
         carla_spawned_actors.update(
             [c_id for c_id, v_id in self.carla2vissim_ids.items() if v_id == INVALID_ACTOR_ID])
         for carla_actor_id in carla_spawned_actors:
@@ -553,8 +641,8 @@ class SimulationSynchronization(object):
         settings.fixed_delta_seconds = None
         self.carla.world.apply_settings(settings)
 
-        # Destroying synchronized actors.
-        for carla_actor_id in self.vissim2carla_ids.values():
+        # Destroying synchronized actors (every body of each vissim vehicle).
+        for carla_actor_id in self.mirrored_carla_ids():
             self.carla.destroy_actor(carla_actor_id)
 
         # Destroying synchronized pedestrians (walkers).

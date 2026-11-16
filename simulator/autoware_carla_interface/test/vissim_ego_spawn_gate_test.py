@@ -81,6 +81,7 @@ def _make_gate(egsg, vissim, warmup_time=100, step_length=0.05, max_failures=3,
                should_stop=lambda: False):
     sync = mock.MagicMock()
     sync.vissim = vissim
+    sync.vissim2carla_extra_ids = {}  # no vehicle with several CARLA bodies (see test_vissim_fleet_plan.py)
     log = []
     gate = egsg.EgoSpawnGate(sync, warmup_time, step_length, max_failures, should_stop,
                              log=log.append)

@@ -298,14 +298,36 @@ def test_sync_spawns_the_assigned_body_at_its_mesh_position(fresh_plan):
     # vissim の前端 (100, 20) -> CARLA (100, -20)、向き 0 度。原点は前端から L/2 + center_x 後ろ
     assert micra_tf.location.x == pytest.approx(100.0 - body['length'] / 2 - body['center_x'], abs=1e-4)
     assert micra_tf.location.y == pytest.approx(-20.0 - body['center_y'], abs=1e-4)
-    # F5 ではバスは 1 体目だけ(重ね置きは F6)
-    assert len(sync.carla.spawn_actor.call_args_list) == 2
+    # バスは carlacola 3 体(F6)。1 体目は自分の位置に、2・3 体目は重なるので車の真下の地下に spawn する
+    calls = sync.carla.spawn_actor.call_args_list
+    assert len(calls) == 4
+    bus = [c.args for c in calls if c.args[0].id == 'vehicle.carlamotors.carlacola']
+    assert len(bus) == 3
+    assert bus[0][1].location.z == pytest.approx(0.0)
+    assert [tf.location.z for _, tf in bus[1:]] == pytest.approx(
+        [ss.EXTRA_BODY_PARK_Z_M - ss.EXTRA_BODY_PARK_STEP_M * k for k in (1, 2)])
+    assert all(tf.location.x == pytest.approx(200.0) for _, tf in bus[1:])     # 車の前端の真下
     assert set(sync.vissim2carla_ids) == {7, 8}
-    # 同じ tick のうちに、同じ置き方で更新される(箱の寸法は使わない)
+    assert set(sync.vissim2carla_extra_ids) == {8}
+    assert len(sync.vissim2carla_extra_ids[8]) == 2
+    assert sync.mirrored_carla_ids() == {sync.vissim2carla_ids[7], sync.vissim2carla_ids[8],
+                                         *sync.vissim2carla_extra_ids[8]}
+    # 同じ tick のうちに、同じ置き方で更新される(箱の寸法は使わない)。バスの 3 体は前端から順に並ぶ
     updated = {c.args[0]: c.args[1] for c in sync.carla.synchronize_vehicle.call_args_list}
     assert updated[sync.vissim2carla_ids[7]].location.x == pytest.approx(micra_tf.location.x, abs=1e-4)
+    cola = fresh_plan.body('vehicle.carlamotors.carlacola')
+    bus_ids = [sync.vissim2carla_ids[8]] + sync.vissim2carla_extra_ids[8]
+    assert [updated[i].location.x for i in bus_ids] == pytest.approx(
+        [200.0 - offset - cola['length'] / 2 - cola['center_x'] for offset in (0.0, 3.513071, 7.026142)],
+        abs=1e-4)
+    assert all(updated[i].location.z == pytest.approx(0.0) for i in bus_ids)
+    # 体ごとの速度も同じ
+    velocities = {c.args[0]: c.args[2] for c in sync.carla.synchronize_vehicle.call_args_list}
+    assert len({(velocities[i].x, velocities[i].y) for i in bus_ids}) == 1
     sync.carla.get_actor.assert_not_called()
-    assert fresh_plan.spawn_counts == {'vehicle.nissan.micra': 1, 'vehicle.carlamotors.carlacola': 1}
+    assert fresh_plan.spawn_counts == {'vehicle.nissan.micra': 1, 'vehicle.carlamotors.carlacola': 3}
+    # 同じ車の体は同じ色
+    assert len({bp.attributes['color'] for bp, _ in bus}) == 1
 
 
 def test_sync_color_depends_on_the_vissim_id_only(fresh_plan):
@@ -336,10 +358,100 @@ def test_catch_up_spawn_uses_the_plan(fresh_plan):
     with mock.patch.object(bh.BridgeHelper, 'blueprint_library', FakeLibrary()):
         result = sync.spawn_all_vissim_actors_in_carla()
     assert result['vehicles'] == 2 and result['vehicles_not_spawned'] == set()
+    # トラック(DAF)は carlacola 2 体
     assert sorted(c.args[0].id for c in sync.carla.spawn_actor.call_args_list) == [
-        'vehicle.carlamotors.carlacola', 'vehicle.kawasaki.ninja']
-    assert len(sync.carla.synchronize_vehicle.call_args_list) == 2
+        'vehicle.carlamotors.carlacola', 'vehicle.carlamotors.carlacola', 'vehicle.kawasaki.ninja']
+    assert len(sync.vissim2carla_extra_ids[3]) == 1
+    assert len(sync.carla.synchronize_vehicle.call_args_list) == 3
     sync.carla.get_actor.assert_not_called()
+
+
+# ---------- 重ね置き(F6) ----------
+
+def test_failed_extra_body_leaves_the_vehicle_without_counterpart(fresh_plan):
+    """2 体目以降が spawn できなければ(地下で 1 + 再試行 3 回)、その車の体をすべて消し、写さない。"""
+    vehicles = {8: vissim_vehicle(8, 300, b'Bus - C2 Standard 2-doors')}
+    sync = make_sync(fresh_plan, vehicles, spawned={8})
+    calls = []
+
+    def spawn(blueprint, transform):
+        calls.append(transform.location.z)
+        return 500 if len(calls) == 1 else (501 if len(calls) == 2 else ss.INVALID_ACTOR_ID)
+    sync.carla.spawn_actor.side_effect = spawn
+    with mock.patch.object(bh.BridgeHelper, 'blueprint_library', FakeLibrary()), \
+            mock.patch.object(ss.logging, 'error') as error:
+        sync.sync_vissim_to_carla()
+    # 1 体目、2 体目、3 体目(1 + 3 回、毎回もっと下で)
+    assert len(calls) == 2 + 1 + ss.EXTRA_BODY_SPAWN_RETRIES
+    assert calls[2:] == sorted(calls[2:], reverse=True)
+    assert sorted(c.args[0] for c in sync.carla.destroy_actor.call_args_list) == [500, 501]
+    assert sync.vissim2carla_ids == {} and sync.vissim2carla_extra_ids == {}
+    error.assert_called_once()
+    sync.carla.synchronize_vehicle.assert_not_called()
+    assert fresh_plan.spawn_counts == {}
+
+
+def test_destroyed_vehicle_takes_every_body(fresh_plan):
+    vehicles = {8: vissim_vehicle(8, 300, b'Bus - C2 Standard 2-doors')}
+    sync = make_sync(fresh_plan, vehicles, destroyed={8})
+    sync.vissim2carla_ids = {8: 600}
+    sync.vissim2carla_extra_ids[8] = [601, 602]
+    sync.sync_vissim_to_carla()
+    assert sorted(c.args[0] for c in sync.carla.destroy_actor.call_args_list) == [600, 601, 602]
+    assert sync.vissim2carla_ids == {} and sync.vissim2carla_extra_ids == {}
+
+
+def test_extra_bodies_are_never_adopted_into_vissim(fresh_plan):
+    """CARLA 側に現れた 2 体目以降を、CARLA 由来の車(EGO など)として Vissim に送らない。"""
+    sync = make_sync(fresh_plan, {})
+    sync.vissim2carla_ids = {8: 600}
+    sync.vissim2carla_extra_ids[8] = [601, 602]
+    sync.carla.spawned_actors = {600, 601, 602, 900}           # 900: EGO
+    sync.carla.destroyed_actors = set()
+    sync.carla.get_actor.return_value = types.SimpleNamespace(
+        get_transform=lambda: carla.Transform(), get_velocity=lambda: carla.Vector3D(),
+        bounding_box=types.SimpleNamespace(extent=carla.Vector3D(2.0, 1.0, 0.7)))
+    sync.vissim.spawn_actor.return_value = 77
+    sync.sync_carla_to_vissim()
+    assert sync.carla2vissim_ids == {900: 77}
+    sync.vissim.spawn_actor.assert_called_once()
+
+
+def test_close_destroys_every_body(fresh_plan):
+    sync = make_sync(fresh_plan, {})
+    sync._frozen_opendrive_ids = set()
+    sync.vissim2carla_ids = {8: 600, 9: 700}
+    sync.vissim2carla_extra_ids[8] = [601, 602]
+    sync.close()
+    assert sorted(c.args[0] for c in sync.carla.destroy_actor.call_args_list) == [600, 601, 602, 700]
+
+
+def test_gap_check_sees_the_whole_stacked_vehicle(fresh_plan):
+    """EGO の安全スポーンの隙間は、重ね置きの車を前端から最後の体の後端までの外形で見る。"""
+    from autoware_carla_interface.vissim_integration import ego_spawn_gate as egsg
+    bus = vissim_vehicle(8, 300, b'Bus - C2 Standard 2-doors', x=200.0)
+    car = vissim_vehicle(7, 100, b'Car - Fiat 500 (2018)', x=100.0)
+    sync = make_sync(fresh_plan, {7: car, 8: bus})
+    sync.vissim2carla_ids = {7: 500, 8: 600}
+    sync.vissim2carla_extra_ids[8] = [601, 602]
+    first_box = types.SimpleNamespace(
+        get_transform=lambda: carla.Transform(carla.Location(195.0, -20.0, 0.0), carla.Rotation()),
+        bounding_box=types.SimpleNamespace(location=types.SimpleNamespace(x=0.0, y=0.0),
+                                           extent=types.SimpleNamespace(x=2.6, y=1.3)))
+    sync.carla.get_actor.return_value = first_box
+    gate = egsg.EgoSpawnGate(sync, 0, 0.05, 3, lambda: False, log=lambda line: None)
+    vehicles = {v.label.split('/')[0]: v for v in gate.collect_gap_vehicles()}
+    whole = vehicles['vissim:8']
+    cola = fresh_plan.body('vehicle.carlamotors.carlacola')
+    length = 7.026142 + cola['length']
+    assert whole.label == 'vissim:8/carla:600+2'
+    assert whole.length == pytest.approx(length, abs=1e-4)      # バスの全長 12.135 m
+    assert whole.length == pytest.approx(12.135, abs=1e-3)
+    assert whole.width == pytest.approx(cola['width'])
+    assert whole.x == pytest.approx(200.0 - length / 2, abs=1e-4)   # 前端 200 から全長の半分
+    assert whole.y == pytest.approx(-20.0)
+    # 1 体の車は今までどおり CARLA の箱
+    assert vehicles['vissim:7'].length == pytest.approx(5.2)
 
 
 def test_legacy_mode_without_a_plan():

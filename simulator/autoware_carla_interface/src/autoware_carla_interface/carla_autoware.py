@@ -773,7 +773,8 @@ class InitializeInterface(object):
         Vissim_CARLA_Autoware_統合_実装計画_v1.0.md Step 7.
 
         Order:
-          1. Destroy CARLA actors mirrored from vissim (`vissim2carla_ids`), one at a time.
+          1. Destroy CARLA actors mirrored from vissim (every body: `mirrored_carla_ids()`), one at a
+             time.
           2. Destroy CARLA walkers mirrored from vissim pedestrians (`vissim2carla_ped_ids`), one
              at a time. Pedestrian synchronization is vissim -> carla only (see docs/
              Vissim_CARLA_Autoware_歩行者同期_実装計画_v1.0.md), so there is no vissim-side
@@ -803,7 +804,9 @@ class InitializeInterface(object):
             except Exception as e:
                 print(f"Warning: Failed to summarize the CARLA blueprints: {e}")
 
-        for carla_actor_id in list(self.vissim_sync.vissim2carla_ids.values()):
+        # Every CARLA body of each vissim vehicle (several for long vehicles, see docs/
+        # Vissim_CARLA_Autoware_ブループリント割り当て_実装計画_v1.0.md F6).
+        for carla_actor_id in sorted(self.vissim_sync.mirrored_carla_ids()):
             try:
                 self.vissim_carla_sim.destroy_actor(carla_actor_id)
             except Exception as e:

@@ -309,10 +309,28 @@ class EgoSpawnGate(object):
         from .bridge_helper import BridgeHelper  # imports carla: only needed from here on
 
         vehicles = []
+        extra_ids = self._sync.vissim2carla_extra_ids
         for vissim_id in sorted(self._vissim.vehicle_ids):
             carla_id = self._sync.vissim2carla_ids.get(vissim_id)
             carla_actor = self._carla.get_actor(carla_id) if carla_id is not None else None
-            if carla_actor is not None:
+            if carla_actor is not None and extra_ids.get(vissim_id):
+                # Represented by several CARLA bodies (docs/
+                # Vissim_CARLA_Autoware_ブループリント割り当て_実装計画_v1.0.md F6): the first body's
+                # box alone would miss the later ones, which reach further back. Use the whole
+                # outline instead: from vissim's front-center-bumper position to the rear of the
+                # last body, as wide as the widest body (the bodies' measured mesh).
+                vissim_actor = self._vissim.get_actor(vissim_id)
+                fleet = self._sync.fleet
+                actors = fleet.actors_for(vissim_actor.type, vissim_actor.model_filename)
+                length = max(a['front_offset_m'] + fleet.body(a['blueprint'])['length'] for a in actors)
+                width = max(fleet.body(a['blueprint'])['width'] for a in actors)
+                front = BridgeHelper.get_carla_transform(vissim_actor.get_transform())
+                yaw = front.rotation.yaw
+                x, y = center_from_front(front.location.x, front.location.y, yaw, length)
+                vehicles.append(GapVehicle('vissim:%s/carla:%s+%d' % (vissim_id, carla_id,
+                                                                      len(extra_ids[vissim_id])),
+                                           x, y, yaw, length, width, 'carla'))
+            elif carla_actor is not None:
                 transform = carla_actor.get_transform()
                 box = carla_actor.bounding_box
                 x, y = bounding_box_center(transform.location.x, transform.location.y,
