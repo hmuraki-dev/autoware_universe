@@ -184,7 +184,7 @@ Vissimの車両1台ごとに、どのCARLAのブループリントを使うか�
   | CARLAの版(ブループリントの形が変わりうる) | (1)(2)(3) |
 
 - 変えたのに作り直さないと、co-simの起動時(規則・CARLAの版)か、走行中に表にない車が来たとき(`.inpx`)に、`Error: CARLA blueprint assignment: ...`で止まります(2.8.2)。
-- `.inpx`は、**Windows PCで実際に読まれるもの(2.2の`--vissim-network`)と同じ版**から作ります。同じかは、Windowsの`Get-FileHash`と、CARLAリポジトリのファイルの`sha256sum`で比べます。
+- `.inpx`は、**Windows PCで実際に読まれるもの(2.2の`--vissim-network`)**をLinuxに写して使います((2)の1)。
 - 作り直した表(と、(1)を実行したときは計測結果)は、autoware_universeにコミットします。`--symlink-install`でビルドしていれば、ビルドし直さなくても使われます。
 
 **(1) CARLAのブループリントの外形の計測**(CARLAの版を変えたときだけ)
@@ -226,54 +226,39 @@ python3 tools/carla_fleet/measure_blueprint_mesh.py \
 
 **(2) 表の生成**
 
-```bash
-cd ~/autoware.1.9.0/src/universe/autoware_universe/simulator/autoware_carla_interface
-# Windowsで使っている.inpxと同じ版を、CARLAリポジトリから取り出す(<コミット>はその版のコミット)
-git -C ~/CARLA show <コミット>:Co-Simulation/PTV-Vissim/examples/Town01/Town01.inpx > /tmp/Town01.inpx
-python3 tools/carla_fleet/build_carla_variants.py \
-    --inpx /tmp/Town01.inpx \
-    --inpx-ref "~/CARLA feature/vissim_windows <コミット> Co-Simulation/PTV-Vissim/examples/Town01/Town01.inpx" \
-    --geometry src/autoware_carla_interface/data/carla_fleet/mesh_measurements_carla0.9.15.json \
-    --rules src/autoware_carla_interface/data/carla_fleet/carla_variant_rules.yaml \
-    --out src/autoware_carla_interface/vissim_integration/data/carla_variants_town01.yaml
-```
+Windows PCで実際に読まれる`.inpx`(2.2の`--vissim-network`で指定しているもの)をLinuxに写し、それを入力にして表を作ります。
 
-`<コミット>`は、CARLAリポジトリ(`~/CARLA`、ブランチ`feature/vissim_windows`)のうち、`Town01.inpx`がWindows PCで使っているものと同じ版になっているコミット。
-次のように探す。
-
-1. Windows PCで、使っている`.inpx`のハッシュを出す(PowerShell)。
+1. 【Windows側/PowerShell】`.inpx`をLinuxへコピーする(LinuxはSSHを受け付けている。IPアドレスとユーザー名は使うPCに合わせる)。
 
    ```powershell
-   Get-FileHash C:\Users\divp\SBIR\Vissim\work_muraki\CARLA\Town01.inpx -Algorithm SHA256
+   scp C:\Users\divp\SBIR\Vissim\work_muraki\CARLA\Town01.inpx divp@192.168.16.33:/tmp/Town01.inpx
    ```
 
-2. Linuxで、`Town01.inpx`を変えたコミットごとに、その版のハッシュを出す(新しい順)。1と先頭が同じ行のコミットを使う(大文字・小文字は違ってよい)。
+   - USBメモリや共有フォルダで写してもよい。Linux側の置き場所は`/tmp/Town01.inpx`とする(下のコマンドに合わせる)。
+   - Vissimで`.inpx`を開いている間に保存したばかりのときは、保存が終わってから写す。
+
+2. 【Linux側/ターミナル2】表を生成する。
 
    ```bash
-   cd ~/CARLA && for c in $(git log --format=%h feature/vissim_windows -- Co-Simulation/PTV-Vissim/examples/Town01/Town01.inpx); do echo "$c $(git show $c:Co-Simulation/PTV-Vissim/examples/Town01/Town01.inpx | sha256sum | cut -c1-16)"; done
+   cd ~/autoware.1.9.0/src/universe/autoware_universe/simulator/autoware_carla_interface
+   python3 tools/carla_fleet/build_carla_variants.py \
+       --inpx /tmp/Town01.inpx \
+       --inpx-ref "Windows PC C:\Users\divp\SBIR\Vissim\work_muraki\CARLA\Town01.inpx" \
+       --geometry src/autoware_carla_interface/data/carla_fleet/mesh_measurements_carla0.9.15.json \
+       --rules src/autoware_carla_interface/data/carla_fleet/carla_variant_rules.yaml \
+       --out src/autoware_carla_interface/vissim_integration/data/carla_variants_town01.yaml
    ```
 
-   どのコミットとも一致しないときは、Windowsの`.inpx`がリポジトリに入っていない。先にWindowsの`.inpx`をCARLAリポジトリにコミットしてから、そのコミットを使う。
+   - `--inpx-ref`には、写す前のWindows側のパスを書く。表には`/tmp`のパスの代わりにこれが記録される(`.inpx`のsha256は自動で記録される)。
+   - (1)で別の名前の計測結果を作ったときは、`--geometry`をその名前にする。
 
-今の`.inpx`(2026-11-16。コミット`4213552`、sha256 `2265ff82…`)のときのコマンド:
-
-```bash
-cd ~/autoware.1.9.0/src/universe/autoware_universe/simulator/autoware_carla_interface
-git -C ~/CARLA show 4213552:Co-Simulation/PTV-Vissim/examples/Town01/Town01.inpx > /tmp/Town01.inpx
-python3 tools/carla_fleet/build_carla_variants.py \
-    --inpx /tmp/Town01.inpx \
-    --inpx-ref "~/CARLA feature/vissim_windows 4213552 Co-Simulation/PTV-Vissim/examples/Town01/Town01.inpx" \
-    --geometry src/autoware_carla_interface/data/carla_fleet/mesh_measurements_carla0.9.15.json \
-    --rules src/autoware_carla_interface/data/carla_fleet/carla_variant_rules.yaml \
-    --out src/autoware_carla_interface/vissim_integration/data/carla_variants_town01.yaml
-```
-
-- 今の表は、このコマンドで作ったもの。`.inpx`・規則・外形のどれも変えていなければ、作り直しても割り当ては変わらない(`generated_at`だけが変わる)。
+- Windowsの`.inpx`を変えたときは、CARLAリポジトリの`Co-Simulation/PTV-Vissim/examples/Town01/Town01.inpx`にもコミットしておく(リポジトリの版をWindowsと同じに保つため。表の生成そのものには不要)。
+- 今の表は、sha256が`2265ff82…`の`.inpx`(2026-11-16。CARLAリポジトリ`feature/vissim_windows`の`4213552`の版と同じ)から作ったもの。`.inpx`・規則・外形のどれも変えていなければ、作り直しても割り当ては変わらない(`generated_at`と`sources.inpx`の記録だけが変わる)。
 
 | オプション | 説明 | 省略可/不可 | デフォルト値 |
 | --- | --- | --- | --- |
 | `--inpx` | Vissimのネットワークファイル | 省略不可 | なし |
-| `--inpx-ref` | `.inpx`の出どころの記録(リポジトリ・コミット・パス)。渡すと、表には`.inpx`のパスの代わりにこれを書く(一時ファイルを渡すときに使う) | 省略可 | なし(`--inpx`のパスを書く) |
+| `--inpx-ref` | `.inpx`の出どころの記録(例: Windows側のパス)。渡すと、表には`--inpx`のパスの代わりにこれを書く(`/tmp`などに写したファイルを渡すときに使う) | 省略可 | なし(`--inpx`のパスを書く) |
 | `--geometry` | (1)の計測結果 | 省略不可 | なし |
 | `--rules` | 割り当ての規則 | 省略不可 | なし |
 | `--out` | 表の出力先 | 省略不可 | なし |
@@ -597,7 +582,7 @@ Vissimの車両1台をCARLAに出すとき、どのブループリントを使�
 
 #### 2.8.1 Town01の割り当て
 
-`vissim_integration/data/carla_variants_town01.yaml`(CARLAリポジトリ`4213552`の`Town01.inpx`から作成)。
+`vissim_integration/data/carla_variants_town01.yaml`(Windows PCの`Town01.inpx`(sha256 `2265ff82…`。CARLAリポジトリ`4213552`の版と同じ)から作成)。
 
 | Vissimのモデル | CARLAのブループリント | 長さの差 |
 | --- | --- | --- |
@@ -627,7 +612,7 @@ Vissimの車両1台をCARLAに出すとき、どのブループリントを使�
 | `variant_mesh_carla_version_changed` | 外形を測ったCARLAの版と、接続先の版が違う | 外形を測り直して表を作り直す(2.4.4の(1)(2)) |
 | `variant_articulated_unsupported` | 表に連結車(軌跡に沿う体)がある。このブリッジは扱わない | .inpxで連結車の割合を0にして作り直す(2.4.4の(2)) |
 | `variant_model_ambiguous` | 同じ(車種, モデルファイル)が2つのモデルにある | .inpxのモデルを見直す |
-| `npc_model_unknown`(走行中) | 表にない(車種, モデルファイル)の車が来た | Windowsの.inpxとリポジトリの版をそろえ、表を作り直す(2.4.4の(2)) |
+| `npc_model_unknown`(走行中) | 表にない(車種, モデルファイル)の車が来た | Windowsで使っている.inpxから、表を作り直す(2.4.4の(2)) |
 | `variant_model_empty`(走行中) | 表を作ったときに割合0だったモデルの車が来た | 同上 |
 
 - 起動時の検査は、Vissimアダプタに接続する前に行う。そのため、起動時に止まったときはVissimは起動していない。
