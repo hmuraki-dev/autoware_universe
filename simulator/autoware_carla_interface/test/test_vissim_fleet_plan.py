@@ -182,38 +182,7 @@ def test_summary_counts_spawns(tmp_path):
 
 # ---------- 配置の計算(計画書 2.4) ----------
 
-MESH_SYNTH = {'a': dict(length=4.0, width=2.0, center_x=0.1, center_y=0.05),
-              'b': dict(length=5.0, width=2.5, center_x=-0.3, center_y=0.0)}
-
-
-def test_body_origin_facing_x():
-    (x, y, z), = bh.body_origins((10.0, 0.0, 1.0), 0.0, 0.0, [dict(blueprint='a', front_offset_m=0.0)],
-                                 MESH_SYNTH)
-    # 中心は前端の 2.0 m 後ろ。原点は中心からメッシュ中心のずれ(前へ 0.1、右へ 0.05)を戻した所
-    assert (x, y, z) == pytest.approx((7.9, -0.05, 1.0))
-
-
-def test_body_origin_facing_y():
-    (x, y, z), = bh.body_origins((0.0, 10.0, 0.0), 90.0, 0.0, [dict(blueprint='a', front_offset_m=0.0)],
-                                 MESH_SYNTH)
-    # 前 = +y、右 = -x(CARLA は左手系)
-    assert (x, y, z) == pytest.approx((0.05, 7.9, 0.0))
-
-
-def test_stacked_bodies_follow_their_front_offset():
-    actors = [dict(blueprint='b', front_offset_m=0.0), dict(blueprint='b', front_offset_m=3.5)]
-    origins = bh.body_origins((0.0, 0.0, 0.0), 180.0, 0.0, actors, MESH_SYNTH)
-    # 前 = -x。体の中心は前端の 2.5 m・6.0 m 後ろ、メッシュ中心が後ろへ 0.3 m ずれているので原点は 0.3 m 前
-    assert origins[0] == pytest.approx((2.2, 0.0, 0.0), abs=1e-9)
-    assert origins[1] == pytest.approx((5.7, 0.0, 0.0), abs=1e-9)
-
-
-def test_body_origin_on_a_slope():
-    (x, y, z), = bh.body_origins((10.0, 0.0, 5.0), 0.0, 10.0, [dict(blueprint='a', front_offset_m=0.0)],
-                                 MESH_SYNTH)
-    # get_carla_transform() と同じく、高さだけ sin(pitch) で変わる
-    assert z == pytest.approx(5.0 - math.sin(math.radians(10.0)) * 2.1)
-    assert x == pytest.approx(7.9)
+# 配置の計算そのもの(carla_fleet.body_origins)のテストは test_carla_fleet.py にある。
 
 
 def test_fleet_transforms_match_the_upstream_front_convention(plan):

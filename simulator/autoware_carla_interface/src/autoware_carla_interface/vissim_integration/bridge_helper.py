@@ -23,6 +23,9 @@ import random
 import carla  # pylint: disable=import-error
 
 from .vissim_simulation import VissimSignalState
+# The placement of CARLA bodies (not in upstream) is shared with the SUMO bridge: see
+# carla_fleet.body_origins() and docs/Vissim_CARLA_Autoware_ブループリント割り当て_実装計画_v1.0.md 2.4.
+from ..carla_fleet import body_origins  # noqa: E402
 
 # ==================================================================================================
 # -- Bridge helper (VISSIM <=> CARLA) --------------------------------------------------------------
@@ -47,40 +50,6 @@ _VISSIM_TO_CARLA_SIGNAL_STATE = {
     # Still green, amber is only an overlay warning that it is about to change.
     VissimSignalState.GREEN_AMBER: carla.TrafficLightState.Green,
 }
-
-
-def body_origins(front, yaw_deg, pitch_deg, actors, mesh):
-    """
-    Actor origins (CARLA coordinates) of the CARLA bodies that represent one vissim vehicle.
-
-    Not in upstream; see docs/Vissim_CARLA_Autoware_ブループリント割り当て_実装計画_v1.0.md 2.4.
-    Pure function (no carla), so that it can be tested on its own.
-
-        :param front: (x, y, z) of the vehicle's front-center in CARLA coordinates (vissim reports
-            the front-center of the vehicle, see VISSIM_Veh_Data.Position_X).
-        :param yaw_deg: / :param pitch_deg: the vehicle's CARLA rotation.
-        :param actors: [{blueprint, front_offset_m}, ...] from the carla_variants (FleetPlan).
-        :param mesh: {blueprint: {length, width, center_x, center_y}}: the body as a LiDAR sees it,
-            and where it sits relative to the actor origin (FleetPlan.mesh).
-        :return: [(x, y, z), ...], one per actor, in the same order.
-
-    Each body's front is `front_offset_m` behind the vehicle's front, so its center is
-    `front_offset_m + length/2` behind it; the actor origin is then that center minus the mesh
-    center offset, rotated by the vehicle's yaw. Height follows the pitch the same way as
-    get_carla_transform() does with the bounding box (only the along-track distance changes).
-    """
-    yaw, pitch = math.radians(yaw_deg), math.radians(pitch_deg)
-    forward = (math.cos(yaw), math.sin(yaw))
-    right = (-math.sin(yaw), math.cos(yaw))  # CARLA's y axis points to the right of x
-    origins = []
-    for actor in actors:
-        body = mesh[actor['blueprint']]
-        back = float(actor['front_offset_m']) + body['length'] / 2.0 + body.get('center_x', 0.0)
-        side = body.get('center_y', 0.0)
-        origins.append((front[0] - forward[0] * back - right[0] * side,
-                        front[1] - forward[1] * back - right[1] * side,
-                        front[2] - math.sin(pitch) * back))
-    return origins
 
 
 class BridgeHelper(object):

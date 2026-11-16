@@ -293,6 +293,7 @@ def test_main_stops_without_writing(tmp_path, inpx_path, sources):
 
 # ---------- コミットした Town01 の生成物 ----------
 
+@pytest.mark.skipif(not TOWN01.is_file(), reason='Vissim の生成物が無いブランチ(SUMO 構成など)')
 def test_town01_variants_pass_the_startup_checks():
     variants = carla_fleet.load_variants(TOWN01)
     carla_fleet.check_sources(variants)
@@ -308,7 +309,8 @@ def test_town01_variants_pass_the_startup_checks():
     assert list(variants['assignment']['70']['types']) == ['700']
 
 
-@pytest.mark.skipif(not os.environ.get('CARLA_TOWN01_INPX'), reason='CARLA_TOWN01_INPX が無い')
+@pytest.mark.skipif(not (os.environ.get('CARLA_TOWN01_INPX') and TOWN01.is_file()),
+                    reason='CARLA_TOWN01_INPX か Vissim の生成物が無い')
 def test_town01_variants_are_what_the_generator_writes(tmp_path):
     shipped = carla_fleet.load_variants(TOWN01)
     inpx = Path(os.environ['CARLA_TOWN01_INPX'])

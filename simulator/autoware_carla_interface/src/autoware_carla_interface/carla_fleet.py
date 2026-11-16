@@ -15,7 +15,7 @@
 
 Vissim 構成と SUMO 構成のブリッジ、生成ツール(tools/carla_fleet/build_carla_variants.py)が使う。
 ここにあるのは、モデルの寸法(L・W・セグメント数・車種カテゴリ)と規則・実メッシュ寸法だけで
-決まる処理: 割り当ての規則の適用、carla_variants の読み込みと起動時の検査、体数の見積もり。
+決まる処理: 割り当ての規則の適用、carla_variants の読み込みと起動時の検査、体数の見積もり、体の配置の計算。
 モデルの寸法と割合を交通シムの入力(Vissim の inpx、SUMO の .rou.xml)から読むのは、各ブリッジ・生成ツールの側。
 
 移植元: SBIR_sim `runtime/bridge/carla_fleet.py`(feat/carla-substep-10ms、3ea1650)。
@@ -176,6 +176,35 @@ def pool_sizes(demand, pool_max, pool_min=1) -> dict:
     total = sum(demand.values()) or 1.0
     return {name: max(int(pool_min), int(round(pool_max * weight / total)))
             for name, weight in sorted(demand.items(), key=lambda item: (-item[1], item[0]))}
+
+
+# ---------- CARLA の体の配置(計画書 2.4) ----------
+
+def body_origins(front, yaw_deg, pitch_deg, actors, mesh):
+    """1 台の車を表す CARLA の体それぞれの actor の原点(CARLA 座標)。CARLA を使わない。
+
+    front: 車の前端中央(CARLA 座標の (x, y, z))。Vissim・SUMO とも、交通シムが返す車の位置は前端中央。
+    yaw_deg・pitch_deg: 車の CARLA の向き。
+    actors: carla_variants の体の並び [{blueprint, front_offset_m}, ...]。
+    mesh: {blueprint: {length, width, center_x, center_y}}。LiDAR に映る外形と、その中心の actor の原点からのずれ。
+    返り値: [(x, y, z), ...](actors と同じ順)。
+
+    各体の前端は車の前端から front_offset_m 後ろなので、体の中心は front_offset_m + length/2 後ろ。
+    actor の原点は、そこから外形の中心のずれを車の向きで回して引いた所。高さは、上流の get_carla_transform() が
+    バウンディングボックスでするのと同じく、前後方向の距離とピッチで変える。
+    """
+    yaw, pitch = math.radians(yaw_deg), math.radians(pitch_deg)
+    forward = (math.cos(yaw), math.sin(yaw))
+    right = (-math.sin(yaw), math.cos(yaw))  # CARLA の y 軸は x 軸の右
+    origins = []
+    for actor in actors:
+        body = mesh[actor["blueprint"]]
+        back = float(actor["front_offset_m"]) + body["length"] / 2.0 + body.get("center_x", 0.0)
+        side = body.get("center_y", 0.0)
+        origins.append((front[0] - forward[0] * back - right[0] * side,
+                        front[1] - forward[1] * back - right[1] * side,
+                        front[2] - math.sin(pitch) * back))
+    return origins
 
 
 # ---------- carla_variants の読み込みと起動時の検査(設計案 §6、計画書 2.5) ----------
