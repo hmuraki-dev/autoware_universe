@@ -199,7 +199,7 @@ launchに `vissim_carla_variants`(生成物のパス)を足す。既定は `viss
 | F1  | 共通部品の取り込み(`carla_fleet.py`、規則の雛形、回帰テスト、PyYAMLの依存) | autoware_universe | 完了(2026-11-16) |
 | F2  | 計測ツールの移植と、全ブループリントの実メッシュ計測 | autoware_universe・CARLA | 完了(2026-11-16。計測の基準をLiDARに変えた) |
 | F3  | 規則の確定(除外、fallback、大型車、二輪) | autoware_universe | 完了(2026-11-16) |
-| F4  | inpxの読み込み・生成ツールと、Town01の生成物 | autoware_universe | 未着手 |
+| F4  | inpxの読み込み・生成ツールと、Town01の生成物 | autoware_universe | 完了(2026-11-16) |
 | F5  | ブリッジへの組み込み(起動時の検査、モデルの引き、実メッシュ中心での配置) | autoware_universe | 未着手 |
 | F6  | 重ね置き(F3で必要になったときだけ) | autoware_universe | 未着手 |
 | F7  | ブリッジ単体での実機確認(Autowareなし) | Linux + Windows | 未着手 |
@@ -443,6 +443,44 @@ F2の値で1章の9の試算をやり直し、`carla_variant_rules.yaml` を次�
 - Town01の生成物 `vissim_integration/data/carla_variants_town01.yaml` を作る。`expected_bodies_per_100_vehicles` とdL・dWを、この計画書の結果に表で書く。
 
 完了条件: テストが通る。生成物ができ、14モデル(またはF3で決めたモデル)に割り当てがある。
+
+#### 結果(F4、2026-11-16)
+
+- `vissim_integration/inpx_models.py`: 移植元 `net.py` の `model_key`・`model_body`・`_load_vehicle_models`・`model_shares` だけを、`InpxModels` クラスとして抜き出した。
+  - `model_key()` は `bytes` も受ける(DSIの `model_filename` はbytesで届く。F0の2)。
+  - 自車の車種(`drivSimVehType`)と歩行者の車種を外す判定を、`is_traffic_vehicle_type()` にまとめた。
+- `tools/carla_fleet/build_carla_variants.py`: 移植元から次を変えた。
+  - 入力は `--inpx` のファイルだけにした。SUMOの入力と、網の登録簿(`received_networks`・`check_out_name`)への依存は外した。
+  - `--inpx-ref` を足した。渡すと、inpxのパスの代わりに出どころ(リポジトリ・コミット・パス)を `sources.inpx.ref` に記録する。gitから一時ファイルに取り出したinpxを使うときのため。
+  - 割り当て(`assignment`)と割り当てなし(`skipped`)の各モデルに、`file`(DSIの `ModelFileName` と同じ鍵)・`types`(車種と車種内の割合)・`segments` を書く。ブリッジはこれでモデルを引く(2.3)。`skipped` にも書くのは、走行中に割合0のモデルが来たとき、「知らないモデル」(`npc_model_unknown`)ではなく「割り当てのないモデル」(`variant_model_empty`)として止めるため。
+  - `sources.geometry`・`sources.rules` のパスは、生成物のディレクトリからの相対パス(2.2)。
+- `test/test_build_carla_variants.py`(19件): 合成の小さなinpxで、次を確かめる。
+  - 読み込み: `model_key` の形、連結車の全長、割合、自車・歩行者の除外、需要が使わない車両構成の除外。
+  - 生成: 割り当て、`skipped`、止まる条件、体数。
+  - 書き出しと起動時検査: 書き出した生成物が起動時の検査を通ること、連結車で `check_no_follows_path()` が止まること。
+  - コミットしたTown01の生成物の検査。
+  - inpxから作り直して一致するかのテストは、環境変数 `CARLA_TOWN01_INPX` があるときだけ動く。
+- **Town01の生成物** `vissim_integration/data/carla_variants_town01.yaml`:
+  - 入力: CARLAリポジトリ `4213552` の `Town01.inpx`(`git show` で取り出した。sha256 `2265ff82…` で、Windowsで読まれるものと同じ)。
+  - 割り当ては14モデルで、F3の表と同じ。dLの小数3桁目の違い(例: モデル4はF3で+0.089、生成物で+0.088)は、F3ではinpxの寸法を丸めた値で試算していたため。
+  - `skipped` は2モデル: 61 Bike - Cycle Man(車種610)、62 Bike - Cycle Woman(車種620)。どちらも割合0。
+  - 100台あたりの体数: `carlacola` 70.0、`mini.cooper_s_2021` 21.6、`audi.tt` 13.8、`tesla.model3` 11.4、`kawasaki.ninja` 10.0、`dodge.charger_2020` 6.6、`nissan.micra` 3.6、`nissan.patrol` 3.0。
+- 確かめたこと:
+  - `python3 -m pytest test`: 168件成功、2件スキップ(前からの1件と、上の作り直しのテスト)。
+  - `CARLA_TOWN01_INPX=<取り出したinpx>` を付けると、作り直しのテストも成功する。
+  - `colcon build --packages-select autoware_carla_interface --symlink-install` が通った。インストール先の生成物を読み、`check_sources()` を通った。
+
+作り直すときの手順:
+
+```bash
+git -C ~/CARLA show <コミット>:Co-Simulation/PTV-Vissim/examples/Town01/Town01.inpx > /tmp/Town01.inpx
+python3 tools/carla_fleet/build_carla_variants.py \
+    --inpx /tmp/Town01.inpx \
+    --inpx-ref "~/CARLA feature/vissim_windows <コミット> Co-Simulation/PTV-Vissim/examples/Town01/Town01.inpx" \
+    --geometry src/autoware_carla_interface/data/carla_fleet/mesh_measurements_carla0.9.15.json \
+    --rules src/autoware_carla_interface/data/carla_fleet/carla_variant_rules.yaml \
+    --out src/autoware_carla_interface/vissim_integration/data/carla_variants_town01.yaml
+```
 
 ### F5: ブリッジへの組み込み
 
