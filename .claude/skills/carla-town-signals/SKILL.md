@@ -21,7 +21,7 @@ CARLAの信号1つ = OpenDRIVEのlandmark ID 1つ。この**同じID**を次の2
 | Lanelet2の信号ツール | `<autoware_universe>/simulator/autoware_carla_interface/tools/carla_tl_to_lanelet2.py`(テスト: `test/test_carla_tl_to_lanelet2.py`)             |
 | Lanelet2地図         | `~/autoware_map/<Town>/lanelet2_map.osm` → `lanelet2_map_with_tl.osm`                                                                           |
 | 地図の重複点の修正   | `<autoware_universe>/simulator/autoware_carla_interface/tools/fix_lanelet2_duplicate_points.py`(テスト: `test/test_fix_lanelet2_duplicate_points.py`) |
-| Autoware側の手順書   | `<autoware_universe>/simulator/autoware_carla_interface/docs/SUMO-CARLA-Autoware_co-sim_起動手順.md` 2.4.3・2.7                                 |
+| Autoware側の手順書   | `<autoware_universe>/simulator/autoware_carla_interface/docs/SUMO-CARLA-Autoware_co-sim_起動手順.md` 2.2.2・3.1.2・3.4                               |
 | 設計と確認結果       | 同`docs/CARLA_Autoware_信号状態publish_実装計画_v1.0.md`                                                                                        |
 | IDの照合             | `<autoware_universe>/simulator/autoware_carla_interface/tools/check_sumo_lanelet2_tl_ids.py`(テスト: `test/test_check_sumo_lanelet2_tl_ids.py`) |
 
@@ -93,7 +93,7 @@ python3 tools/carla_tl_to_lanelet2.py ~/autoware_map/<Town>/lanelet2_map.osm \
 - **停止線を前にずらす量**: CARLAの停止位置は、信号灯の約7 m手前にある(Town01では6.7〜8.9 m)。そのままだと、EGOが交差点のかなり手前で止まる。Town01では6 mにした(停止線から交差点の入口まで0.96〜7.08 m)。Townごとに次の手順で決める。
   1. まず`0`で作り、`WARNING`がないことを確かめる。
   2. 値を上げていき、`WARNING: ... not added`(停止線がlaneletの外に出る)が出ない最大値より少し小さい値を選ぶ。Town01の上限は約6.9 m。
-  3. 選んだ値と、交差点の入口までの距離の範囲を、手順書2.7.1に書く。
+  3. 選んだ値と、交差点の入口までの距離の範囲を、手順書3.4.1に書く。
   - Townによっては0が正解になる。Town05は、CARLAの停止位置がもともと交差点の入口の1.3〜8.1 m手前で、1 mでも`WARNING`が出たので0にした。Town10HDも0.9〜6.9 m手前で、同じく0。
     距離はCARLAの道路で測れる(`get_stop_waypoints()`の各waypointから`next(0.1)`を`is_junction`まで進める)。
 - **多車線の信号**: 1つの信号に停止位置が複数あると、停止位置ごとにregulatory elementができる(Town05は54信号で111個、Town10HDは15信号で30個)。
@@ -112,7 +112,7 @@ python3 tools/check_sumo_lanelet2_tl_ids.py \
 ```
 
 - `OK`(終了コード0)なら、CARLAの全信号がSUMOとLanelet2の両方にあり、1つのlandmarkが複数のtlLogicに分かれていない。
-- `INFO ... -> CARLA shows red`は、1つのlandmarkのリンクが`G`/`g`以外の違う状態に分かれる信号。そのフェーズの間、CARLAとAutowareには赤として届く(`bridge_helper.py`の仕様)。Town01では、手で設定した360と374だけが該当し、手順書2.7.4に書いてある。`add_carla_tls.py`で作った信号が出てきたら、ツールの不具合として直す。
+- `INFO ... -> CARLA shows red`は、1つのlandmarkのリンクが`G`/`g`以外の違う状態に分かれる信号。そのフェーズの間、CARLAとAutowareには赤として届く(`bridge_helper.py`の仕様)。Town01では、手で設定した360と374だけが該当し、手順書3.4.4に書いてある。`add_carla_tls.py`で作った信号が出てきたら、ツールの不具合として直す。
 
 ### 5. 実機で確認する
 
@@ -124,7 +124,7 @@ grep -nE "Traffic-light matching|Traffic lights|traffic-light|Different SUMO" /t
 
 - `Traffic-light matching: N matched, 0 ambiguous, 0 too far`のNが信号の数と同じであること。
 - `Different SUMO traffic-light states`が、手順4で`INFO`の出た信号でだけ出ていること。
-- 信号の手前に向かうスポーン地点(手順書2.4.3の表の「信号372の手前」と同じ選び方)から走らせて、次を確かめる。
+- 信号の手前に向かうスポーン地点(手順書3.1.2の表の「信号372の手前」と同じ選び方)から走らせて、次を確かめる。
   スポーン地点は、信号の停止位置まで(`next`)だけでなく、手前の交差点から(`previous`)も直線で離れていることを確かめる。
   交差点を出た直後の地点は避ける(Town05で一度選んでしまった)。
   - 赤で停止線に止まるか(止まった位置と、交差点の入口までの距離)。
@@ -139,9 +139,10 @@ grep -nE "Traffic-light matching|Traffic lights|traffic-light|Different SUMO" /t
 
 - **SUMO側の手順書**: 「SUMOの信号(<Town>)」の節(junctionとlandmarkの対応表、信号パターン、再生成のコマンド、交通量の注意)。
 - **Autoware側の手順書**:
-  - 2.7.1: コマンド例、停止線の値、信号の数
-  - 2.7.4: 赤に置き換えられる信号
-  - 2.4.3: 確認済みのスポーン地点。交通量と空き待ちの実績は、信号の設置前後で変わるので、いつの値かを書く。
+  - 2.2.2: 地図を作るコマンド例
+  - 3.4.1: 停止線の値、信号の数
+  - 3.4.4: 赤に置き換えられる信号
+  - 3.1.2: 確認済みのスポーン地点。交通量と空き待ちの実績は、信号の設置前後で変わるので、いつの値かを書く。
   - 2.4.1: コマンド例を変えた場合
 - **README**: Lanelet2側の引数や既定値を変えた場合。
 - **ツールを変えたとき**: `test/test_carla_tl_to_lanelet2.py`にテストを足して実行する(`python3 -m pytest test/test_carla_tl_to_lanelet2.py`)。CARLAもROSもいらない。

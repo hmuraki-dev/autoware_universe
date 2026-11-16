@@ -412,6 +412,39 @@ defaults to the map Autoware loads (`map_path`/`lanelet2_map_file`), and
 `autoware_carla_interface.launch.xml` also skips the CAM_FRONT relays feeding that recognition.
 On Town01 the ego stops about 0.5 m before the stop line on red and starts on green.
 
+## SUMO Vehicle Blueprints
+
+With the SUMO co-simulation on Town01, each SUMO vehicle gets the CARLA body closest in size to its
+SUMO vType, the same way as in the Vissim co-simulation (design and results:
+`docs/SUMO_CARLA_Autoware_ブループリント割り当て_実装計画_v1.0.md`).
+
+- Town01's SUMO vehicle groups (`rou/Town01.rou.xml` in the CARLA repository) now hold the 14 Vissim
+  `Town01.inpx` 2D/3D models (their sizes and in-type shares, `vissim_fleet_vtypes.rou.xml`), so both
+  co-simulations run the same vehicles and get the same CARLA bodies. The shares between the groups
+  (70% cars, 10% trucks, 5% tractors, 5% buses, 10% motorbikes) are unchanged.
+- Sizes are the bodies as a LiDAR sees them (`data/carla_fleet/mesh_measurements_carla0.9.15.json`),
+  and the rules are `data/carla_fleet/carla_variant_rules.yaml`, shared with the Vissim setup.
+  `tools/carla_fleet/build_carla_variants.py --sumocfg Town01.sumocfg` groups the vTypes of all
+  `route-files` by size and writes `sumo_integration/data/carla_variants_sumo_town01.yaml`. Trucks,
+  tractors and buses are 2-3 overlapping `carlamotors.carlacola` bodies.
+- The bridge checks the table before starting SUMO (blueprints present, rules, measurements and the
+  sha256 of every `route-files` file of the given `.sumocfg` unchanged, same CARLA version) and looks
+  every vehicle up by its vType id, checking its size. A missing or stale table, or a vehicle whose
+  vType is not in the table, stops the bridge with `Error: CARLA blueprint assignment: <code>: ...`
+  (exit code 1) instead of substituting another blueprint.
+- Launch argument `sumo_carla_variants` (default `auto`: `sumo_integration/data/carla_variants_sumo_<sumocfg name, lower case>.yaml`
+  if it exists, otherwise the previous choice). Town05 and Town10HD have no table and keep the
+  previous choice (the vType id as blueprint, else a random one of `sumo_integration/data/vtypes.json`).
+  `sumo_carla_variants:=legacy_vtypes` forces the previous choice; on Town01 buses then have no CARLA
+  body at all (no `bus` class in `vtypes.json`), so use it only for comparisons.
+- On Town01 with Autoware, the bus seen from the side is perceived 12.1-13.1 m long and the truck
+  7.56 m (models: 12.14 m, 7.93 m), close to the Vissim results; with `legacy_vtypes` both trucks
+  and tractors are a single 5.11 m `carlacola`.
+
+See the start-up guide (`docs/SUMO-CARLA-Autoware_co-sim_起動手順.md`, 2.2.3) for regenerating the
+table (only needed after changing the SUMO vehicles, the rules or the CARLA version) and 3.5 for the
+meaning of each `<code>`.
+
 ## Tips
 
 - Misalignment might occurs during initialization, pressing `init by gnss` button should fix it.
@@ -421,4 +454,8 @@ On Town01 the ego stops about 0.5 m before the stop line on red and starts on gr
 
 - **Testing on procedural maps (Adv Digital Twin)**: Currently unable to test due to failures in creating the Adv Digital Twin map.
 - **Traffic light recognition**: The default CARLA Lanelet2 maps lack proper traffic light regulatory elements. See the "Traffic Light Recognition" section above for workarounds, or generate them with `tools/carla_tl_to_lanelet2.py` and bypass camera recognition with `traffic_light.publish` (see "Publishing CARLA Traffic-Light States").
+- **SUMO vehicle blueprints**: Only Town01 has a table. Trucks, tractors and buses are stacked
+  `carlacola` delivery trucks, which looks odd up close, and a stacked vehicle can be perceived as
+  two objects while turning (seen once in 83 samples). A bus right behind the ego is perceived about
+  5 m long, as only its front is visible (as for any long vehicle).
 - **SUMO yellow lights**: With `tls_manager:=sumo`, a CARLA light mapped to SUMO links in different states (e.g. straight `G`, turn `y`) is forced to red, so Autoware may receive red while SUMO shows yellow or green for the straight link.
