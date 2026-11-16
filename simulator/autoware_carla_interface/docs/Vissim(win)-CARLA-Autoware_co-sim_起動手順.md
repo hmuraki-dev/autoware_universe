@@ -135,7 +135,7 @@ cd ~/CARLA/Co-Simulation/PTV-Vissim/util
 python3 generate_signal_mapping.py ../examples/Town01/Town01.inpx   # ← 生成物(既定の出力先 ../data/signal_mapping.json)
 ```
 
-生成物: ~/CARLA/Co-Simulation/PTV-Vissim/data/signal_mapping.json # Vissim信号グループ-CARLA信号の対応表
+> 生成物: ~/CARLA/Co-Simulation/PTV-Vissim/data/signal_mapping.json # Vissim信号グループ-CARLA信号の対応表
 
 - 出力先は`--output`で変えられる。
 - これを`~/autoware.1.9.0/src/universe/autoware_universe/simulator/autoware_carla_interface/src/autoware_carla_interface/vissim_integration/data/signal_mapping.json`にもコピーする(上の注意)。
@@ -178,7 +178,7 @@ python3 tools/carla_fleet/measure_blueprint_mesh.py \
     --out src/autoware_carla_interface/data/carla_fleet/mesh_measurements_carla<版>.json   # ← 生成物
 ```
 
-生成物: src/autoware_carla_interface/data/carla_fleet/mesh_measurements_carla<版>.json # CARLAブループリントの外形(LiDARで測った長さ・幅)一覧
+> 生成物: src/autoware_carla_interface/data/carla_fleet/mesh_measurements_carla<版>.json  CARLAブループリントの外形(LiDARで測った長さ・幅)一覧
 
 `<版>`は、計測するCARLAサーバーの版。CARLAを起動した状態で、次のコマンドで確かめられる。
 
@@ -194,7 +194,7 @@ python3 tools/carla_fleet/measure_blueprint_mesh.py \
     --out src/autoware_carla_interface/data/carla_fleet/mesh_measurements_carla0.9.15.json   # ← 生成物
 ```
 
-生成物: src/autoware_carla_interface/data/carla_fleet/mesh_measurements_carla0.9.15.json # CARLAブループリントの外形(LiDARで測った長さ・幅)一覧
+> 生成物: src/autoware_carla_interface/data/carla_fleet/mesh_measurements_carla0.9.15.json # CARLAブループリントの外形(LiDARで測った長さ・幅)一覧
 
 - 0.9.15の計測結果は、すでにリポジトリに入っている(2026-11-16に測ったもの)。出力先のファイルがあるとツールはエラーで止まるので、0.9.15で測り直すときは、先に古いファイルを消すか、日付を付けた別の名前(例: `mesh_measurements_carla0.9.15_20261201.json`)にする。別の名前にしたときは、(2)の`--geometry`もその名前にする。
 - ブリッジが照合するのは、ファイル名ではなく、ファイルの中に記録された版(`carla_server_version`。ツールが接続先のCARLAから書き込む)。
@@ -219,7 +219,7 @@ Windows PCで実際に読まれる`.inpx`(2.2の`--vissim-network`で指定し�
    scp C:\Users\divp\SBIR\Vissim\work_muraki\CARLA\Town01.inpx divp@192.168.16.33:/tmp/Town01.inpx   # ← 生成物(Linux側)
    ```
 
-   生成物: /tmp/Town01.inpx # Windows PCのVissimネットワークファイルの写し(Linux側。2の入力)
+   > 生成物: /tmp/Town01.inpx # Windows PCのVissimネットワークファイルの写し(Linux側。2の入力)
 
    - USBメモリや共有フォルダで写してもよい。Linux側の置き場所は`/tmp/Town01.inpx`とする(下のコマンドに合わせる)。
    - Vissimで`.inpx`を開いている間に保存したばかりのときは、保存が終わってから写す。
@@ -236,7 +236,7 @@ Windows PCで実際に読まれる`.inpx`(2.2の`--vissim-network`で指定し�
        --out src/autoware_carla_interface/vissim_integration/data/carla_variants_town01.yaml   # ← 生成物
    ```
 
-   生成物: src/autoware_carla_interface/vissim_integration/data/carla_variants_town01.yaml # Vissim車両-ブループリント割り当て一覧
+   > 生成物: src/autoware_carla_interface/vissim_integration/data/carla_variants_town01.yaml # Vissim車両-ブループリント割り当て一覧
 
    - `--inpx-ref`には、写す前のWindows側のパスを書く。表には`/tmp`のパスの代わりにこれが記録される(`.inpx`のsha256は自動で記録される)。
    - (1)で別の名前の計測結果を作ったときは、`--geometry`をその名前にする。
@@ -510,9 +510,9 @@ cd ~/autoware.1.9.0/src/universe/autoware_universe/simulator/autoware_carla_inte
 python3 tools/carla_tl_to_lanelet2.py ~/autoware_map/Town01/lanelet2_map.osm --dump-json ~/autoware_map/Town01/carla_tl.json --stop-line-before-junction 1.0   # ← 生成物(2つ)
 ```
 
-生成物: ~/autoware_map/Town01/lanelet2_map_with_tl.osm # 信号入りのLanelet2地図
-
-生成物: ~/autoware_map/Town01/carla_tl.json # CARLAの信号の記録(位置・停止位置・交差点group)
+> 生成物: ~/autoware_map/Town01/lanelet2_map_with_tl.osm # 信号入りのLanelet2地図
+>
+> 生成物: ~/autoware_map/Town01/carla_tl.json # CARLAの信号の記録(位置・停止位置・交差点group)
 
 - `lanelet2_map_with_tl.osm`は既定の出力先(入力の地図と同じフォルダ)で、`-o`/`--output`で変えられる。`carla_tl.json`は`--dump-json`の出力。
 
