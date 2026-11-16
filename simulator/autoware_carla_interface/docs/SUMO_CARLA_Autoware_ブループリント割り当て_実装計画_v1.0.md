@@ -138,7 +138,7 @@ Vissim構成のF5・F6と同じ作りにする。
 | S0  | 事前確認(TraCIが返すvType IDと寸法、SUMO単体での今の交通) | Linux | 完了(2026-11-16) |
 | S1  | 共通部品の整理(Vissimブランチ)と取り込み(SUMOブランチ) | autoware_universe(両ブランチ) | 完了(2026-11-16) |
 | S2  | SUMOのvTypeを作り、Town01の需要を差し替える | CARLA | 完了(2026-11-16、CARLA `main` の `6a1c918`) |
-| S3  | SUMOの読み込み(`sumo_fleet.py`)、生成ツールの `--sumocfg`、Town01の生成物 | autoware_universe | 未着手 |
+| S3  | SUMOの読み込み(`sumo_fleet.py`)、生成ツールの `--sumocfg`、Town01の生成物 | autoware_universe | 完了(2026-11-16) |
 | S4  | ブリッジへの組み込み(検査、vType IDでの引き、配置、重ね置き、隙間の検査) | autoware_universe | 未着手 |
 | S5  | ブリッジ単体での実機確認(Autowareなし) | Linux | 未着手 |
 | S6  | Autoware全体での実機確認(Vissim構成との比較を含む) | Linux | 未着手 |
@@ -288,7 +288,7 @@ S2(CARLAリポジトリの変更)とS5・S6(実機)では `main` が要るので
 - シード3は、今までの需要でも詰まりが起きる。新しい需要では、それが強く出る。
 - 急ブレーキは、今までの需要でも出ていた。
 - 既定のシードでは、teleportは3560秒の1件だけ。co-simの使い方(ウォームアップ600秒+走行600秒)の範囲では起きていない。
-- **5章の4は、推奨を「(b) そのまま受け入れ、起動手順書に書く」にした**(利用者の確認待ち)。
+- **5章の4は、「(b) そのまま受け入れ、起動手順書に書く」に決まった**(利用者)。
 
 **Town05・Town10HDへの影響**: なし。両方の `.sumocfg` は `vissim_fleet_vtypes.rou.xml` を読み込まず、`rou/Town05.rou.xml`・`rou/Town10HD.rou.xml` も変えていない。
 
@@ -306,6 +306,33 @@ S2(CARLAリポジトリの変更)とS5・S6(実機)では `main` が要るので
   - `carlavtypes.rou.xml` のvType(割合0)は `skipped` に入る。
 
 完了条件: テストが通る。生成物の割り当てが、Vissim構成と一致する。
+
+#### 結果(S3、2026-11-16)
+
+- **`sumo_integration/sumo_fleet.py`**(新規、`4c1d5f6ea`): 移植元の `read_models` を元にした。traci・CARLAは使わない。
+  - `route_file_names(sumocfg)`・`route_files(sumocfg)`: `.sumocfg` の `route-files` を、`.sumocfg` のあるディレクトリから解決する。
+  - `read_models(files)`: 複数のrouteファイルにまたがって読む。vTypeは寸法(鍵は小数3桁の `L<長さ>_W<幅>`)でまとめる。
+    - L・Wは丸めない(割り当てのdL・dWを、Vissimのモデルと同じにするため)。
+    - 割合は、flow(`number`・`vehsPerHour`・`perHour`・`probability`・`period`(`exp(...)` を含む))・vehicle・tripの台数に、vTypeDistributionの確率を掛けたもの。分布の中に書いたvTypeも読む。
+    - モデルごとに、まとめたvTypeのID(`vtypes`)と、入っている車両グループ(`distributions`)を返す。
+    - 歩行者のvTypeと、車両グループそのもののIDは、モデルにしない。
+- **生成ツール `build_carla_variants.py`**(SUMOブランチ `4c1d5f6ea`、Vissimブランチ `37ce81b48`、両方で同じ中身):
+  - `--sumocfg`・`--sumocfg-ref` を足した(`--inpx` とどちらか1つ)。`sumo_fleet` は、`--sumocfg` のときだけ読み込む(Vissimブランチにはないため)。
+  - SUMOの生成物には、各モデルに `vtypes` を書く。`sources` には `sumocfg`(出どころとsha256)と、`route_files`(`.sumocfg` に書かれた名前ごとのsha256)を書く。
+  - 生成物の中は、車両グループごとにまとめる。
+  - **Vissimの出力は変わらない**: Vissimブランチの `carla_variants_town01.yaml` を直したツールで作り直すと、作り方のコメントを除いて同じだった。Vissimブランチの作り直しのテスト(`CARLA_TOWN01_INPX` を付けたもの)も通った。
+- **Town01の生成物** `sumo_integration/data/carla_variants_sumo_town01.yaml`:
+  - 入力: `~/CARLA/Co-Simulation/Sumo/examples/Town01.sumocfg`(CARLAリポジトリ `main` の `6a1c918`)。
+  - 14モデルに割り当て、`skipped` は42モデル(`carlavtypes.rou.xml` の41種(自車の `prius` を含む)と、SUMOの既定のvType)。
+  - **14モデルすべての割り当て(ブループリント・`front_offset_m`・dL・dW・method)が、Vissimの `carla_variants_town01.yaml` と完全に一致した。**
+  - 100台あたりの体数はVissimと違う(`carlacola` 45.0、`mini.cooper_s_2021` 25.2、`audi.tt` 16.1、`tesla.model3` 13.3、`kawasaki.ninja` 10.0、`dodge.charger_2020` 7.7、`nissan.micra` 4.2、`nissan.patrol` 3.5)。車両グループどうしの比率がSUMO(乗用車70%)とVissim(60%)で違うためで、想定どおり(5章の1)。
+- **テスト `test/test_sumo_fleet.py`**(10件、SUMOブランチだけ): 合成の `.sumocfg` と2つのrouteファイルで、次を確かめる。
+  - 読み込み: 解決、寸法でのまとめ、割合、カテゴリ、分布、歩行者の除外、止まる条件。
+  - 生成: `sources`・`vtypes`、重ね置き、入力の指定。
+  - コミットしたTown01の生成物の割り当てが、Vissimと同じであること。
+  - `~/CARLA` から作り直して一致すること。これは、`~/CARLA` のrouteファイルが生成物と同じsha256のときだけ動く。
+- テスト: SUMOブランチは200件成功・3件スキップ。Vissimブランチは203件成功・2件スキップ。
+- 自分の誤り(記録のため): テストの合成データで、最初は `long_van` を7.0 × 2.2 mにしていた。これは `carlacola` の幅が太い側の許容を0.01 m超えて割り当てられず、生成ツールが正しく止まった。合計の台数も67台と誤って書いていた(正しくは57台)。どちらもテストの側を直した。
 
 ### S4: ブリッジへの組み込み
 
@@ -361,7 +388,7 @@ Vissim計画のF7と同じ項目。SUMOはLinuxで動くので、すべて1台�
 | 1   | 車両グループどうしの比率 | 今のSUMOの比率(乗用車70%・トラック10%・トレーラー5%・バス5%・バイク10%)を保つ。グループの中身だけをVissimのモデルにする。Vissimの比率(60・10・10・10・10%)に合わせると、交通量と信号の確認をやり直すことになる | S2の前 |
 | 2   | vTypeの追加の仕方 | 新しいファイル `vissim_fleet_vtypes.rou.xml` を足し、`Town01.rou.xml` の分布の中身を差し替える。`carlavtypes.rou.xml` は残す(自車とTown05・Town10HDで使う) | S2 |
 | 3   | `sumo_carla_variants` の既定値 | `auto`: `.sumocfg` の名前から `sumo_integration/data/carla_variants_sumo_<名前を小文字>.yaml` を探し、あればそれを使う。なければ今の選び方を使い、そのことをログに1行出す。Town01だけ生成物を作るので、Town05・Town10HDは今までどおり動く。`legacy_vtypes` の明示と、ファイルのパスの直接指定もできる | S4 |
-| 4   | 大型車が長くなって詰まりが増えたとき | S2の比較では、所要時間が4〜22%延び、既定のシードではteleportが3560秒に1件だけだった(co-simの範囲では起きない)。(b) そのまま受け入れて起動手順書に書く、を推奨。(a) バス・トレーラーのflowを減らす、はあとからでもできる | S2(利用者の確認待ち) |
+| 4   | 大型車が長くなって詰まりが増えたとき | 決定(S2、2026-11-16、利用者): (b) そのまま受け入れ、起動手順書に書く。S2の比較では、所要時間が4〜22%延び、既定のシードではteleportが3560秒に1件だけだった(co-simの範囲では起きない)。(a) バス・トレーラーのflowを減らす、はあとからでもできる | S2 |
 | 5   | vTypeの挙動パラメータ | vClassの既定値のまま(今の `carlavtypes.rou.xml` も既定値) | S2 |
 | 6   | 共通部品の置き場所 | 配置の計算を `carla_fleet.py` に移す(S1の1)。`FleetPlan` は交通シムごとに分ける(引き方が違うため) | S1 |
 | 7   | CARLAリポジトリのブランチ(S0で判明) | SUMOのシナリオは `main` にあり、今の作業ツリーは `feature/vissim_windows`。SUMOの作業(S2の変更、S5・S6の実機)をするときは、利用者が `~/CARLA` を `main` に切り替える。SUMOの起動手順書の `sumo_cfg_file` は `~/CARLA/Co-Simulation/Sumo/examples/` を指すので、実機のときも `main` である必要がある。2つのブランチを行き来するのが手間なら、`main` を別の場所に `git worktree add` する案もある(その場合、起動手順書のパスも変わる) | S2の前 |
