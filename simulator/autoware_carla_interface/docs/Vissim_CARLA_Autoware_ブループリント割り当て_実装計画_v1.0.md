@@ -202,7 +202,7 @@ launchに `vissim_carla_variants`(生成物のパス)を足す。既定は `viss
 | F3  | 規則の確定(除外、fallback、大型車、二輪) | autoware_universe | 完了(2026-11-16) |
 | F4  | inpxの読み込み・生成ツールと、Town01の生成物 | autoware_universe | 完了(2026-11-16) |
 | F5  | ブリッジへの組み込み(起動時の検査、モデルの引き、実メッシュ中心での配置) | autoware_universe | 完了(2026-11-16) |
-| F6  | 重ね置き(F3で必要になったときだけ) | autoware_universe | 未着手 |
+| F6  | 重ね置き(F3で必要になったときだけ) | autoware_universe | 完了(2026-11-16) |
 | F7  | ブリッジ単体での実機確認(Autowareなし) | Linux + Windows | 未着手 |
 | F8  | Autoware全体での実機確認 | Linux + Windows | 未着手 |
 | F9  | ドキュメントとコミット、SUMO計画への引き継ぎ | autoware_universe | 未着手 |
@@ -558,6 +558,44 @@ python3 tools/carla_fleet/build_carla_variants.py \
 - テスト: 2体の車のspawn・更新・destroy、CARLA→Vissimの除外に2体目が入らないこと、途中で失敗したときの後始末。
 
 完了条件: テストが通る。
+
+#### 結果(F6、2026-11-16)
+
+**変えたファイル**
+
+- `simulation_synchronization.py`:
+  - 2体目以降を `vissim2carla_extra_ids`(`{vissim_id: [carla_id, ...]}`)で持つ。`__init__` を通さずに作るテスト用のオブジェクトでも使えるように、最初に使ったときに作るプロパティにした。1体目は今までどおり `vissim2carla_ids` にある(2.6)。
+  - `mirrored_carla_ids()`: すべての体のIDを返す。
+  - spawn(通常・ウォームアップ後の一括): 1体目のspawnが成功したら、`_spawn_extra_bodies()` で2体目以降をspawnする。
+    - 2体目以降は1体目と重なるので、**車の前端の真下の地下**にspawnする。z = −200 m − 10 m × (体の番号 + 再試行の回数 × 体の数) に `CARLA_SPAWN_OFFSET_Z` が足される。F3で分かったとおり、その位置に直接spawnすると衝突で失敗するため。
+    - 同じtickのうちに、`_synchronize_extra_bodies()` で本来の位置へ動かす。
+    - 1体でもspawnできなければ(地下で1回 + 再試行3回)、その車の体をすべて消してエラーログを出し、その車はCARLAに出さない(今の「spawnに失敗した車は出さない」と同じ扱い)。
+  - 更新: 2体目以降も、毎tick `get_fleet_transforms()` の位置と、1体目と同じ速度で動かす。
+  - 削除: Vissimで消えた車は、すべての体を消す。
+  - **CARLA→Vissimの自動取り込みから、すべての体を除外する**(`sync_carla_to_vissim()` の `spawned_actors - mirrored_carla_ids()`)。除外しないと、2体目以降がEGOと同じくVissimへ送られてしまう。
+  - `close()`: すべての体を消す。
+- `carla_autoware.py` の `_cleanup_vissim()`: すべての体を消す。
+- `ego_spawn_gate.py` の `collect_gap_vehicles()`: **重ね置きの車は全体の外形で見る**。
+  - 1体目の箱だけでは、EGOの前にいるバスの後ろの体を見落とし、隙間を最大で約7 m多く見積もる(2.6・6章のリスク)。
+  - Vissimの前端から最後の体の後端までの長さと、体の最大の幅(実メッシュ)で見る。
+  - 1体の車は今までどおりCARLAの箱で見る。
+- テスト:
+  - `test_vissim_fleet_plan.py` に5件足した: 2体目以降が失敗したときの後始末、削除、CARLA→Vissimの除外、`close()`、隙間の検査の外形。F5のテスト2件は、重ね置きの動作に合わせて直した(バスは3体、地下でのspawn、体ごとの位置と速度、同じ色)。
+  - `vissim_ego_spawn_gate_test.py` のモックの同期オブジェクトに `vissim2carla_extra_ids = {}` を足した(実物と同じ形にするため)。
+
+**確かめたこと**
+
+- `python3 -m pytest test`: 203件成功、2件スキップ。スクリプト形式の `test/vissim_*_test.py` 8本もすべて成功。
+- 実際のCARLA(0.9.15、Town01)で、実際の `SimulationSynchronization`・`CarlaSimulation` に偽のVissimをつないで動かした(scratchpadのスクリプト。コミットしない)。
+  - バス・トラック・乗用車を直線道路で5 m/sで走らせ、69 tickで消した。
+  - 体の原点は、前端から次の位置(計算どおり。`front_offset_m` + L/2 + メッシュ中心のずれ)。
+    - バス(`carlacola` 3体): 2.59・6.10・9.61 m 後ろ
+    - トラック(2体): 2.59・5.41 m 後ろ
+    - 乗用車(`micra`): 1.79 m 後ろ
+  - 高さは3体とも同じ。
+  - Vissimへ取り込まれた体は0。消したあと、`vissim2carla_ids`・`vissim2carla_extra_ids` は空になり、ワールドに車両・センサーは残っていない。
+  - 走っている様子: `docs/img/carla_blueprint_assignment/f6_sync_stacks.webp`(左がバス、右がトラック)。
+- Vissimとつないだ実機の確認はF7。
 
 ### F7: ブリッジ単体での実機確認(Autowareなし)
 
