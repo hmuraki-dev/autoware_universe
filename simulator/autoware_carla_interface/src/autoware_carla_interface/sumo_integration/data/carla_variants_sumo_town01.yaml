@@ -2,7 +2,6 @@
 # 作り方:
 #   python3 tools/carla_fleet/build_carla_variants.py \
 #       --sumocfg /home/divp/CARLA/Co-Simulation/Sumo/examples/Town01.sumocfg \
-#       --sumocfg-ref "~/CARLA main 6a1c918 Co-Simulation/Sumo/examples/Town01.sumocfg" \
 #       --geometry src/autoware_carla_interface/data/carla_fleet/mesh_measurements_carla0.9.15.json \
 #       --rules src/autoware_carla_interface/data/carla_fleet/carla_variant_rules.yaml \
 #       --out src/autoware_carla_interface/sumo_integration/data/carla_variants_sumo_town01.yaml
@@ -15,14 +14,14 @@
 #   dL・dW = CARLA の外形(LiDAR で測った外形、幅はミラー込み) − モデルの寸法 [m]
 name: carla_variants_sumo_town01
 generated_by: tools/carla_fleet/build_carla_variants.py
-generated_at: '2026-11-16T17:09:18+09:00'
+generated_at: '2026-11-16T19:28:23+09:00'
 
 # 生成元。ブリッジは起動時に geometry と rules の sha256 を照合し、違えば止める(variant_source_changed)
 #   geometry・rules のパスは、このファイルのあるディレクトリからの相対パス
 #   sumocfg・route_files は .sumocfg と route-files の各ファイル(.sumocfg に書かれた名前)。ブリッジは起動時に、
 #   渡された .sumocfg の route-files の sha256 と照合し、違えば止める(variant_source_changed)
 sources:
-  sumocfg: {ref: "~/CARLA main 6a1c918 Co-Simulation/Sumo/examples/Town01.sumocfg", sha256: ae7329a5e830b876f7a4038f717fe3c718e469befdfb43017e34afb2c2801584}
+  sumocfg: {path: /home/divp/CARLA/Co-Simulation/Sumo/examples/Town01.sumocfg, sha256: ae7329a5e830b876f7a4038f717fe3c718e469befdfb43017e34afb2c2801584}
   route_files: {carlavtypes.rou.xml: "74d4f9b79ca14d61f6e70cf121e61d8eb92cdc9cf00257f74035e0a7809f5621", vissim_fleet_vtypes.rou.xml: "950a9b99b8a8908a8a44dc8a4fbb0e1a836b74a5bf969db12a363fb445d4409e", rou/Town01.rou.xml: "14e0b5cb6bc81c39f4ccd4e8b009366396168478d375a851fb6b31bcda9f5ae1"}
   geometry: {path: ../../data/carla_fleet/mesh_measurements_carla0.9.15.json, sha256: c812bdab17a144cbb6f2b5bf57901f8481440f75845a2a8c04718b78dea60023, carla_server_version: "0.9.15"}
   rules: {path: ../../data/carla_fleet/carla_variant_rules.yaml, sha256: "08ba25bd19577d02ced10d65a939d4c4f059d2c1b6c1772016de33fde8ac3017"}

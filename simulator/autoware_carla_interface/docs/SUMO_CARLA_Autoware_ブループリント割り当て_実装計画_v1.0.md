@@ -521,6 +521,8 @@ Vissim計画のF7と同じ項目。SUMOはLinuxで動くので、すべて1台�
   - Vissimの節はSUMOブランチにないので、同じ位置(`## Tips` の前)にSUMOの節だけを置いた。2つのブランチをマージするときは、この位置で2つの節が並ぶように直す。
 - **CARLAリポジトリ**(`main` の `4e22c5e`): `Co-Simulation/Sumo/docs/SUMO-CARLA_co-sim_起動手順.md` に「Town01の車両の構成」の節を足した(車両グループと中身の表、大型車が長くなった影響、作り直しの手順(Windowsの `.inpx` を写して `make_vissim_fleet_vtypes.py`)、ブリッジの表の作り直しへの案内)。
 - `Vissim_車両寸法一覧.md`・`CARLA_車両寸法一覧.md` はVissimブランチだけにある文書なので、SUMOブランチでは変えていない。
+- 利用者の指摘で、2.2.3(2)から `--sumocfg-ref`(CARLAのコミットを書く出どころのメモ)を外した。表の検査は `route-files` のsha256で行い、メモは使わないため。
+  Town01の表も、手順書のコマンド(`--sumocfg-ref` なし)で作り直した。変わったのは作り方のコメント・`generated_at`・`sources.sumocfg`(`ref` → `path`)だけで、割り当ては同じ。
 
 ---
 

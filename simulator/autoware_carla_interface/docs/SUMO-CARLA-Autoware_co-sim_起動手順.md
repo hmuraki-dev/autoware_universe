@@ -205,7 +205,6 @@ co-simで使う`.sumocfg`(2.4.1の`sumo_cfg_file`)をそのまま入力にする
 cd ~/autoware.1.9.0/src/universe/autoware_universe/simulator/autoware_carla_interface
 python3 tools/carla_fleet/build_carla_variants.py \
     --sumocfg ~/CARLA/Co-Simulation/Sumo/examples/Town01.sumocfg \
-    --sumocfg-ref "~/CARLA main <コミット> Co-Simulation/Sumo/examples/Town01.sumocfg" \
     --geometry src/autoware_carla_interface/data/carla_fleet/mesh_measurements_carla0.9.15.json \
     --rules src/autoware_carla_interface/data/carla_fleet/carla_variant_rules.yaml \
     --out src/autoware_carla_interface/sumo_integration/data/carla_variants_sumo_town01.yaml   # ← 生成物
@@ -214,34 +213,13 @@ python3 tools/carla_fleet/build_carla_variants.py \
 > 📄 **生成物:** SUMO車両-ブループリント割り当て一覧(Town01)\
 > `src/autoware_carla_interface/sumo_integration/data/carla_variants_sumo_town01.yaml`
 
-`<コミット>`は、`.sumocfg`と`route-files`の出どころの記録(表に書かれるだけで、照合には使わない)。次のコマンドで確かめられる。
-
-```bash
-git -C ~/CARLA log -1 --format=%h -- Co-Simulation/Sumo/examples
-```
-
-今の表を作ったときのコマンド(CARLAリポジトリ`main`の`6a1c918`):
-
-```bash
-cd ~/autoware.1.9.0/src/universe/autoware_universe/simulator/autoware_carla_interface
-python3 tools/carla_fleet/build_carla_variants.py \
-    --sumocfg ~/CARLA/Co-Simulation/Sumo/examples/Town01.sumocfg \
-    --sumocfg-ref "~/CARLA main 6a1c918 Co-Simulation/Sumo/examples/Town01.sumocfg" \
-    --geometry src/autoware_carla_interface/data/carla_fleet/mesh_measurements_carla0.9.15.json \
-    --rules src/autoware_carla_interface/data/carla_fleet/carla_variant_rules.yaml \
-    --out src/autoware_carla_interface/sumo_integration/data/carla_variants_sumo_town01.yaml   # ← 生成物
-```
-
-> 📄 **生成物:** SUMO車両-ブループリント割り当て一覧(Town01)\
-> `src/autoware_carla_interface/sumo_integration/data/carla_variants_sumo_town01.yaml`
-
+- 表には、`.sumocfg`のパスと、`route-files`の各ファイルのsha256が記録される。ブリッジは起動時にこのsha256を照合するので、どの版の`.rou.xml`から作った表かは、これで決まる。
 - 出力先のファイル名は`carla_variants_sumo_<.sumocfgの名前を小文字>.yaml`にする。ブリッジは既定(`sumo_carla_variants:=auto`)で、この名前の表を探す(3.5)。
-- `.sumocfg`・規則・外形のどれも変えていなければ、作り直しても割り当ては変わらない(`generated_at`と`sources.sumocfg`の記録だけが変わる)。
+- `.sumocfg`・規則・外形のどれも変えていなければ、作り直しても割り当ては変わらない(`generated_at`の記録だけが変わる)。
 
 | オプション | 説明 | 省略可/不可 | デフォルト値 |
 | --- | --- | --- | --- |
 | `--sumocfg` | SUMOの設定ファイル。`route-files`の全ファイルを読む | 省略不可(Vissimの`--inpx`とどちらか1つ) | なし |
-| `--sumocfg-ref` | `.sumocfg`の出どころの記録。渡すと、表には`--sumocfg`のパスの代わりにこれを書く | 省略可 | なし(`--sumocfg`のパスを書く) |
 | `--geometry` | (1)の計測結果 | 省略不可 | なし |
 | `--rules` | 割り当ての規則 | 省略不可 | なし |
 | `--out` | 表の出力先 | 省略不可 | なし |
