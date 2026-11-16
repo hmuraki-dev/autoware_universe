@@ -28,6 +28,7 @@ Exits with a non-zero status and an AssertionError if any check fails.
 """
 
 import fnmatch
+import math
 import os
 import sys
 import types
@@ -420,8 +421,10 @@ def test_collect_gap_actors():
                            'sumo:ped.0/carla:%d' % walker_id}, actors
     mirrored = actors['sumo:mirrored/carla:%d' % mirrored_id]
     assert (mirrored.x, mirrored.y, mirrored.yaw) == (11.0, -6.0, 3.0)
-    assert (mirrored.length, mirrored.width, mirrored.source) == (5.0, 2.2, 'carla'), \
-        'size from the CARLA bounding box'
+    # carla.Vector3D holds float32 values (2.2 -> 2.200000047...): compare with a tolerance
+    assert (math.isclose(mirrored.length, 5.0, abs_tol=1e-6) and
+            math.isclose(mirrored.width, 2.2, abs_tol=1e-6) and mirrored.source == 'carla'), \
+        'size from the CARLA bounding box: %r' % (mirrored,)
     tram = actors['sumo:tram.0']
     # SUMO front bumper (50, 5) heading east (SUMO angle 90), 4.5 m long -> CARLA center
     # (50 - 2.25, -5) heading CARLA yaw 0, SUMO size

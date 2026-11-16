@@ -1,0 +1,48 @@
+# ============================================================================
+# carla_variant_rules.yaml — CARLA のブループリントを交通シムのモデルに割り当てる規則(CARLA 0.9.15)
+#
+#   tools/carla_fleet/build_carla_variants.py がこの規則で carla_variants_<網>.yaml を作る。
+#   網(ネットワーク)が変わっても共通で使う。変えたら carla_variants をすべて作り直す
+#   (ブリッジは起動時にこのファイルの sha256 を照合し、違えば variant_source_changed で止まる)。
+#
+#   決めた経緯: docs/Vissim_CARLA_Autoware_ブループリント割り当て_実装計画_v1.0.md F3(2026-11-16)。
+#   寸法は data/carla_fleet/mesh_measurements_carla0.9.15.json(LiDAR で測った外形)。
+#
+# 規則(移植元 SBIR_sim 設計案 §4.1)。モデルごとに上から試す:
+#   1. 1 体で表す: 下の許容に入るブループリントのうち |dL| が最小のもの(同点は |dW|、次に名前順)。
+#      同じブループリントを複数のモデルに割り当ててよい。ブループリントの分類(car/truck 等)では絞らない。
+#   2. fallback を重ねて表す: 1 が無く、モデルが fallback のブループリントより長いとき。
+#      体の数 n = ceil(L / fallback の長さ)。前端は等間隔(外形の長さが L に一致)。
+#      連結車(セグメント 2 つ以上)は 2 体目以降が軌跡に従う(follows_path)。幅は 1 と同じ許容で検査する。
+#   3. どちらもできなければ生成を止める(variant_model_empty)。交通シムの定義で割合 0 のモデルは対象外(skipped)。
+#
+#   dL・dW = CARLA の外形(LiDAR で測った外形、幅はミラー込み) − モデルの寸法 [m]
+# ============================================================================
+name: carla_variant_rules_carla0.9.15_v1
+
+# |dL| の上限(1 体で表すとき)。移植元と同じ
+length_tolerance_m: 0.75
+
+# dW の上限(太い側)。ミラー相当。移植元と同じ
+width_over_tolerance_m: 0.35
+
+# dW の下限(細い側)の絶対値。車種カテゴリ(Vissim の vehicleType の category)ごと。移植元と同じ。
+#   大型車・バスは知覚にとって危険側なので厳しくする。
+#   1 つのモデルを複数のカテゴリが使うときは、最も厳しい値を使う。ここに無いカテゴリは生成を止める
+width_under_tolerance_m: {CAR: 0.35, HGV: 0.10, BUS: 0.10, TRAM: 0.10, BIKE: 0.35}
+
+select: nearest_length
+
+# 1 体で表せないときに重ねるブループリント。トラックの見た目で、幅 2.560 m が大型車(2.55 m)に合う。
+# 救急車(移植元の fallback)は特殊な塗装なので外した(excluded)
+fallback: {blueprint: vehicle.carlamotors.carlacola, kind: stack}
+
+# 候補から外すブループリント(fnmatch の形)。2026-11-16 に Town01 で撮影して決めた
+excluded:
+  vehicle.carlamotors.firetruck: 消防車の塗装
+  vehicle.carlamotors.european_hgv: 見た目はトラクターだが、LiDAR には消防車と同じ形(8.43 x 3.34 m)で映る
+  vehicle.ford.ambulance: 救急車の塗装
+  vehicle.dodge.charger_police*: パトカーの塗装(charger_police・charger_police_2020)
+  vehicle.ford.crown: タクシーの塗装
+  vehicle.volkswagen.t2*: バン(高さ約 2.0 m)。乗用車のモデル(高さ 1.4〜1.7 m)に割り当たるのを避ける
+  vehicle.toyota.prius: 自車のブループリント(launch の vehicle_type の既定値)

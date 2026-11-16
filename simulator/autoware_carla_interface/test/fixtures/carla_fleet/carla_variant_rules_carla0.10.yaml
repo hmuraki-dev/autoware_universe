@@ -1,0 +1,46 @@
+# 回帰テスト用の凍結した写し(test/test_carla_fleet.py)。移植元 SBIR_sim の config/carla_variant_rules.yaml
+# (3ea1650、CARLA 0.10 のブループリント名)そのまま。本番の規則は
+# src/autoware_carla_interface/data/carla_fleet/carla_variant_rules.yaml。このファイルは直さない。
+
+# ============================================================================
+# carla_variant_rules.yaml — CARLA の blueprint を交通シムのモデルに割り当てる規則
+#
+#   tools/carla_fleet/build_carla_variants.py がこの規則で config/carla_variants_<網>.yaml を作る。
+#   網(ネットワーク)が変わっても共通で使う。変えたら carla_variants をすべて作り直す
+#   (ブリッジは起動時にこのファイルの sha256 を照合し、違えば variant_source_changed で止まる)。
+#
+# 規則(docs/CARLA_blueprint候補拡張_設計案.md §4.1)。モデルごとに上から試す:
+#   1. 1 体で表す: 下の許容に入る blueprint のうち |dL| が最小のもの(同点は |dW|、次に名前順)。
+#      同じ blueprint を複数のモデルに割り当ててよい。blueprint の分類(car/truck 等)では絞らない。
+#   2. 救急車を重ねて表す: 1 が無く、モデルが fallback の blueprint より長いとき。
+#      体の数 n = ceil(L / 救急車の長さ)。前端は等間隔(外形の長さが L に一致)。
+#      連結車(セグメント 2 つ以上)は 2 体目以降が軌跡に従う(follows_path)。幅は 1 と同じ許容で検査する。
+#   3. どちらもできなければ生成を止める(variant_model_empty)。交通シムの定義で割合 0 のモデルは対象外(skipped)。
+#
+#   dL・dW = CARLA の外形(実メッシュ、幅はミラー込み) − モデルの寸法 [m]
+# ============================================================================
+name: carla_variant_rules_v1
+
+# |dL| の上限(1 体で表すとき)。measured_fleet の single_actor_length_tolerance_m と同じ(判断事項 1)
+length_tolerance_m: 0.75
+
+# dW の上限(太い側)。measured_fleet の max_width_over_widest_measured_m(ミラー相当)と同じ
+width_over_tolerance_m: 0.35
+
+# dW の下限(細い側)の絶対値。車種カテゴリ(Vissim の vehicleType の category)ごと(判断事項 2)。
+#   大型車・バスは知覚にとって危険側なので measured_fleet の undersize_tolerance_m(0.10)。
+#   1 つのモデルを複数のカテゴリが使うときは、最も厳しい値を使う。ここに無いカテゴリは生成を止める
+width_under_tolerance_m: {CAR: 0.35, HGV: 0.10, BUS: 0.10, TRAM: 0.10, BIKE: 0.35}
+
+select: nearest_length
+
+# 1 体で表せないときに重ねる blueprint
+fallback: {blueprint: vehicle.ambulance.ford, kind: stack}
+
+# 候補から外す blueprint(fnmatch の形)。carlacola・fuso は外さず dL・dW の判定に任せる
+excluded:
+  vehicle.firetruck.actors: 実メッシュ幅 3.875 m。実測のどの車種より 1.19 m 広い
+  vehicle.dodgecop.charger: パトカー塗装(判断事項 3)
+  vehicle.taxi.ford: タクシー塗装(判断事項 3。2026-11-02 に撮影して決定)
+  vehicle.ue4.ford.crown: taxi.ford と同じタクシー塗装(判断事項 3。2026-11-02 に撮影して決定)
+  '*j6*': 自車の blueprint
