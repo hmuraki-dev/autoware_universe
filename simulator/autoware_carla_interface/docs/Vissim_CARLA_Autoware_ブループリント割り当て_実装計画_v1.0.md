@@ -196,7 +196,7 @@ launchに `vissim_carla_variants`(生成物のパス)を足す。既定は `viss
 | #   | タスク | 場所 | 状態 |
 | --- | ------ | ---- | ---- |
 | F0  | 事前確認(使うinpx、`model_filename` の文字列、位置の基準、0.9.15での計測) | Windows・Linux・CARLA | 完了(2026-11-16) |
-| F1  | 共通部品の取り込み(`carla_fleet.py`、規則の雛形、回帰テスト、PyYAMLの依存) | autoware_universe | 未着手 |
+| F1  | 共通部品の取り込み(`carla_fleet.py`、規則の雛形、回帰テスト、PyYAMLの依存) | autoware_universe | 完了(2026-11-16) |
 | F2  | 計測ツールの移植と、全ブループリントの実メッシュ計測 | autoware_universe・CARLA | 未着手 |
 | F3  | 規則の確定(除外、fallback、大型車、二輪) | autoware_universe | 未着手 |
 | F4  | inpxの読み込み・生成ツールと、Town01の生成物 | autoware_universe | 未着手 |
@@ -271,6 +271,24 @@ F1はF0と並行してよい。F3で規則を変えたら、F4の生成物を作
 - インストール後にyamlが読めることを、`colcon build` のあとで確かめる(`vtypes.json` と同じ扱いになるか)。
 
 完了条件: `python3 -m pytest test/test_carla_fleet.py` が通る。`colcon build --packages-select autoware_carla_interface` が通る。
+
+#### 結果(F1、2026-11-16)
+
+- 足したファイル:
+  - `src/autoware_carla_interface/carla_fleet.py`: 移植元からの変更は次の2つだけ。
+    - パスの扱い: `REPO`・`repo_path`・`display_path` を、`resolve_source(path, base_dir)`・`relative_source(path, base_dir)`・`variants_dir(variants)` に置き換えた。`check_sources()`・`mesh_for()` は、carla_variants のあるディレクトリ(symlink は辿る)を基準にする。
+    - `check_no_follows_path()`(`variant_articulated_unsupported`)を足した。
+  - `src/autoware_carla_interface/data/carla_fleet/carla_variant_rules.yaml`: **暫定の雛形**。値は移植元のまま、ブループリント名だけを0.9.15に置き換えた(fallback `vehicle.ford.ambulance`、除外は消防車・パトカー2種・`vehicle.ford.crown`・`vehicle.toyota.prius`)。F3で確定する。
+  - `test/test_carla_fleet.py`(45件): 移植元の規則・起動時検査の回帰テストと、新しく足した部分のテスト。
+    - 入力は、移植元の0.10の実メッシュと規則を凍結した写し(`test/fixtures/carla_fleet/mesh_measurements_carla0.10_20260921.json`・`carla_variant_rules_carla0.10.yaml`)。本番の規則をF3で直しても、回帰テストは変わらない。
+    - 大型車のテストは、移植元の `measured_fleet_odaiba_v016.yaml` との一致の代わりに、重ね置きの形(体の数、等間隔の前端、dL = 0、`follows_path`)を確かめる形にした。
+    - 生成ツールに関わるテスト(`build()`・`expected_bodies()`)はF4へ回した。`pool_sizes()` の試算のテストは、割り当てを直接作る形にして残した。
+    - 新しく足したテスト: 相対パスを carla_variants のディレクトリから解決すること(インストール先へ写しても読めること)、生成元のファイルがないとき、`check_no_follows_path()`、CARLAの版の照合、パッケージの規則が読めること、など。
+  - `package.xml`: `<exec_depend>python3-yaml</exec_depend>` を足した。
+- 確かめたこと:
+  - `python3 -m pytest test/test_carla_fleet.py`: 45件成功。`python3 -m pytest test`(パッケージの全テスト): 136件成功、1件スキップ(前からスキップのもの)。
+  - `colcon build --packages-select autoware_carla_interface --symlink-install` が通った。インストール先に `carla_fleet.py` と `data/carla_fleet/carla_variant_rules.yaml` がリンクとして入り、インストールしたパッケージから規則を読めた。
+- 書式: リポジトリの pre-commit は black・isort(100桁)だが、この環境には入っておらず、既存のファイルも black の形ではない。既存のファイルの書き方に合わせた。
 
 ### F2: 計測ツールと実メッシュ計測
 
