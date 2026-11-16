@@ -153,7 +153,7 @@ python3 tools/check_vissim_lanelet2_tl_ids.py SIGNAL_MAPPING.json MAP_with_tl.os
 | B5  | Vissim単体での確認(交差点ごとの切り替わり、投入待ち)          | Windows                 | 完了(2026-11-12、利用者の確認) |
 | B6  | ブリッジ単体での実機確認(Autowareなし)                        | Linux + Windows         | 完了(2026-11-12。目視はB7へ) |
 | B7  | Autoware全体での実機確認(機能Aで残った黄の確認を含む)         | Linux + Windows         | 完了(2026-11-16) |
-| B8  | ドキュメントとコミット                                        | 両リポジトリ            | 未着手 |
+| B8  | ドキュメントとコミット                                        | 両リポジトリ            | 完了(2026-11-16) |
 
 依存関係: B0 → B1・B2(並行してよい) → B3 → B4 → B5 → B6 → B7 → B8。
 B4で `pos` を動かしたときは、B3(マッピングの作り直しと照合)をやり直す。
@@ -517,7 +517,7 @@ python3 util/split_signal_controllers.py IN.inpx --carla-json ~/autoware_map/Tow
    - D=1.0で `~/autoware_map/Town01/lanelet2_map_with_tl.osm` を作り直した。前の地図(offset 6)は `lanelet2_map_with_tl.osm.bak_offset6` に残してある。
    - CARLAの停止位置から前へずらした量は、5.96〜12.08 mになった。WARNINGはない。
    - テストを2件足した(`test_carla_tl_to_lanelet2.py`)。
-2. Vissimのsignalheadの位置: CARLAリポジトリに `util/align_signal_heads.py` を作った。
+2. VissimのsignalHeadの位置: CARLAリポジトリに `util/align_signal_heads.py` を作った。
    - 車用signalHeadを、そのCARLA信号のLanelet2の停止線の中点に最も近い、同じ向きの**進入路のlink**の上に移す。connectorと歩行者エリアのlinkは除く。
    - そのlinkから出るconnectorの開始位置より、`--connector-margin`(0.2 m)手前に収める。
      - これを入れたのは、366で、停止線(68.63 m)が、connectorの開始位置(68.60 m)より先だったため。
@@ -771,6 +771,27 @@ ros2 service call /api/operation_mode/change_to_autonomous autoware_adapi_v1_msg
 - **Windows PCへの反映**: `.inpx` を置き換えたことと、元のファイルの場所を、手順書と計画書の結果に書く。
 
 ---
+
+#### 結果(B8、2026-11-16)
+
+- autoware_universe:
+  - 起動手順書(`Vissim(win)-CARLA-Autoware_co-sim_起動手順.md`)
+    - 2.4.2: マッピング生成ツールの変更点を書いた(歩行者用の除外、重複での停止、`--carla-json`、1回tick、2か所へのコピー)。
+    - 2.4.3を新しく作った: Vissimの信号の構成(SC 12個、時間、歩行者用SG3、signalHeadの位置、投入量)、作り直しのツール、GUIでの注意(`drivSimActive`、VisSigの中間時間と最小青時間)。
+    - 2.7.1: 地図の作り方を `--stop-line-before-junction 1.0`(`--dump-json` 付き)にした。
+    - 2.7.4: 試験用の構成の注意を、今の構成に書き換えた。照合ツール、`check_tl_topic_vs_carla.py --carla-json`、ブリッジ単体ではAutowareが起動しないことを足した。確認済みの地点の結果を、B7の値にした。
+  - README:
+    - 地図ツールの `--stop-line-before-junction` と `group` を書いた。
+    - 「Running with Autoware」の確認結果をB7の値にした。照合ツールを足した。
+    - 「Vissim signal setup (Town01)」の節を新しく作った。
+    - Known Issuesを「Town01だけ、オフセット0で全交差点が同時に切り替わる」に書き換えた。
+  - 機能Aの計画書: 5章の「全交差点が同時に切り替わる」と、V8の黄の行に、機能Bで対応・確認したことを追記した。
+- CARLAリポジトリ:
+  - `TRAFFIC_SIGNAL_TODO.md`: タスク11(交差点ごとのSCへの作り直し)を足した。タスク4の「判明した事実」に、作り直したことの注記を付けた。
+  - `Vissim(win)-CARLA_co-sim_起動手順.md`: 3.2.2に、マッピング生成ツールの変更点と `--carla-json` を足した。
+- 残したもの:
+  - CARLAリポジトリの `examples/Town01/trial/`(試作ファイル。コミットしない)。
+  - autoware_universeの引き継ぎメモ `Vissim移植_信号状態publish_信号設置_引き継ぎ.md`(未コミット)。残すか消すかは、利用者が決める。
 
 ## 5. 決めること(作業の前か途中)
 

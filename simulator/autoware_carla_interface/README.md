@@ -374,28 +374,34 @@ copy of a lanelet2 map with, for every CARLA light:
 
 - a `traffic_light` linestring per light head (bottom edge of the head, tagged with its height),
 - a `stop_line` linestring across the lane at the CARLA stop position, moved forward along the
-  lane by `--stop-line-forward-offset` [m] (default 0),
+  lane by `--stop-line-forward-offset` [m] (default 0), or placed `--stop-line-before-junction`
+  [m] before the end of its approach lanelet (the junction entry),
 - a `traffic_light` regulatory element (`refers` = heads, `ref_line` = stop line) whose id is the
   OpenDRIVE signal id (plus `--group-id-offset`),
 - a reference to it on the lanelet that contains the stop position (the approach lanelet).
 
 ```bash
 # CARLA running with Town01 loaded
-python3 tools/carla_tl_to_lanelet2.py ~/autoware_map/Town01/lanelet2_map.osm --stop-line-forward-offset 6
+python3 tools/carla_tl_to_lanelet2.py ~/autoware_map/Town01/lanelet2_map.osm --stop-line-before-junction 1.0
 # -> ~/autoware_map/Town01/lanelet2_map_with_tl.osm (the input map is not modified)
 ```
 
-CARLA's stop positions lie about 7 m before the light heads (6.7-8.9 m in Town01), so without an
-offset the ego vehicle stops well back from the intersection. With `--stop-line-forward-offset 6`
-the Town01 stop lines end up 0.96-7.08 m before the end of their approach lanelet. A stop line
-that the offset would move out of its lanelet (into the intersection) is not added and is
+CARLA's stop positions lie about 7 m before the light heads (6.7-8.9 m in Town01) and 7-13 m
+before the junction, so without moving the stop lines the ego vehicle stops well back from the
+intersection. `--stop-line-before-junction 1.0` puts every Town01 stop line 1.0 m before the end
+of its approach lanelet (moving it 5.96-12.08 m forward from CARLA's stop position); the Vissim
+signal heads are placed on the same stop lines (see "Vissim signal setup" below), so the ego and
+the Vissim vehicles stop at the same place. `--stop-line-forward-offset` instead moves every stop
+line by the same distance (with 6 m the Town01 stop lines ended up 0.96-7.08 m before the
+junction). A stop line that would leave its lanelet (into the intersection) is not added and is
 reported as `not added` (exit code 2).
 
 Keep the output in the same map directory (the CARLA map name is taken from the directory name).
 The tool stops with an error if an OpenDRIVE id collides with an existing lanelet2 id (use
 `--group-id-offset`) or if the map already has traffic-light regulatory elements.
 `--dump-json` / `--from-json` save and reuse the CARLA data, so the map can also be regenerated
-without CARLA.
+without CARLA. The dump also records each light's CARLA group (`get_group_traffic_lights()`, its
+intersection) as `group`, used by the Vissim tools below.
 
 `tools/fix_lanelet2_duplicate_points.py` removes repeated points on lanelet boundaries found in
 some stock maps (Town05, Town10HD; not Town01), which otherwise break route planning.
@@ -416,13 +422,39 @@ defaults to the map Autoware loads (`map_path`/`lanelet2_map_file`), and
 `traffic_light.publish:=true` disables the camera-based traffic light recognition
 (`use_traffic_light_recognition:=false`) so that the bridge is the only publisher of the topic.
 `autoware_carla_interface.launch.xml` also skips the CAM_FRONT relays feeding that recognition.
-On Town01 with Vissim the ego stops about 0.5 m before the stop line on red and starts about 3 s
-after green; the Vissim vehicles stop at the same red (verified on 2026-11-12, see
-`docs/Vissim_CARLA_Autoware_信号状態publish_実装計画_v1.0.md`).
+On Town01 with Vissim the ego stops about 0.4 m before the stop line on red (1.0 m before the
+junction), next to the Vissim vehicles, starts about 3 s after green, and stops when the light
+turns amber 24 m before the stop line at 5.5 m/s (verified on 2026-11-16, see
+`docs/Vissim_CARLA_Autoware_信号設置_実装計画_v1.0.md`, B7).
 
-Verification helpers: `tools/check_tl_topic_vs_carla.py` compares the topic with the CARLA light
-states while the bridge runs (read only; `--frozen-only` counts lights left frozen after the
-bridge stops and ticks the world once if no actors are visible yet), and `tools/monitor_tl_stop.py` logs how the ego reacts to one light.
+Verification helpers:
+
+- `tools/check_tl_topic_vs_carla.py` compares the topic with the CARLA light states while the
+  bridge runs (read only). With `--carla-json <carla_tl.json>` it also checks every intersection
+  (NG if all its lights are green at once). `--frozen-only` counts lights left frozen after the
+  bridge stops and ticks the world once if no actors are visible yet.
+- `tools/check_vissim_lanelet2_tl_ids.py <signal_mapping.json> <map_with_tl.osm> --carla-json
+  <carla_tl.json> --inpx <Town01.inpx>` checks that the Vissim mapping, the lanelet2 map and CARLA
+  have the same lights, that every light is in one Vissim signal group, that every signal
+  controller drives one intersection, and that the `.inpx` signal heads agree with the mapping
+  (pedestrian heads only need to be in their intersection's controller). `--report-stop-offset`
+  lists the distance from each vehicle signal head to its lanelet2 stop line.
+- `tools/monitor_tl_stop.py` logs how the ego reacts to one light.
+
+#### Vissim signal setup (Town01)
+
+The Vissim network (`Co-Simulation/PTV-Vissim/examples/Town01/Town01.inpx` in the CARLA
+repository, copied to the Windows PC) has one fixed-time signal controller per CARLA
+intersection: 12 controllers `J1 360-362` ... `J12 393-395`, each with signal group 1 for the main
+road (two lights) and 2 for the side road (one light), 94 s cycle (main road green 0-42 s, side
+road green 47-89 s, 3 s amber and 2 s all-red), offset 0. Controller 5 also drives the crosswalk
+on the side road of light 372 (signal group 3, pedestrians only: green 0-34 s, flashing green
+34-38 s). Every vehicle signal head stands on the approach link at the lanelet2 stop line, before
+the connectors of all movements. `vissim_integration/data/signal_mapping.json` (the same file as
+`Co-Simulation/PTV-Vissim/data/signal_mapping.json`) maps each controller's groups 1 and 2 to the
+CARLA lights; pedestrian signal groups are not mapped (CARLA has no pedestrian lights). The CARLA
+repository has the tools used to build it (`util/split_signal_controllers.py`,
+`util/align_signal_heads.py`, `util/generate_signal_mapping.py`).
 
 ## Tips
 
@@ -433,4 +465,4 @@ bridge stops and ticks the world once if no actors are visible yet), and `tools/
 
 - **Testing on procedural maps (Adv Digital Twin)**: Currently unable to test due to failures in creating the Adv Digital Twin map.
 - **Traffic light recognition**: The default CARLA Lanelet2 maps lack proper traffic light regulatory elements. See the "Traffic Light Recognition" section above for workarounds, or generate them with `tools/carla_tl_to_lanelet2.py` and bypass camera recognition with `traffic_light.publish` (see "Publishing CARLA Traffic-Light States").
-- **Vissim signal setup (Town01)**: The current `signal_mapping.json` is a test configuration: one Signal Controller with two Signal Groups drives all 36 CARLA lights, so every intersection switches at the same time. Per-intersection signal control in Vissim is future work.
+- **Vissim signal setup**: Only Town01 has a Vissim network. Its 12 signal controllers run independently but with the same program and offset 0, so all intersections still change at the same moments (as in the SUMO setup); coordinated offsets are future work.

@@ -123,8 +123,10 @@ python3 config.py --map Town01
 稼働中のCARLAサーバー(マップロード済みである必要あり)から信号機の位置を取得し、`.inpx`側の`signalHead`位置との幾何学的な最近傍マッチングにより`../data/signal_mapping.json`を生成します。
 
 **注意**:
-- **マップをロード済みである必要があります**(このコマンドの直前にマップ設定を行うこと)。
-- **`.inpx`側の信号配置を変更した場合のみ再実行すればよく**、毎回の起動時に実行する必要はありません。
+- **マップをロード済みである必要があります**(このコマンドの直前にマップ設定を行うこと)。CARLAが同期モードで誰もtickしていないときは、1回だけtickしてから信号を読みます。
+- **`.inpx`側の信号配置を変更した場合のみ再実行すればよく**、毎回の起動時に実行する必要はありません。今の`Town01.inpx`の信号の構成は2.4.3を参照。
+- 横断歩道(歩行者エリアのlink)上の歩行者用signalHeadは、マッピングに入れません(CARLAには歩行者用の信号がないため)。1つのCARLA信号が2つ以上の信号グループに入るときは、ファイルを書き出さずにエラーで止まります。
+- 出力は、Linux側で実際に読まれる`autoware_carla_interface`の`vissim_integration/data/signal_mapping.json`にもコピーして、2か所を同じ内容にします。
 
 ```bash
 cd ~/CARLA/Co-Simulation/PTV-Vissim/util
@@ -136,9 +138,35 @@ python3 generate_signal_mapping.py ../examples/Town01/Town01.inpx
 | `--carla-host H` | CARLAホストサーバーのIPアドレス | 省略可 | `127.0.0.1` |
 | `--carla-port P` | CARLAホストサーバーのTCPポート | 省略可 | `2000` |
 | `--carla-timeout` | carlaクライアントの接続タイムアウト(秒) | 省略可 | `10.0` |
+| `--carla-json` | CARLAサーバーのかわりに、`carla_tl_to_lanelet2.py --dump-json`の出力(`~/autoware_map/Town01/carla_tl.json`)から信号の位置を読む | 省略可 | なし(CARLAサーバーから読む) |
 | `--max-distance` | この距離(メートル)より遠いマッチングは低信頼(low-confidence)として警告ログに出力され、手動確認が必要になる | 省略可 | `10.0` |
 | `--output` | 生成するマッピングjsonの出力先パス | 省略可 | `../data/signal_mapping.json` |
 | `--debug` | デバッグメッセージを有効化するフラグ | 省略可(フラグ指定のみ、値は取らない) | 指定なし(`False`、無効) |
+
+#### 2.4.3 Vissimの信号の構成(Town01)
+
+`Town01.inpx`は、CARLAの交差点ごとに1つの信号制御(Signal Controller、Fixed time)を持つ(2026-11-16)。
+設計と確認結果は`docs/Vissim_CARLA_Autoware_信号設置_実装計画_v1.0.md`を参照。
+
+| 項目 | 内容 |
+| --- | --- |
+| 信号制御 | 12個(`J1 360-362`〜`J12 393-395`)。SC番号は交差点の小さいlandmarkの順 |
+| 信号グループ | 各SCにSG1(主道路、2信号)とSG2(従道路、1信号) |
+| 時間 | 周期94秒。SG1の青0〜42秒、SG2の青47〜89秒。どちらも黄3秒、全赤2秒。オフセットは全SCとも0(全交差点が同じ時刻に切り替わる) |
+| 歩行者用 | SC 5(372〜374)のSG3: 372の進入路を横切る横断歩道。青0〜34秒、青点滅34〜38秒。主道路(SG1)とは交差しない |
+| signalHeadの位置 | 車用は、進入路のlinkの上で、Lanelet2の停止線(交差点の入口の1.0 m手前、2.7.1)と同じ位置。進入路のすべての進路(connector)の手前にある |
+| 投入量 | 車両7か所: 各100台/h、歩行者2か所: 各100人/h |
+
+作り直すときに使うツール(どれもCARLAリポジトリの`Co-Simulation/PTV-Vissim/util/`。`.inpx`は文字列のまま書き換え、改行(CRLF)も変えない):
+
+- `split_signal_controllers.py`: 1つのSCを、CARLAの交差点(`carla_tl.json`の`group`)ごとのSCに複製し、signalHeadの`sg`を書き換える。信号プログラムは`--template-from`で、Vissim GUIで直したSCを雛形にできる。
+- `align_signal_heads.py`: 車用signalHeadを、Lanelet2の停止線の位置の進入路linkに移す(`--lanelet2-map`)。
+- `generate_signal_mapping.py`: 2.4.2。
+- 確かめるとき: `autoware_carla_interface`の`tools/check_vissim_lanelet2_tl_ids.py`(2.7.4)。
+
+注意:
+- Vissim GUIで`.inpx`を開いてSimulation runを回すときは、Driving Simulatorを無効にする。そのまま保存すると`drivSimActive="false"`になり、co-simのconnectがタイムアウトする。**co-simで使うファイルは`drivSimActive="true"`にしておく**(Vissimが複数起動しているときもタイムアウトする)。
+- VisSigでSGを足したときは、同時に青になってよい組(例: 主道路の車と、従道路を渡る歩行者)の中間時間を**空欄**にする(0は「交差する」の意味になり、`intergreen violated`になる)。interstageの終わりに青になるSGの最小青時間は0にする(`minimum green time violated`を避ける)。
 
 ### 2.5 【Linux側/ターミナル3】ビルド
 
@@ -346,14 +374,18 @@ CARLAが管理している信号の状態(赤・黄・青)を、カメラ画像�
 標準のCARLA用Lanelet2地図(`~/autoware_map/Town01/lanelet2_map.osm`)には信号の情報がないため、
 そのままではAutowareが信号で止まらない。CARLAから信号を読み取って地図に追加したものを使う。
 
-- Town01は作成済み: `~/autoware_map/Town01/lanelet2_map_with_tl.osm`(36信号、停止線をCARLAの停止位置から6 m前に出したもの)。
-  同じフォルダの`carla_tl.json`は、地図を作ったときのCARLAの信号の記録。
+- Town01は作成済み: `~/autoware_map/Town01/lanelet2_map_with_tl.osm`(36信号、停止線を各信号とも交差点の入口の1.0 m手前に置いたもの。2026-11-16)。
+  同じフォルダの`carla_tl.json`は、地図を作ったときのCARLAの信号の記録(各信号の交差点`group`を含む)。
+  Vissimの車用signalHeadも同じ停止線の位置にあるので(2.4.3)、EGOとVissimの車がほぼ同じ位置で止まる。
 - 作り直すときは、CARLAサーバーでTown01を読み込んだ状態で次を実行する(出力は元の地図と同じフォルダ。すでにある場合は`--force`)。
 
 ```bash
 cd ~/autoware.1.9.0/src/universe/autoware_universe/simulator/autoware_carla_interface
-python3 tools/carla_tl_to_lanelet2.py ~/autoware_map/Town01/lanelet2_map.osm --stop-line-forward-offset 6
+python3 tools/carla_tl_to_lanelet2.py ~/autoware_map/Town01/lanelet2_map.osm --dump-json ~/autoware_map/Town01/carla_tl.json --stop-line-before-junction 1.0
 ```
+
+- CARLAなしで作り直すときは、`--dump-json ...`のかわりに`--from-json ~/autoware_map/Town01/carla_tl.json`を付ける。
+- 停止線の位置を変えたときは、VissimのsignalHeadも`align_signal_heads.py`で移し直す(2.4.3)。
 
 - ツールの詳細(停止線をずらす量、`--group-id-offset`、Town05・Town10HD)はREADMEの「Adding traffic lights to the CARLA Lanelet2 maps」を参照。
 
@@ -391,8 +423,8 @@ Traffic-light matching: 36 matched, 0 ambiguous, 0 too far, 0 overridden (map ha
 
 #### 2.7.4 注意点
 
-- **今の`signal_mapping.json`(Town01)は試験用の構成**: Signal Controller 1つ・Signal Group 2つに36信号すべてが割り当てられ、
-  全交差点が同時に切り替わる(SG1に24信号、SG2に12信号)。交差点ごとの信号制御は今後の作業(Vissimの信号設置の作り直し)。
+- **信号の構成**: Vissimの信号は交差点ごとのSignal Controllerで制御する(2.4.3)。オフセットは全交差点0なので、全交差点が同じ時刻に切り替わる
+  (交差点の中では、主道路と従道路が交互に青になる)。
 - **黄はAMBERとして届く**: Vissimの`AMBER`/`FLASHING_AMBER`はCARLAの黄になり、そのまま黄としてpublishされる
   (SUMO構成では1つの信号に状態の違うリンクがあると赤になったが、Vissimでは起きない)。黄で止まるか通過するかはAutowareの判断
   (`traffic_light.param.yaml`の`enable_pass_judge`など)。
@@ -402,8 +434,14 @@ Traffic-light matching: 36 matched, 0 ambiguous, 0 too far, 0 overridden (map ha
   Autoを押せなかった(SUMO構成で確認)。
 - **`carla310_env`を有効にしたターミナルで起動しない**: `transforms3d`がなく、ブリッジが起動直後に落ちる(`deactivate`してから起動する)。
 - **確認用のツール**(どれもCARLA・ROSの読み取りだけ):
-  - `tools/check_tl_topic_vs_carla.py --duration 180`: トピックとCARLAの信号状態を突き合わせる(ブリッジの実行中)。
+  - `tools/check_tl_topic_vs_carla.py --duration 300 --carla-json ~/autoware_map/Town01/carla_tl.json`: トピックとCARLAの信号状態を突き合わせ、
+    交差点ごとに全信号が同時に青になっていないかも見る(ブリッジの実行中)。
+    ブリッジだけを起動して確かめるとき(`autoware_carla_interface.launch.xml`)は、Autoware本体は起動しない。ログに`Traffic-light matching`が出たら、そのままこのスクリプトを実行する。
   - `tools/check_tl_topic_vs_carla.py --frozen-only`: 終了後にfreezeが残っていないか数える(ブリッジを止めてから。必要なら1回tickする)。
   - `tools/monitor_tl_stop.py --map <信号入りの地図> --group 372`: 1つの信号に対するEGOの停止・発進を記録する(Autoware全体の実行中)。
-- **確認済みの地点**(Town01): `spawn_point:="334.74,263.00,0.30,0.0,0.0,90.0"`(道路19、信号372の停止線の約52 m手前)。
-  赤で停止線の0.5 m手前に止まり、青の約3秒後に発進することを確認した(2026-11-12)。
+  - `tools/check_vissim_lanelet2_tl_ids.py <signal_mapping.json> <信号入りの地図> --carla-json <carla_tl.json> --inpx <Town01.inpx>`:
+    Vissimのマッピング・Lanelet2地図・CARLAの信号がそろっているか、1つのSCが1つの交差点か、signalHeadとマッピングが合っているかを確かめる(CARLA・ROSなしで動く)。
+    `--report-stop-offset`で、signalHeadとLanelet2の停止線の距離を出す。
+- **確認済みの地点**(Town01): `spawn_point:="334.74,263.00,0.30,0.0,0.0,90.0"`(道路19、信号372の停止線の約54 m手前)。
+  赤で停止線の0.4 m手前(交差点の入口の約1.4 m手前)に、Vissimの車とほぼ同じ位置で止まり、青の約3.5秒後に発進すること、
+  停止線の約24 m手前・5.5 m/sで黄になったときに止まること、目的地 (374.92, -330.61) に着くことを確認した(2026-11-16)。
