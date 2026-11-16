@@ -198,7 +198,7 @@ launchに `vissim_carla_variants`(生成物のパス)を足す。既定は `viss
 | F0  | 事前確認(使うinpx、`model_filename` の文字列、位置の基準、0.9.15での計測) | Windows・Linux・CARLA | 完了(2026-11-16) |
 | F1  | 共通部品の取り込み(`carla_fleet.py`、規則の雛形、回帰テスト、PyYAMLの依存) | autoware_universe | 完了(2026-11-16) |
 | F2  | 計測ツールの移植と、全ブループリントの実メッシュ計測 | autoware_universe・CARLA | 完了(2026-11-16。計測の基準をLiDARに変えた) |
-| F3  | 規則の確定(除外、fallback、大型車、二輪) | autoware_universe | 未着手 |
+| F3  | 規則の確定(除外、fallback、大型車、二輪) | autoware_universe | 完了(2026-11-16) |
 | F4  | inpxの読み込み・生成ツールと、Town01の生成物 | autoware_universe | 未着手 |
 | F5  | ブリッジへの組み込み(起動時の検査、モデルの引き、実メッシュ中心での配置) | autoware_universe | 未着手 |
 | F6  | 重ね置き(F3で必要になったときだけ) | autoware_universe | 未着手 |
@@ -377,6 +377,59 @@ F2の値で1章の9の試算をやり直し、`carla_variant_rules.yaml` を次�
 
 完了条件: 1章の4の14モデルすべてに割り当てがある。または、割り当てないモデルの扱い(inpxで割合を0にするなど)が決まっている。
 
+#### 結果(F3、2026-11-16)
+
+**撮影**: 候補のブループリントをTown01の直線道路(spawn point 7)に1台ずつ置き、CARLAのカメラで撮った(scratchpadのスクリプト。コミットしない)。重ね置きの見え方も撮った。撮影のあと、ワールドに車両・センサーは残っていない。
+
+- 乗用車の候補: `docs/img/carla_blueprint_assignment/cars.webp`
+- 大型車・二輪の単体: `heavy.webp`
+- 重ね置き: `stacks.webp`
+- 除外の候補(パトカー2種、タクシー、消防車、自車): `excluded.webp`
+
+**利用者と決めたこと**
+
+| 項目 | 決定 | 理由 |
+| ---- | ---- | ---- |
+| 大型車の体 | **`carlacola` を fallback にし、救急車は除外する** | 救急車はパトカー・タクシーと同じく特殊な塗装。`carlacola` は見た目がトラックで、幅2.560 mが大型車(2.55 m)に合う(dW +0.01) |
+| 乗用車のバン | **`volkswagen.t2`・`t2_2021` を除外する** | 高さが約2.0 mで、乗用車のモデル(1.4〜1.7 m)と合わない。規則は高さを見ないので、除外で避ける |
+
+ほかに、`carlamotors.european_hgv` を除外に加えた。見た目はトラクターだが、LiDARには消防車と同じ形(8.43 × 3.34 m)で映る。今の割り当てには出てこないが、カメラとLiDARで形が違うブループリントは使わない。
+
+**確定した規則**(`data/carla_fleet/carla_variant_rules.yaml`、`name: carla_variant_rules_carla0.9.15_v1`)
+
+- 許容は移植元と同じ: L ±0.75 m、W +0.35 m / −0.35 m(CAR・BIKE)・−0.10 m(HGV・BUS・TRAM)。
+- fallback: `vehicle.carlamotors.carlacola`(重ね置き)。
+- excluded: `carlamotors.firetruck`、`carlamotors.european_hgv`、`ford.ambulance`、`dodge.charger_police*`、`ford.crown`、`volkswagen.t2*`、`toyota.prius`(自車)。
+- 二輪は出す。BIKEの許容はそのまま。LiDARで測った寸法はライダーを含む。
+
+**Town01での割り当て**
+
+| モデル | 割り当て | 前端からの位置 [m] | dL | dW |
+| -----: | -------- | ------------------ | -: | -: |
+| 1 Fiat 500 | `nissan.micra` | 0 | +0.013 | −0.073 |
+| 2 Tesla Model Y | `audi.tt` | 0 | −0.049 | +0.059 |
+| 3 Golf (2007) | `audi.tt` | 0 | −0.059 | −0.035 |
+| 4 Mercedes B Class | `mini.cooper_s_2021` | 0 | +0.089 | +0.115 |
+| 5 Mercedes C Class | `tesla.model3` | 0 | −0.002 | +0.065 |
+| 6 Skoda Superb Combi | `tesla.model3` | 0 | −0.032 | +0.075 |
+| 7 Audi A6 Avant | `dodge.charger_2020` | 0 | +0.012 | −0.217 |
+| 8 Nissan Qashqai | `mini.cooper_s_2021` | 0 | +0.175 | +0.170 |
+| 9 VW Tiguan | `mini.cooper_s_2021` | 0 | +0.003 | +0.055 |
+| 10 VW ID 4 | `nissan.patrol` | 0 | −0.038 | −0.123 |
+| 22 Semi-Tractor Volvo E | `carlacola` × 2 | 0、0.851 | 0.000 | +0.010 |
+| 23 Delivery DAF LF | `carlacola` × 2 | 0、2.821 | 0.000 | +0.010 |
+| 31 Bus C2 Standard | `carlacola` × 3 | 0、3.513、7.026 | 0.000 | +0.010 |
+| 70 Yamaha MT 07 | `kawasaki.ninja` | 0 | −0.082 | −0.033 |
+
+- 100台あたりのブループリントの体数(割合 × 体数): `carlacola` 70.0、`mini.cooper_s_2021` 21.6、`audi.tt` 13.8、`tesla.model3` 11.4、`kawasaki.ninja` 10.0、`dodge.charger_2020` 6.6、`nissan.micra` 3.6、`nissan.patrol` 3.0。
+- トラクター・トラック・バスは重ね置きになる。**F6は必要**。
+- テスト: `test/test_carla_fleet.py` に、この表の割り当てを確かめるテスト(14件)を足した。規則か実メッシュを変えて割り当てが変わったら、このテストが落ちる。全体で150件成功、1件スキップ。
+
+**F6に向けて分かったこと**
+
+- 重ねる体どうしは重なっているので、その場所に `spawn_actor` すると「Spawn failed because of collision」で失敗する。撮影では、地下(z = −60)の別々の場所にspawnし、物理を切ってから `set_transform` で並べた。ブリッジの重ね置きでも同じ手順が要る。
+- 撮影の途中で、spawnに失敗した回の救急車が1台、道路に残っていた。カメラとLiDARの両方に映っていた。原因は、後片付けの確かめ方の誤り。**同期モードで新しく接続したクライアントは、tickを1回受け取るまで `get_actors()` が空を返す**ので、「消えた」と誤って判断していた。`get_actor(id)` で見つけて消し、tickのあとで一覧が空であることを確かめた。地下で行ったF2の計測には影響しない(計測はactorのIDで点を選んでいる)。
+
 ### F4: inpxの読み込み・生成ツールと生成物
 
 - `vissim_integration/inpx_models.py`: 束の `net.py` から、モデルの部分だけを抜き出す(2.1)。車線・リンクなどの処理は持ってこない。
@@ -414,6 +467,7 @@ F2の値で1章の9の試算をやり直し、`carla_variant_rules.yaml` を次�
 
 - 2.6のとおり、2体目以降を `vissim2carla_extra_ids` で持つ。spawn・destroy・更新・CARLA→Vissimの除外・close・終了時の削除(`carla_autoware.py`)を直す。
 - 1体目のspawnが成功して、2体目以降が失敗したら、その車の全actorを消し、エラーログを出す(今の「spawnに失敗したら出さない」と同じ扱い)。
+- 重ねる体どうしは重なっているので、その位置に直接spawnすると衝突で失敗する(F3の結果)。2体目以降は、重ならない場所(地下など)にspawnして物理を切ってから、`set_transform` で並べる。
 - テスト: 2体の車のspawn・更新・destroy、CARLA→Vissimの除外に2体目が入らないこと、途中で失敗したときの後始末。
 
 完了条件: テストが通る。
@@ -456,11 +510,11 @@ F2の値で1章の9の試算をやり直し、`carla_variant_rules.yaml` を次�
 | #   | 内容 | 推奨 | 決める時期 |
 | --- | ---- | ---- | ---------- |
 | 1   | 使うinpx | 決定(F0): Windows PCとCARLAリポジトリの版が同じ(sha256 `2265ff82…`)なので、それを使う | F0 |
-| 2   | 大型車(トラクター22・トラック23・バス31) | F2の試算では、暫定の規則のままで割り当てが作れた(トラクターは救急車1体、トラックとバスは救急車2体の重ね置き)。規則は変えず、見た目(救急車の塗装)を受け入れるかをF3で決める。受け入れないなら、fallbackを変える案(`european_hgv` は幅が+0.79 mで許容の外)を比べる | F3 |
-| 3   | 二輪 | 出す。ライダーは乗せない(Vissimの寸法はバイクだけ)。BIKEの許容はそのまま | F3 |
-| 4   | 乗用車にバンが割り当たる | 規則どおりにし、見た目で困るものだけ `excluded` で外す | F3(F7で見直す) |
-| 5   | 塗装が特殊なもの | パトカー・タクシー・消防車を外す(移植元と同じ考え方)。撮影して決めた結果を規則のコメントに書く | F3 |
-| 6   | 自車を候補から外すか | 外す(`vehicle.toyota.prius`)。自車と同じ形のNPCが近くにいると、カメラ・LiDARで見分けにくい | F3 |
+| 2   | 大型車(トラクター22・トラック23・バス31) | 決定(F3): fallbackを `carlacola` にし、救急車を除外する。トラクターとトラックは2体、バスは3体の重ね置き | F3 |
+| 3   | 二輪 | 決定(F3): 出す。BIKEの許容はそのまま。0.9.15の二輪はライダーが乗った形で、LiDARで測った寸法もライダーを含む | F3 |
+| 4   | 乗用車にバンが割り当たる | 決定(F3): `volkswagen.t2*` を除外する(高さが合わない) | F3(F7で見直す) |
+| 5   | 塗装が特殊なもの | 決定(F3): パトカー2種・タクシー・消防車・救急車を外す。撮影して確かめた | F3 |
+| 6   | 自車を候補から外すか | 決定(F3): 外す(`vehicle.toyota.prius`)。自車と同じ形のNPCが近くにいると、カメラ・LiDARで見分けにくい | F3 |
 | 7   | 止めるときの例外 | 今のブリッジが異常で止まるときの経路(`vissim_max_consecutive_failures` など)をF5の最初に調べ、それにそろえる。できれば新しい例外クラスは作らない | F5 |
 | 8   | プール | 入れない(0.2)。spawn直後の落下などが出たら、別の計画で扱う | F7 |
 
