@@ -200,6 +200,37 @@ def test_package_rules_load():
     assert set(rules["width_under_tolerance_m"]) >= {"CAR", "HGV", "BUS", "BIKE"}
 
 
+# Town01.inpx(CARLA リポジトリ feature/vissim_windows 4213552)で割合 > 0 のモデル: (L, W, カテゴリ)
+TOWN01_MODELS = {
+    "1": (3.561, 1.883, "CAR"), "2": (4.201, 1.910, "CAR"), "3": (4.211, 2.004, "CAR"),
+    "4": (4.414, 2.047, "CAR"), "5": (4.751, 2.032, "CAR"), "6": (4.781, 2.022, "CAR"),
+    "7": (4.991, 2.118, "CAR"), "8": (4.328, 1.992, "CAR"), "9": (4.500, 2.107, "CAR"),
+    "10": (4.600, 2.037, "CAR"), "22": (5.960, 2.550, "HGV"), "23": (7.930, 2.550, "HGV"),
+    "31": (12.135, 2.550, "BUS"), "70": (2.098, 0.907, "BIKE"),
+}
+
+
+@pytest.mark.parametrize("model, expected", [
+    ("1", ["vehicle.nissan.micra"]), ("2", ["vehicle.audi.tt"]), ("3", ["vehicle.audi.tt"]),
+    ("4", ["vehicle.mini.cooper_s_2021"]), ("5", ["vehicle.tesla.model3"]),
+    ("6", ["vehicle.tesla.model3"]), ("7", ["vehicle.dodge.charger_2020"]),
+    ("8", ["vehicle.mini.cooper_s_2021"]), ("9", ["vehicle.mini.cooper_s_2021"]),
+    ("10", ["vehicle.nissan.patrol"]),
+    ("22", ["vehicle.carlamotors.carlacola"] * 2), ("23", ["vehicle.carlamotors.carlacola"] * 2),
+    ("31", ["vehicle.carlamotors.carlacola"] * 3), ("70", ["vehicle.kawasaki.ninja"]),
+])
+def test_package_rules_on_town01_models(model, expected):
+    """0.9.15 の規則と実メッシュ(F3 で決めたもの)での Town01 の割り当て。変わったら計画書の F3 を見直す。"""
+    rules = carla_fleet.load_rules(PACKAGE_RULES)
+    mesh, meta = carla_fleet.load_mesh(PACKAGE_RULES.parent / "mesh_measurements_carla0.9.15.json")
+    assert meta["carla_server_version"] == "0.9.15"
+    length, width, category = TOWN01_MODELS[model]
+    result = carla_fleet.assign(dict(L=length, W=width, segments=1, categories={category}), rules, mesh)
+    assert blueprints(result) == expected
+    assert abs(result["dL"]) <= rules["length_tolerance_m"] + 1e-9
+    assert not any(carla_fleet.excluded(rules, name) for name in expected)
+
+
 def test_invalid_rules_stop(tmp_path):
     path = tmp_path / "rules.yaml"
     path.write_text("length_tolerance_m: 0.75\n", encoding="utf-8")
