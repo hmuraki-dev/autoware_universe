@@ -234,7 +234,9 @@ def test_town01_sumo_variants_are_what_the_generator_writes():
     shipped = carla_fleet.load_variants(SUMO_TOWN01)
     out = SUMO_TOWN01.parent / f'_rebuilt_{os.getpid()}.yaml'      # sources の相対パスが同じになる場所
     try:
-        assert builder.main(['--sumocfg', str(CARLA_TOWN01_SUMOCFG), '--sumocfg-ref', shipped['sources']['sumocfg']['ref'],
+        # 表に出どころのメモ(--sumocfg-ref)があればそれを、なければパスを記録する(起動手順書 2.2.3 はメモなし)
+        ref = shipped['sources']['sumocfg'].get('ref')
+        assert builder.main(['--sumocfg', str(CARLA_TOWN01_SUMOCFG), *(['--sumocfg-ref', ref] if ref else []),
                              '--geometry', str(MESH), '--rules', str(RULES), '--out', str(out),
                              '--generated-at', shipped['generated_at'], '--name', shipped['name']]) == 0
         rebuilt = carla_fleet.load_variants(out)
