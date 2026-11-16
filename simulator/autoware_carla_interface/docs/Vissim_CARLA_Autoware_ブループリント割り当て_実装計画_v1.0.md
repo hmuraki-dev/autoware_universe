@@ -205,7 +205,7 @@ launchに `vissim_carla_variants`(生成物のパス)を足す。既定は `viss
 | F6  | 重ね置き(F3で必要になったときだけ) | autoware_universe | 完了(2026-11-16) |
 | F7  | ブリッジ単体での実機確認(Autowareなし) | Linux + Windows | 完了(2026-11-16) |
 | F8  | Autoware全体での実機確認 | Linux + Windows | 完了(2026-11-16) |
-| F9  | ドキュメントとコミット、SUMO計画への引き継ぎ | autoware_universe | 未着手 |
+| F9  | ドキュメントとコミット、SUMO計画への引き継ぎ | autoware_universe | 完了(2026-11-16。引き継ぎは7章) |
 
 依存関係: F0 → F1 → F2 → F3 → F4 → F5 →(F6)→ F7 → F8 → F9。
 F1はF0と並行してよい。F3で規則を変えたら、F4の生成物を作り直す(起動時の検査がsha256の違いで止めるので、作り直し忘れは分かる)。
@@ -721,6 +721,71 @@ EGOから40 m以内のCARLAの車ごとに、近くの知覚した物体を対�
 - 計画書(本書)に、各タスクの結果を書く。
 - SUMO計画書に渡すこと: 共通部品・規則・実メッシュのパスとコミット、SUMOで足すもの(`--rou`、`sumo_fleet.py`、ブリッジの組み込み)。
 - コミット: タスクの区切りで、`feat(autoware_carla_interface): ...` / `docs(vissim-carla-autoware co-sim): ...`、日本語。pushはしない。
+
+#### 結果(F9、2026-11-16)
+
+- **起動手順書**(`Vissim(win)-CARLA-Autoware_co-sim_起動手順.md`):
+  - 2.6.1のオプションの表に `vissim_carla_variants` を足した。
+  - 2.6.2「終了時の動作」に次を足した。
+    - ブループリントの表のエラー(起動時はVissimアダプタへの接続前に止まる、走行中は `npc_model_unknown` など)。
+    - 「Ctrl+Cで止めるとき」: launch全体を止めるとブリッジがSIGKILLされうること(F8)と、ブリッジだけを先に止める `pkill -INT -f ...`。
+  - 2.8「Vissimの車両のCARLAブループリント」を新しく作った。
+    - 2.8.1: 仕組みと、Town01の割り当て。
+    - 2.8.2: 表の作り直し(.inpx・規則・CARLAの版を変えたとき。`git show` で取り出した.inpxからの生成、実メッシュの計測)。
+    - 2.8.3: 止まったときの `code` の意味と直し方、`legacy_vtypes`、終了時の要約。
+- **README**:
+  - 「Vissim Vehicle Blueprints」の節を新しく作った(仕組み、検査と止まり方、`vissim_carla_variants`・`legacy_vtypes`、F8の結果)。
+  - Known Issuesに次の2つを足した。
+    - 大型車が `carlacola` の重ね置きになる理由、連結車に対応していないこと。
+    - Ctrl+Cでの止め方。
+  - `vtypes.json` は、`legacy_vtypes` のときだけ使うことを書いた。ファイルは残した。
+- **`Vissim_車両寸法一覧.md`**:
+  - 今のinpx(`4213552`、Windowsと同じ)の値に直した。モデル3は「Golf (2007)」4.21 × 2.00 m(以前の資料は「Golf VIII」4.32 × 2.06 m)、バイクはモデル70(以前の資料は302)、ID 4は4.60 m、バスは12.13 m。
+  - 冒頭の説明を今の仕組みに合わせ、最後に割り当て(dL・dW)の節を足した。
+  - モデル3の画像は以前の版のまま(備考に書いた)。
+- **`CARLA_車両寸法一覧.md`**:
+  - 41行すべてに「LiDAR 車長・車幅」と「carla_variants」(割り当て先のモデル番号)の列を足した。
+  - 備考に次を書いた: LiDARと箱が大きく違うもの、「vtypes.json」列が今の `vtypes.json` と一致しないところがあること(この資料を作った時点の値)。
+- コミットは、ドキュメントの1つ(本書の結果を含む)。
+
+---
+
+## 7. SUMO計画への引き継ぎ
+
+`SUMO_CARLA_Autoware_ブループリント割り当て_実装計画_v1.0.md`(`feature/sumo_co-sim`)で使うもの。
+
+**そのまま写すもの**(同じパス・同じ中身。マージしたときに食い違わないように):
+
+| ファイル | 内容 | このブランチのコミット |
+| -------- | ---- | ---------------------- |
+| `src/autoware_carla_interface/carla_fleet.py` | 規則・読み込み・起動時の検査(交通シムに依存しない) | `421e39c26` |
+| `src/autoware_carla_interface/data/carla_fleet/carla_variant_rules.yaml` | 0.9.15用の規則(F3で確定) | `c55fc03d3` |
+| `src/autoware_carla_interface/data/carla_fleet/mesh_measurements_carla0.9.15.json` | 41ブループリントのLiDARの外形 | `26fe6229c` |
+| `tools/carla_fleet/measure_blueprint_mesh.py` | 計測ツール(LiDAR基準) | `26fe6229c` |
+| `test/test_carla_fleet.py`、`test/fixtures/carla_fleet/` | 回帰テストと、Town01の割り当てのテスト | `421e39c26`・`c55fc03d3` |
+| `package.xml` の `python3-yaml` | 依存 | `421e39c26` |
+
+写すときは、`git checkout feature/vissim_windows_co-sim -- <パス>` で取り出す(手で書き直さない)。
+
+**SUMOで足すもの**:
+
+- `tools/carla_fleet/build_carla_variants.py` に `--rou`(.rou.xmlのvTypeを寸法でまとめたモデル)を足す。移植元の `runtime/bridge/sumo_fleet.py` の `read_models` を使う。
+  - このブランチの `build_carla_variants.py` は `--inpx` だけ。写してから足すか、SUMO用の入力を別のモジュールにして `build()`・`render()` を共有する。マージのことを考えると、後者がよい。
+- SUMOブリッジ(`sumo_integration/`)への組み込み。
+  - モデルは (L, W) で引く(SUMOの `SumoActor.extent` がある)。
+  - 起動時の検査に `.rou.xml` のsha256を足す(移植元と同じ)。
+  - 重ね置きは、このブランチのF6と同じく、2体目以降を地下にspawnして並べる。SUMOからCARLAへの取り込み(`sync_carla_to_sumo`)からも除外する。
+- **SUMOに特有の注意**: 今のSUMOシナリオ(`carlavtypes.rou.xml`)は、vTypeのIDがブループリント名で、寸法もCARLAの箱の値。
+  - そのため、このままでは「各vTypeに、自分と同じか近いブループリントが割り当たる」だけになる。
+  - 除外したブループリント(`prius`・パトカー・`t2`・`european_hgv` など)のvTypeは、別のブループリントに置き換わる。
+  - 効果が大きいのは、実車の寸法でvTypeを定義したシナリオのとき。SUMOの計画で、どのシナリオを対象にするかを最初に決める。
+
+**このブランチで分かった、SUMOでも気をつけること**:
+
+- 0.9.15の `cast_ray` はLiDARと形が違うことがある(F2)。寸法はLiDARの値(`mesh_*_m`)を使う。
+- 重なる体は、その位置に直接spawnすると衝突で失敗する(F3)。
+- 同期モードで新しく接続したクライアントは、tickを1回受け取るまで `get_actors()` が空を返す(F3)。片付けの確認では、tickのあとで見る。
+- Autoware全体を止めるときは、ブリッジだけを先にSIGINTで止める(F8)。
 
 ---
 

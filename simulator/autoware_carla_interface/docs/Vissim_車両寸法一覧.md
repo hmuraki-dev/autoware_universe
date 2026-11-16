@@ -1,10 +1,11 @@
 # Vissim 車両寸法一覧
 
-Vissim 車両タイプ → CARLA ブループリントの割り当て (`vissim_integration/data/vtypes.json`) を検討するための、Vissim 側の車両 (2D/3D モデル) の寸法一覧。CARLA 側は [CARLA_車両寸法一覧.md](CARLA_車両寸法一覧.md) を参照。
+Vissim 側の車両 (2D/3D モデル) の寸法一覧。CARLA ブループリントの割り当ては、今はこの寸法から生成ツールで決めている (`vissim_integration/data/carla_variants_town01.yaml`。最後の節と `Vissim_CARLA_Autoware_ブループリント割り当て_実装計画_v1.0.md` を参照)。以前は `vissim_integration/data/vtypes.json` で、車両タイプごとの候補から乱数で選んでいた (`vissim_carla_variants:=legacy_vtypes` で戻せる)。CARLA 側は [CARLA_車両寸法一覧.md](CARLA_車両寸法一覧.md) を参照。
 
 ## 抽出方法
 
-- 対象ファイル: `Town01.inpx` (Vissim ネットワークファイル, `network version="1403"`)
+- 対象ファイル: `Town01.inpx` (Vissim ネットワークファイル, `network version="1403"`)。CARLA リポジトリ `feature/vissim_windows` の `4213552` の版で、Windows PC で使っているものと同じ (sha256 `2265ff82…`、2026-11-16 に確認)
+  - 2026-11-16 に、この版の値に直した。以前の版の資料では、モデル 3 を「Golf VIII (2022)」(4.32 × 2.06 m)、バイクをモデル 302 としていたが、この版ではモデル 3 は「Golf (2007)」(4.21 × 2.00 m)、バイクはモデル 70
 - 対象車両タイプ: 100 / 210 / 220 / 300 / 700 (co-sim で使用する車両タイプ。190 LGV / 200 HGV は対象外)
 - inpx (XML) の以下の要素から抽出した
   - `vehicleTypes/vehicleType`: 車両タイプ番号・名前・カテゴリ・`model2D3DDistr` (2D/3D モデル分布)
@@ -33,11 +34,11 @@ Vissim 車両タイプ → CARLA ブループリントの割り当て (`vissim_i
 |---|---|---:|---:|---:|---:|---|
 | <img src="img/vissim_vehicles/car_fiat_500.webp" height="112"> | 1: Car - Fiat 500 | 0.06 | 3.56 | 1.88 | 1.67 | Car - Fiat 500 (2018).u3dm |
 | <img src="img/vissim_vehicles/car_tesla_model_y.webp" height="112"> | 2: Car - Tesla Model Y | 0.05 | 4.20 | 1.91 | 1.47 | Car - Tesla Model Y (2022).u3dm |
-| <img src="img/vissim_vehicles/car_volkswagen_golf.webp" height="112"> | 3: Car - Volkswagen Golf | 0.18 | 4.32 | 2.06 | 1.48 | Car - Volkswagen Golf VIII (2022).u3dm |
+| <img src="img/vissim_vehicles/car_volkswagen_golf.webp" height="112"> | 3: Car - Volkswagen Golf | 0.18 | 4.21 | 2.00 | 1.48 | Car - Volkswagen Golf (2007).fbx |
 | <img src="img/vissim_vehicles/suv_nissan_qashqai.webp" height="112"> | 8: SUV - Nissan Qashqai | 0.07 | 4.33 | 1.99 | 1.63 | SUV - Nissan Qashqai (2022).u3dm |
 | <img src="img/vissim_vehicles/car_mercedes_b_class.webp" height="112"> | 4: Car - Mercedes B Class | 0.11 | 4.41 | 2.05 | 1.55 | Car - Mercedes B Class (2021).u3dm |
 | <img src="img/vissim_vehicles/suv_volkswagen_tiguan.webp" height="112"> | 9: SUV - Volkswagen Tiguan | 0.18 | 4.50 | 2.11 | 1.67 | SUV - Volkswagen Tiguan eHybrid (2022).u3dm |
-| <img src="img/vissim_vehicles/suv_volkswagen_id_4.webp" height="112"> | 10: SUV - Volkswagen ID 4 | 0.05 | 4.59 | 2.04 | 1.66 | SUV - Volkswagen ID 4 (2022).u3dm |
+| <img src="img/vissim_vehicles/suv_volkswagen_id_4.webp" height="112"> | 10: SUV - Volkswagen ID 4 | 0.05 | 4.60 | 2.04 | 1.66 | SUV - Volkswagen ID 4 (2022).u3dm |
 | <img src="img/vissim_vehicles/car_mercedes_c_class.webp" height="112"> | 5: Car - Mercedes C Class | 0.14 | 4.75 | 2.03 | 1.44 | Car - Mercedes C Class (2021).u3dm |
 | <img src="img/vissim_vehicles/car_skoda_superb_combi.webp" height="112"> | 6: Car - Skoda Superb Combi | 0.05 | 4.78 | 2.02 | 1.47 | Car - Skoda Superb Combi (2022).u3dm |
 | <img src="img/vissim_vehicles/car_audi_a6.webp" height="112"> | 7: Car - Audi A6 | 0.11 | 4.99 | 2.12 | 1.48 | Car - Audi A6 Avant (2021).u3dm |
@@ -58,17 +59,40 @@ Vissim 車両タイプ → CARLA ブループリントの割り当て (`vissim_i
 
 | 画像 | 2D/3D モデル | シェア | 車長 | 車幅 | 車高 | 3D モデルファイル |
 |---|---|---:|---:|---:|---:|---|
-| <img src="img/vissim_vehicles/bus_c2_standard.webp" height="112"> | 31: Bus - C2 Standard | 1 | 12.14 | 2.55 | 3.12 | Bus - C2 Standard 2-doors.fbx |
+| <img src="img/vissim_vehicles/bus_c2_standard.webp" height="112"> | 31: Bus - C2 Standard | 1 | 12.13 | 2.55 | 3.12 | Bus - C2 Standard 2-doors.fbx |
 
 ### 700: バイク
 
 | 画像 | 2D/3D モデル | シェア | 車長 | 車幅 | 車高 | 3D モデルファイル |
 |---|---|---:|---:|---:|---:|---|
-| <img src="img/vissim_vehicles/bike_motorbike_yamaha_mt_07.webp" height="112"> | 302: Bike - Motorbike Yamaha MT 07 | 1 | 2.10 | 0.91 | 1.86 | Bike - Motorbike Yamaha MT 07 (2022).u3dm |
+| <img src="img/vissim_vehicles/bike_motorbike_yamaha_mt_07.webp" height="112"> | 70: Bike - Motorbike Yamaha MT 07 | 1 | 2.10 | 0.91 | 1.86 | Bike - Motorbike Yamaha MT 07 (2022).u3dm |
 
 ## 備考
 
 - 100: 乗用車のシェア合計は 1.00。
 - 210: トラックの 3D モデル (HGV - Delivery DAF LF) は単一セグメント (リジッドトラック)。
 - 220: トレーラーの 3D モデルはトラクター (HGV - Semi-Tractor Volvo E) のみの単一セグメントで、セミトレーラーは連結しない。
-- 700: バイクは 302: Bike - Motorbike Yamaha MT 07 のみ。303: Bike - Scooter electric NIU NQi は未使用。
+- 700: バイクは 70: Bike - Motorbike Yamaha MT 07 のみ。
+- モデル 3 の画像は以前の版 (Golf VIII) のもの。今の版のモデル (Golf (2007)) とは形が少し違う。
+- 車長は小数第 3 位を四捨五入した値。バス (12.135 m) は 12.13 とした。
+
+## CARLA ブループリントの割り当て (`carla_variants_town01.yaml`)
+
+`tools/carla_fleet/build_carla_variants.py` が、この寸法と、CARLA のブループリントを LiDAR で測った外形 (`data/carla_fleet/mesh_measurements_carla0.9.15.json`) から決めたもの。dL・dW = CARLA の外形 − モデルの寸法 [m]。
+
+| 2D/3D モデル | CARLA ブループリント | dL | dW |
+|---|---|---:|---:|
+| 1: Car - Fiat 500 | `vehicle.nissan.micra` | +0.013 | −0.072 |
+| 2: Car - Tesla Model Y | `vehicle.audi.tt` | −0.049 | +0.059 |
+| 3: Car - Volkswagen Golf | `vehicle.audi.tt` | −0.059 | −0.035 |
+| 4: Car - Mercedes B Class | `vehicle.mini.cooper_s_2021` | +0.088 | +0.114 |
+| 5: Car - Mercedes C Class | `vehicle.tesla.model3` | −0.002 | +0.065 |
+| 6: Car - Skoda Superb Combi | `vehicle.tesla.model3` | −0.033 | +0.075 |
+| 7: Car - Audi A6 | `vehicle.dodge.charger_2020` | +0.011 | −0.217 |
+| 8: SUV - Nissan Qashqai | `vehicle.mini.cooper_s_2021` | +0.175 | +0.169 |
+| 9: SUV - Volkswagen Tiguan | `vehicle.mini.cooper_s_2021` | +0.002 | +0.054 |
+| 10: SUV - Volkswagen ID 4 | `vehicle.nissan.patrol` | −0.038 | −0.123 |
+| 22: HGV - Semi-Tractor Volvo E | `vehicle.carlamotors.carlacola` × 2 (重ね置き) | 0.000 | +0.010 |
+| 23: HGV - Delivery DAF LF | `vehicle.carlamotors.carlacola` × 2 (重ね置き) | 0.000 | +0.010 |
+| 31: Bus - C2 Standard | `vehicle.carlamotors.carlacola` × 3 (重ね置き) | 0.000 | +0.010 |
+| 70: Bike - Motorbike Yamaha MT 07 | `vehicle.kawasaki.ninja` | −0.082 | −0.033 |

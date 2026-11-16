@@ -456,6 +456,39 @@ CARLA lights; pedestrian signal groups are not mapped (CARLA has no pedestrian l
 repository has the tools used to build it (`util/split_signal_controllers.py`,
 `util/align_signal_heads.py`, `util/generate_signal_mapping.py`).
 
+## Vissim Vehicle Blueprints
+
+With the Vissim co-simulation, each Vissim vehicle gets the CARLA body closest in size to its
+Vissim 2D/3D model, instead of a random model of its vehicle type (design and results:
+`docs/Vissim_CARLA_Autoware_ブループリント割り当て_実装計画_v1.0.md`).
+
+- Sizes are the bodies **as a LiDAR sees them**, measured once per CARLA version with semantic
+  LiDARs (`tools/carla_fleet/measure_blueprint_mesh.py` ->
+  `data/carla_fleet/mesh_measurements_carla0.9.15.json`), not the bounding boxes. Bodies are
+  placed by that measured outline (its center may be off the actor origin, e.g. 0.3 m for
+  `ford.ambulance`).
+- `tools/carla_fleet/build_carla_variants.py` applies the rules
+  (`data/carla_fleet/carla_variant_rules.yaml`: nearest length within 0.75 m, width within
+  +0.35/-0.35 m for cars and bikes or -0.10 m for trucks and buses, excluded blueprints) to the
+  models of an `.inpx` and writes the table the bridge uses
+  (`vissim_integration/data/carla_variants_town01.yaml`). Vehicles too long for any single body
+  (trucks, tractors, buses) are represented by 2-3 overlapping `carlamotors.carlacola` bodies
+  spanning the model's length.
+- The bridge checks the table before connecting to the Vissim adapter (blueprints present, rules
+  and measurements unchanged since the table was made, same CARLA version) and looks every
+  vehicle up by its Vissim vehicle type and model file. A missing or stale table, or a vehicle
+  whose model is not in the table, stops the bridge with
+  `Error: CARLA blueprint assignment: <code>: ...` (exit code 1) instead of substituting another
+  blueprint.
+- Launch argument `vissim_carla_variants` (default `carla_variants_town01.yaml`, relative to
+  `vissim_integration/data/`). `vissim_carla_variants:=legacy_vtypes` restores the previous random
+  choice from `vissim_integration/data/vtypes.json`.
+- On Town01 with Autoware, the perceived length of the Vissim bus, truck and tractor is within
+  0.2 m of the Vissim model (12.14 m, 7.93 m, 5.96 m); with `legacy_vtypes` it was off by 2.2-2.8 m.
+
+See the start-up guide (`docs/Vissim(win)-CARLA-Autoware_co-sim_起動手順.md`, 2.8) for regenerating
+the table and the meaning of each `<code>`.
+
 ## Tips
 
 - Misalignment might occurs during initialization, pressing `init by gnss` button should fix it.
@@ -465,4 +498,13 @@ repository has the tools used to build it (`util/split_signal_controllers.py`,
 
 - **Testing on procedural maps (Adv Digital Twin)**: Currently unable to test due to failures in creating the Adv Digital Twin map.
 - **Traffic light recognition**: The default CARLA Lanelet2 maps lack proper traffic light regulatory elements. See the "Traffic Light Recognition" section above for workarounds, or generate them with `tools/carla_tl_to_lanelet2.py` and bypass camera recognition with `traffic_light.publish` (see "Publishing CARLA Traffic-Light States").
+- **Vissim vehicle blueprints**: Only Town01 has a table. Trucks, tractors and buses are stacked
+  `carlacola` delivery trucks, which looks odd up close (CARLA 0.9.15 has no blueprint of their
+  size that passes the rules: the bus `fusorosa` is 9.8 m long, `european_hgv` looks like a
+  tractor but is seen by LiDAR as an 8.4 x 3.3 m fire truck). Articulated Vissim vehicles are not
+  supported (stopped at startup).
+- **Stopping a Vissim run with Ctrl+C**: the whole launch gives the bridge 15 s before SIGKILL, which
+  can be too short to disconnect from the Vissim adapter (Vissim then stays open). Stop the bridge
+  first (`pkill -INT -f "lib/autoware_carla_interface/autoware_carla_interface --ros-args"`); the
+  rest of the launch follows.
 - **Vissim signal setup**: Only Town01 has a Vissim network. Its 12 signal controllers run independently but with the same program and offset 0, so all intersections still change at the same moments (as in the SUMO setup); coordinated offsets are future work.
