@@ -1,0 +1,45 @@
+# ============================================================================
+# carla_variant_rules.yaml — CARLA のブループリントを交通シムのモデルに割り当てる規則(CARLA 0.9.15)
+#
+#   tools/carla_fleet/build_carla_variants.py がこの規則で carla_variants_<網>.yaml を作る。
+#   網(ネットワーク)が変わっても共通で使う。変えたら carla_variants をすべて作り直す
+#   (ブリッジは起動時にこのファイルの sha256 を照合し、違えば variant_source_changed で止まる)。
+#
+#   *** 暫定 ***  値は移植元(CARLA 0.10)のまま、ブループリント名だけを 0.9.15 に置き換えた雛形。
+#   実メッシュ(F2)を測ったあと、F3 で確定する
+#   (docs/Vissim_CARLA_Autoware_ブループリント割り当て_実装計画_v1.0.md F3・5章)。
+#
+# 規則(移植元 設計案 §4.1)。モデルごとに上から試す:
+#   1. 1 体で表す: 下の許容に入るブループリントのうち |dL| が最小のもの(同点は |dW|、次に名前順)。
+#      同じブループリントを複数のモデルに割り当ててよい。ブループリントの分類(car/truck 等)では絞らない。
+#   2. fallback を重ねて表す: 1 が無く、モデルが fallback のブループリントより長いとき。
+#      体の数 n = ceil(L / fallback の長さ)。前端は等間隔(外形の長さが L に一致)。
+#      連結車(セグメント 2 つ以上)は 2 体目以降が軌跡に従う(follows_path)。幅は 1 と同じ許容で検査する。
+#   3. どちらもできなければ生成を止める(variant_model_empty)。交通シムの定義で割合 0 のモデルは対象外(skipped)。
+#
+#   dL・dW = CARLA の外形(実メッシュ、幅はミラー込み) − モデルの寸法 [m]
+# ============================================================================
+name: carla_variant_rules_carla0.9.15_draft
+
+# |dL| の上限(1 体で表すとき)
+length_tolerance_m: 0.75
+
+# dW の上限(太い側)。ミラー相当
+width_over_tolerance_m: 0.35
+
+# dW の下限(細い側)の絶対値。車種カテゴリ(Vissim の vehicleType の category)ごと。
+#   大型車・バスは知覚にとって危険側なので厳しくする。
+#   1 つのモデルを複数のカテゴリが使うときは、最も厳しい値を使う。ここに無いカテゴリは生成を止める
+width_under_tolerance_m: {CAR: 0.35, HGV: 0.10, BUS: 0.10, TRAM: 0.10, BIKE: 0.35}
+
+select: nearest_length
+
+# 1 体で表せないときに重ねるブループリント(0.9.15 の名前。移植元は vehicle.ambulance.ford)。F3 で決める
+fallback: {blueprint: vehicle.ford.ambulance, kind: stack}
+
+# 候補から外すブループリント(fnmatch の形)。F3 で撮影して確定する
+excluded:
+  vehicle.carlamotors.firetruck: 消防車の塗装(移植元でも除外)
+  vehicle.dodge.charger_police*: パトカー塗装(charger_police・charger_police_2020)
+  vehicle.ford.crown: タクシー塗装
+  vehicle.toyota.prius: 自車のブループリント(launch の vehicle_type の既定値)
