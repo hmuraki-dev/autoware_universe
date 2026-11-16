@@ -486,8 +486,9 @@ Vissim 2D/3D model, instead of a random model of its vehicle type (design and re
 - On Town01 with Autoware, the perceived length of the Vissim bus, truck and tractor is within
   0.2 m of the Vissim model (12.14 m, 7.93 m, 5.96 m); with `legacy_vtypes` it was off by 2.2-2.8 m.
 
-See the start-up guide (`docs/Vissim(win)-CARLA-Autoware_co-sim_起動手順.md`, 2.8) for regenerating
-the table and the meaning of each `<code>`.
+See the start-up guide (`docs/Vissim(win)-CARLA-Autoware_co-sim_起動手順.md`, 2.4.4) for regenerating
+the table (only needed after changing the Vissim vehicles, the rules or the CARLA version) and
+2.8 for the meaning of each `<code>`.
 
 ## Tips
 

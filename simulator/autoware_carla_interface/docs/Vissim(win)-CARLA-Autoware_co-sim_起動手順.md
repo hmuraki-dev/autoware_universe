@@ -105,8 +105,10 @@ cd ~/CARLA
 ./CarlaUE4.sh
 ```
 
-### 2.4 【Linux側/ターミナル2】マップの設定 → 信号マッピングjsonの生成
+### 2.4 【Linux側/ターミナル2】マップの設定 → 信号マッピングjsonの生成 → 車両のブループリント表の生成
 Town01マップを読み込んだうえで、そのマップの信号機情報からdata/signal_mapping.jsonを生成します。
+Vissimの車両の設定などを変えたときは、Vissimの車両に割り当てるCARLAのブループリントの表も作り直します(2.4.4)。
+2.4.2と2.4.4は、どちらも**対象の設定を変えたときだけ**実行する(毎回の起動では不要)。
 
 #### 2.4.1 CARLAで使用するマップの設定
 
@@ -167,6 +169,79 @@ python3 generate_signal_mapping.py ../examples/Town01/Town01.inpx
 注意:
 - Vissim GUIで`.inpx`を開いてSimulation runを回すときは、Driving Simulatorを無効にする。そのまま保存すると`drivSimActive="false"`になり、co-simのconnectがタイムアウトする。**co-simで使うファイルは`drivSimActive="true"`にしておく**(Vissimが複数起動しているときもタイムアウトする)。
 - VisSigでSGを足したときは、同時に青になってよい組(例: 主道路の車と、従道路を渡る歩行者)の中間時間を**空欄**にする(0は「交差する」の意味になり、`intergreen violated`になる)。interstageの終わりに青になるSGの最小青時間は0にする(`minimum green time violated`を避ける)。
+
+#### 2.4.4 Vissimの車両のCARLAブループリント表の生成
+Vissimの車両1台ごとに、どのCARLAのブループリントを使うかを決める表(`vissim_integration/data/carla_variants_town01.yaml`)を作ります。
+仕組みと今のTown01の割り当ては2.8を参照。
+
+**注意**:
+- **次のどれかを変えたときだけ実行すればよく**、毎回の起動時に実行する必要はありません。今の表はリポジトリに入っています。
+
+  | 変えたもの | 実行する手順 |
+  | --- | --- |
+  | Vissimの車両の設定(`.inpx`の2D/3Dモデル・モデル分布・車両タイプ・車両構成) | (2)(3) |
+  | 割り当ての規則(`src/autoware_carla_interface/data/carla_fleet/carla_variant_rules.yaml`) | (2)(3) |
+  | CARLAの版(ブループリントの形が変わりうる) | (1)(2)(3) |
+
+- 変えたのに作り直さないと、co-simの起動時(規則・CARLAの版)か、走行中に表にない車が来たとき(`.inpx`)に、`Error: CARLA blueprint assignment: ...`で止まります(2.8.2)。
+- `.inpx`は、**Windows PCで実際に読まれるもの(2.2の`--vissim-network`)と同じ版**から作ります。同じかは、Windowsの`Get-FileHash`と、CARLAリポジトリのファイルの`sha256sum`で比べます。
+- 作り直した表(と、(1)を実行したときは計測結果)は、autoware_universeにコミットします。`--symlink-install`でビルドしていれば、ビルドし直さなくても使われます。
+
+**(1) CARLAのブループリントの外形の計測**(CARLAの版を変えたときだけ)
+
+CARLAだけを起動した状態で行います(ブリッジ・Autowareは起動しない)。各ブループリントを地下に1台ずつ置き、LiDARで外形を測ってから消します。41ブループリントで1分ほどです。
+
+```bash
+cd ~/autoware.1.9.0/src/universe/autoware_universe/simulator/autoware_carla_interface
+python3 tools/carla_fleet/measure_blueprint_mesh.py \
+    --out src/autoware_carla_interface/data/carla_fleet/mesh_measurements_carla<版>.json
+```
+| オプション | 説明 | 省略可/不可 | デフォルト値 |
+| --- | --- | --- | --- |
+| `--out` | 計測結果(JSON)の出力先。すでにあるとエラー | 省略不可 | なし |
+| `--host` / `--port` | CARLAサーバー | 省略可 | `localhost` / `2000` |
+| `--only` | 測るブループリントを限る(例: `--only vehicle.lincoln.mkz_2017`) | 省略可 | すべて |
+| `--exclude` | 測らないブループリント(fnmatchの形、複数可) | 省略可 | なし |
+
+- CARLAが同期モードで誰もtickしていないときは、ツールが自分でtickする。ブリッジが動いているときは実行しない。
+- 結果を使うには、(2)の`--geometry`にこのファイルを渡す。
+
+**(2) 表の生成**
+
+```bash
+cd ~/autoware.1.9.0/src/universe/autoware_universe/simulator/autoware_carla_interface
+# Windowsで使っている.inpxと同じ版を、CARLAリポジトリから取り出す(<コミット>はその版のコミット)
+git -C ~/CARLA show <コミット>:Co-Simulation/PTV-Vissim/examples/Town01/Town01.inpx > /tmp/Town01.inpx
+python3 tools/carla_fleet/build_carla_variants.py \
+    --inpx /tmp/Town01.inpx \
+    --inpx-ref "~/CARLA feature/vissim_windows <コミット> Co-Simulation/PTV-Vissim/examples/Town01/Town01.inpx" \
+    --geometry src/autoware_carla_interface/data/carla_fleet/mesh_measurements_carla0.9.15.json \
+    --rules src/autoware_carla_interface/data/carla_fleet/carla_variant_rules.yaml \
+    --out src/autoware_carla_interface/vissim_integration/data/carla_variants_town01.yaml
+```
+| オプション | 説明 | 省略可/不可 | デフォルト値 |
+| --- | --- | --- | --- |
+| `--inpx` | Vissimのネットワークファイル | 省略不可 | なし |
+| `--inpx-ref` | `.inpx`の出どころの記録(リポジトリ・コミット・パス)。渡すと、表には`.inpx`のパスの代わりにこれを書く(一時ファイルを渡すときに使う) | 省略可 | なし(`--inpx`のパスを書く) |
+| `--geometry` | (1)の計測結果 | 省略不可 | なし |
+| `--rules` | 割り当ての規則 | 省略不可 | なし |
+| `--out` | 表の出力先 | 省略不可 | なし |
+| `--name` / `--generated-at` | 表の名前 / 生成日時(作り直しの差分を見るときに固定する) | 省略可 | `--out`のファイル名 / 今 |
+
+- CARLAサーバーは要らない。
+- 割り当てられないモデルがあると、`[build_carla_variants] 止めた: variant_model_empty: ...`と出て、ファイルを書かない。規則を見直すか、`.inpx`でそのモデルの割合を0にする。
+- 歩行者の車両タイプと、自車(Driving Simulator)の車両タイプは表に入らない。割合0のモデルは`skipped`に入る。
+
+**(3) 確認**
+
+```bash
+cd ~/autoware.1.9.0/src/universe/autoware_universe/simulator/autoware_carla_interface
+git diff --stat src/autoware_carla_interface/vissim_integration/data/carla_variants_town01.yaml
+python3 -m pytest test/test_carla_fleet.py test/test_build_carla_variants.py test/test_vissim_fleet_plan.py
+```
+
+- 表の`assignment`(モデルごとのブループリント・dL・dW)と`expected_bodies_per_100_vehicles`を見て、意図した割り当てか確かめる。
+- テストは、今のTown01の割り当てを期待値にしている。割り当てが変わったら、テストの期待値(`test_carla_fleet.py`の`test_package_rules_on_town01_models`、`test_build_carla_variants.py`の`test_town01_variants_pass_the_startup_checks`)も直す。
 
 ### 2.5 【Linux側/ターミナル3】ビルド
 
@@ -279,8 +354,8 @@ ros2 launch autoware_launch e2e_simulator.launch.xml \
 | `vissim_sim_period`秒が経過した | `Vissim co-simulation period elapsed (<N> ticks), stopping.` | Linux側が終了を指示し(`disconnect`)、Vissimが閉じる |
 | Vissimアダプタとのtickが`vissim_max_consecutive_failures`回続けて失敗した | `Error: giving up after <N> consecutive failed vissim adapter tick(s), stopping. ...` | アダプタが応答しない状態のため、Vissimが閉じないことがある(下記参照) |
 | ウォームアップを使う場合の試験開始失敗(空きが`ego_spawn_wait_timeout`秒以内にできなかった、など。2.6.3参照) | `Error: test start failed: ...` | Linux側が終了を指示し、Vissimが閉じる。終了コードは1 |
-| ブループリントの表が使えない(起動時)。表がない、作ったときと規則・実メッシュが違う、など。2.8.3参照 | `Error: CARLA blueprint assignment: <code>: {...}` | **Vissimアダプタに接続する前に止まる**ので、Vissimは起動しない。終了コードは1 |
-| 走行中に、表にないVissimのモデルが来た(.inpxを変えたのに表を作り直していない、など)。2.8.3参照 | `Error: CARLA blueprint assignment: npc_model_unknown: {...}` など | Linux側が終了を指示し、Vissimが閉じる。終了コードは1 |
+| ブループリントの表が使えない(起動時)。表がない、作ったときと規則・実メッシュが違う、など。2.8.2参照 | `Error: CARLA blueprint assignment: <code>: {...}` | **Vissimアダプタに接続する前に止まる**ので、Vissimは起動しない。終了コードは1 |
+| 走行中に、表にないVissimのモデルが来た(.inpxを変えたのに表を作り直していない、など)。2.8.2参照 | `Error: CARLA blueprint assignment: npc_model_unknown: {...}` など | Linux側が終了を指示し、Vissimが閉じる。終了コードは1 |
 | Ctrl+C、その他の異常終了 | - | 通常はLinux側が終了を指示し、Vissimが閉じる。ただし、下の「Ctrl+Cで止めるとき」を参照 |
 
 期間は、Vissimとのtickが成功した回数で数える(`vissim_sim_period / fixed_delta_seconds`回。既定なら600秒 × 20 = 12000回)。tickに失敗した分は数えないので、実時間やCARLAの時刻とは一致しないことがある。ウォームアップを使う場合は、EGOをスポーンした時点から数える(ウォームアップと空き待ちの時間は含まない)。
@@ -489,50 +564,19 @@ Vissimの車両1台をCARLAに出すとき、どのブループリントを使�
 候補から外しているもの: パトカー・タクシー・消防車・救急車の塗装、見た目とLiDARの形が違う`european_hgv`、乗用車に合わないバン(`volkswagen.t2*`)、
 自車と同じ`toyota.prius`(`data/carla_fleet/carla_variant_rules.yaml`)。
 
-#### 2.8.2 表の作り直し
+表の作り直し(Vissimの車両の設定・規則・CARLAの版を変えたときだけ)は、2.4.4の手順で行う。
 
-次のどれかを変えたら、表を作り直してコミットする(作り直さないと、起動時か走行中に止まる)。
-
-| 変えたもの | やること |
-| --- | --- |
-| Vissimの`.inpx`(車両のモデル・モデル分布・車種構成) | 下の`build_carla_variants.py`だけ |
-| 規則(`data/carla_fleet/carla_variant_rules.yaml`) | 下の`build_carla_variants.py`だけ |
-| CARLAの版 | 実メッシュを測り直してから(下の`measure_blueprint_mesh.py`)、`build_carla_variants.py` |
-
-```bash
-cd ~/autoware.1.9.0/src/universe/autoware_universe/simulator/autoware_carla_interface
-# Windowsで使っている.inpxと同じ版を、CARLAリポジトリから取り出す
-git -C ~/CARLA show <コミット>:Co-Simulation/PTV-Vissim/examples/Town01/Town01.inpx > /tmp/Town01.inpx
-python3 tools/carla_fleet/build_carla_variants.py \
-    --inpx /tmp/Town01.inpx \
-    --inpx-ref "~/CARLA feature/vissim_windows <コミット> Co-Simulation/PTV-Vissim/examples/Town01/Town01.inpx" \
-    --geometry src/autoware_carla_interface/data/carla_fleet/mesh_measurements_carla0.9.15.json \
-    --rules src/autoware_carla_interface/data/carla_fleet/carla_variant_rules.yaml \
-    --out src/autoware_carla_interface/vissim_integration/data/carla_variants_town01.yaml
-```
-
-- 割り当てられないモデルがあると、`[build_carla_variants] 止めた: variant_model_empty: ...`と出て、ファイルを書かない。規則を見直すか、.inpxでそのモデルの割合を0にする。
-- 実メッシュの計測は、CARLA(Town01)だけを起動した状態で行う(ブリッジ・Autowareは起動しない)。41ブループリントで1分ほど。
-
-```bash
-python3 tools/carla_fleet/measure_blueprint_mesh.py \
-    --out src/autoware_carla_interface/data/carla_fleet/mesh_measurements_carla<版>.json
-```
-
-- Windows側の`.inpx`とリポジトリの版が同じかは、`Get-FileHash`(Windows)と、表の`sources.inpx.sha256`で比べる。
-- `--symlink-install`でビルドしていれば、作り直した表はビルドし直さなくても使われる。
-
-#### 2.8.3 止まったとき(`Error: CARLA blueprint assignment: <code>: ...`)
+#### 2.8.2 止まったとき(`Error: CARLA blueprint assignment: <code>: ...`)
 
 | code | 意味 | 直し方 |
 | --- | --- | --- |
 | `variant_config_missing` | `vissim_carla_variants`のファイルがない | パスを確かめる |
-| `variant_source_changed` | 表を作ったときと、規則か実メッシュが違う | 表を作り直す(2.8.2) |
-| `variant_blueprint_missing` | 表のブループリントが、接続先のCARLAにない | CARLAの版を確かめ、実メッシュを測り直して表を作り直す |
-| `variant_mesh_carla_version_changed` | 実メッシュを測ったCARLAの版と、接続先の版が違う | 実メッシュを測り直して表を作り直す |
-| `variant_articulated_unsupported` | 表に連結車(軌跡に沿う体)がある。このブリッジは扱わない | .inpxで連結車の割合を0にして作り直す |
+| `variant_source_changed` | 表を作ったときと、規則か実メッシュが違う | 表を作り直す(2.4.4の(2)) |
+| `variant_blueprint_missing` | 表のブループリントが、接続先のCARLAにない | CARLAの版を確かめ、外形を測り直して表を作り直す(2.4.4の(1)(2)) |
+| `variant_mesh_carla_version_changed` | 外形を測ったCARLAの版と、接続先の版が違う | 外形を測り直して表を作り直す(2.4.4の(1)(2)) |
+| `variant_articulated_unsupported` | 表に連結車(軌跡に沿う体)がある。このブリッジは扱わない | .inpxで連結車の割合を0にして作り直す(2.4.4の(2)) |
 | `variant_model_ambiguous` | 同じ(車種, モデルファイル)が2つのモデルにある | .inpxのモデルを見直す |
-| `npc_model_unknown`(走行中) | 表にない(車種, モデルファイル)の車が来た | Windowsの.inpxとリポジトリの版をそろえ、表を作り直す |
+| `npc_model_unknown`(走行中) | 表にない(車種, モデルファイル)の車が来た | Windowsの.inpxとリポジトリの版をそろえ、表を作り直す(2.4.4の(2)) |
 | `variant_model_empty`(走行中) | 表を作ったときに割合0だったモデルの車が来た | 同上 |
 
 - 起動時の検査は、Vissimアダプタに接続する前に行う。そのため、起動時に止まったときはVissimは起動していない。
