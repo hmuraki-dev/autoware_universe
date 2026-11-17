@@ -79,7 +79,7 @@ python3 -m pytest test/test_build_vissim_town.py
 
 | 足したもの | 中身 |
 | --- | --- |
-| 車両設定 | Town01.inpxの車両タイプ・2D/3Dモデル・車両構成・歩行者タイプ・走行挙動など。自車(EGO、車両タイプ101)と、ドライブシミュレータの設定(`drivSimActive="true"`など)も同じ |
+| 車両設定 | Town01.inpxの車両タイプ・2D/3Dモデル・車両構成・歩行者タイプ・走行挙動など。自車(EGO、車両タイプ101)と、ドライブシミュレータの設定(`drivSimActive="true"`など)、カーブの速度制限(無効)、駐車場・エレベータの既定値も同じ |
 | 信号制御 | SUMOの信号1つにつき1つ(5つ)。中身はTown01.inpxの信号制御1と同じ固定時間の制御(信号グループ1・2が交互に青、周期94秒) |
 | 信号灯 | CARLAの15信号の停止位置(信号ごとに2車線)に1つずつ、計30。SUMOの最初のフェーズで青の信号は信号グループ1、赤の信号は2 |
 | 車両入力 | SUMOのルートの出発地点に当たる19リンク。合計600台/hを、SUMOの出発台数の割合で分ける |
@@ -103,7 +103,8 @@ python3 -m pytest test/test_build_vissim_town.py
 - `signal_mapping_town10hd.json`を、Vissimブリッジの`vissim_integration/data/signal_mapping.json`へ写す。今のブリッジは対応表を1つしか置けないので、Town01の対応表を上書きすることになる。
 - Autowareと使うときは、車両のブループリント表を`build_carla_variants.py --inpx vissim/Town10HD.inpx`で作る(車両設定がTown01と同じなので、割り当てもTown01と同じ14モデルになる)。
 
-## 2.4 まだ確かめていないこと
+## 2.4 Vissimでの確認
 
-- Vissimで`Town10HD.inpx`を開いて、エラーなく読み込めるか、信号が切り替わり、車が流れるか(Windows PCで確かめる)。
+- 2026-11-17に、Windows PCのVissim 2026で`Town10HD.inpx`を開き、エラーなく読み込めること、RUNで信号が切り替わることを確かめた(利用者が確認)。
+  そのとき出た警告2件(駐車場の既定値の参照、カーブの速度制限)は、ツールを直して出ないようにした(直した版をVissimで開いての確認はまだ)。
 - Vissimで実行したあとに保存すると、`drivSimActive`が`false`に戻ることがある。co-simで使う前に確かめる。

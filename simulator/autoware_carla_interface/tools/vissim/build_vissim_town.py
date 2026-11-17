@@ -46,7 +46,9 @@ LIBRARY_SECTIONS = (
     'simulation', 'speedDistributions', 'timeDistributions', 'vehicleClasses', 'vehicleCompositions',
     'vehicleTypes', 'walkingBehaviors', 'weightDistributions',
 )
-DRIVING_SIMULATOR_ATTRS = ('drivSimActive', 'drivSimPedType', 'drivSimVehType')
+# netPara のうち雛形に合わせる属性。speedLimCurves: 雛形の車両タイプにはカーブの速度関数が無いので、有効のままだと
+# Vissim が「カーブの速度制限が有効なのに、どの車両タイプにも速度関数が無い」と警告する(Town01.inpx は false)
+TEMPLATE_NETPARA_ATTRS = ('drivSimActive', 'drivSimPedType', 'drivSimVehType', 'speedLimCurves')
 NETPARA_DEFAULT_REFS = ('defRefsElevator', 'defRefsParkingLot')
 
 # 信号灯を置く車線を決めるときの許容
@@ -401,7 +403,7 @@ def build(road_root, template_root, net_root, rou_root, carla_lights, total_volu
     for tag in LIBRARY_SECTIONS:
         replace_section(root, template_root, tag)
     net, template_net = root.find('netPara'), template_root.find('netPara')
-    for attr in DRIVING_SIMULATOR_ATTRS:
+    for attr in TEMPLATE_NETPARA_ATTRS:
         net.set(attr, template_net.get(attr))
     # netPara の既定値(駐車場・エレベータ)は、写した時間分布・表示タイプなどを番号で指すので、雛形のものにする
     for tag in NETPARA_DEFAULT_REFS:

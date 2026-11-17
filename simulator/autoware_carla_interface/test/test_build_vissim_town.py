@@ -141,6 +141,8 @@ def test_committed_town10hd_signals_follow_sumo_and_carla():
     # ドライブシミュレータ(co-sim に要る)と、Town01 と同じ自車のタイプ
     net = root.find('netPara')
     assert (net.get('drivSimActive'), net.get('drivSimVehType'), net.get('trafReg')) == ('true', '101', 'RIGHTHANDTRAFFIC')
+    # カーブの速度制限は Town01.inpx と同じく無効(車両タイプに速度関数が無いので、有効だと Vissim が警告する。2026-11-17)
+    assert net.get('speedLimCurves') == 'false'
     assert len(root.find('signalControllers')) == 5
     # netPara の既定値が指す時間分布があること(無いと、Vissim で開いたときに
     # 'Could not resolve reference ... DEFAULTREFERENCESPARKINGLOT' の警告が出る。2026-11-17 に発生)
