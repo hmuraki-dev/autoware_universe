@@ -50,6 +50,18 @@ grep -oE 'name="[0-9]+: Road [0-9]+-[0-9]+-(Right|Left)"' vissim/Town10HD_road.i
 
 `Town10HD_road.inpx`(1章)を変えたとき、またはSUMOの信号・CARLAの信号を変えたときだけ実行する。
 
+**この章のツール(`tools/vissim/build_vissim_town.py`)とテストは、`feature/sumo_co-sim`ブランチにある**(入力にSUMOのnet・ルート(`sumo/`)を使うため)。
+Vissim構成のブランチ(`feature/vissim_windows_co-sim`)の`vissim/`は、`feature/sumo_co-sim`で作ったものの写し。作り直したら、次のコマンドでこちらにも写す。
+
+```bash
+cd ~/autoware.1.9.0/src/universe/autoware_universe   # feature/vissim_windows_co-sim を開いた状態で
+git checkout feature/sumo_co-sim -- simulator/autoware_carla_interface/vissim/Town10HD.inpx \
+    simulator/autoware_carla_interface/vissim/Town10HD_road.inpx \
+    simulator/autoware_carla_interface/vissim/signal_mapping_town10hd.json
+```
+
+以下のコマンドは、`feature/sumo_co-sim`で実行する。
+
 ```bash
 cd ~/autoware.1.9.0/src/universe/autoware_universe/simulator/autoware_carla_interface
 python3 tools/vissim/build_vissim_town.py \
@@ -99,9 +111,11 @@ python3 -m pytest test/test_build_vissim_town.py
 
 ## 2.3 co-simで使うとき(Vissim構成のブランチ)
 
+手順は、`feature/vissim_windows_co-sim`ブランチの`docs/Vissim(win)-CARLA(0.9.16)-Autoware_co-sim_起動手順.md`(CARLA 0.9.16でTown10HDを使う手順)。
+
 - `Town10HD.inpx`をWindows PCへ写し、`server.py --vissim-network`に渡す。
 - `signal_mapping_town10hd.json`を、Vissimブリッジの`vissim_integration/data/signal_mapping.json`へ写す。今のブリッジは対応表を1つしか置けないので、Town01の対応表を上書きすることになる。
-- Autowareと使うときは、車両のブループリント表を`build_carla_variants.py --inpx vissim/Town10HD.inpx`で作る(車両設定がTown01と同じなので、割り当てもTown01と同じ14モデルになる)。
+- Autowareと使うときは、車両のブループリント表を`build_carla_variants.py --inpx vissim/Town10HD.inpx`で作る(車両設定がTown01と同じなので、0.9.15の外形では割り当てもTown01と同じ14モデルになる)。
 
 ## 2.4 Vissimでの確認
 
