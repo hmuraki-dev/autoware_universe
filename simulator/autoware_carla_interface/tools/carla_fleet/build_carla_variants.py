@@ -12,7 +12,7 @@ docs/SUMO_CARLA_Autoware_ブループリント割り当て_実装計画_v1.0.md 
         --out src/autoware_carla_interface/vissim_integration/data/carla_variants_town01.yaml
 
     python3 tools/carla_fleet/build_carla_variants.py \\
-        --sumocfg "$PWD"/sumo/examples/Town01.sumocfg \\
+        --sumocfg sumo/examples/Town01.sumocfg \\
         --geometry src/autoware_carla_interface/data/carla_fleet/mesh_measurements_carla0.9.15.json \\
         --rules src/autoware_carla_interface/data/carla_fleet/carla_variant_rules.yaml \\
         --out src/autoware_carla_interface/sumo_integration/data/carla_variants_sumo_town01.yaml
@@ -32,7 +32,8 @@ SUMO(--sumocfg。sumo_integration/sumo_fleet.py):
   台数 × vTypeDistribution の確率。歩行者の vType は対象にしない。
 - 生成物の各モデルには、まとめた vType の ID(vtypes)を書く。SUMO ブリッジは走行中、車の vType ID でモデルを引く。
 - sources には .sumocfg と、route-files の各ファイル(.sumocfg に書かれた名前)の sha256 を書く。SUMO ブリッジは
-  起動時に、渡された .sumocfg の route-files と照合する。
+  起動時に、渡された .sumocfg の route-files と照合する。.sumocfg のパスは、geometry・rules と同じく生成物のある
+  ディレクトリからの相対パスで書く(記録だけ。ブリッジは照合に使わない。置き場所が違う PC でも同じ生成物になる)。
 
 移植元: SBIR_sim `tools/carla_fleet/build_carla_variants.py`(3ea1650)。変えたところ: 入力は --inpx の
 ファイルと、SUMO の --sumocfg(移植元の --sumo-inputs と網の登録簿 received_networks への依存を外した)、生成物に
@@ -43,6 +44,7 @@ from __future__ import annotations
 import argparse
 from datetime import datetime
 import json
+import os
 from pathlib import Path
 import sys
 
@@ -164,8 +166,9 @@ def render(document, command) -> str:
         '#          ブリッジは (VehicleType, ModelFileName) を types と file で引く。無ければ止める(npc_model_unknown)',
     ])
     source_lines = ([
-        '#   sumocfg・route_files は .sumocfg と route-files の各ファイル(.sumocfg に書かれた名前)。ブリッジは起動時に、',
-        '#   渡された .sumocfg の route-files の sha256 と照合し、違えば止める(variant_source_changed)',
+        '#   sumocfg は .sumocfg(パスはこのファイルのあるディレクトリからの相対パス。記録だけ)。route_files は',
+        '#   route-files の各ファイル(.sumocfg に書かれた名前)。ブリッジは起動時に、渡された .sumocfg の',
+        '#   route-files の sha256 と照合し、違えば止める(variant_source_changed)',
     ] if sumo else [
         '#   inpx は記録だけ(Windows 側にあり、ブリッジは照合しない。モデルが変われば走行中に npc_model_unknown で止まる)',
     ])
@@ -235,6 +238,12 @@ def render(document, command) -> str:
     return '\n'.join(lines) + '\n'
 
 
+def _shown_path(path) -> str:
+    """作り方のコメントに書くパス。今のディレクトリの下なら相対パスにする(絶対パスを生成物に残さない)。"""
+    relative = os.path.relpath(os.path.abspath(path))
+    return str(path) if relative.startswith('..') else relative
+
+
 def main(argv=None) -> int:
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     source = parser.add_mutually_exclusive_group(required=True)
@@ -271,7 +280,9 @@ def main(argv=None) -> int:
         traffic['sha256'] = carla_fleet.digest(args.inpx)
         traffic_sources = dict(inpx=traffic)
     else:
-        traffic = (dict(ref=args.sumocfg_ref) if args.sumocfg_ref else dict(path=str(args.sumocfg)))
+        # パスは生成物のディレクトリからの相対パス(絶対パスにすると、置き場所の違う PC で生成物が変わる)
+        traffic = (dict(ref=args.sumocfg_ref) if args.sumocfg_ref
+                   else dict(path=carla_fleet.relative_source(args.sumocfg, out_dir)))
         traffic['sha256'] = carla_fleet.digest(args.sumocfg)
         traffic_sources = dict(sumocfg=traffic,
                                route_files={name: carla_fleet.digest(path) for name, path in names})
@@ -290,13 +301,13 @@ def main(argv=None) -> int:
         input_lines = [(f'    --inpx <{args.inpx_ref} を取り出したファイル> \\' if args.inpx_ref else f'    --inpx {args.inpx} \\'),
                        *([f'    --inpx-ref {json.dumps(args.inpx_ref, ensure_ascii=False)} \\'] if args.inpx_ref else [])]
     else:
-        input_lines = [f'    --sumocfg {args.sumocfg} \\',
+        input_lines = [f'    --sumocfg {_shown_path(args.sumocfg)} \\',
                        *([f'    --sumocfg-ref {json.dumps(args.sumocfg_ref, ensure_ascii=False)} \\'] if args.sumocfg_ref else [])]
     command = ['python3 tools/carla_fleet/build_carla_variants.py \\',
                *input_lines,
-               f'    --geometry {args.geometry} \\',
-               f'    --rules {args.rules} \\',
-               f'    --out {args.out}']
+               f'    --geometry {_shown_path(args.geometry)} \\',
+               f'    --rules {_shown_path(args.rules)} \\',
+               f'    --out {_shown_path(args.out)}']
     args.out.parent.mkdir(parents=True, exist_ok=True)
     args.out.write_text(render(document, command), encoding='utf-8')
     print(f'[build_carla_variants] {args.out}: 割り当て {len(assignment)} モデル、skipped {len(skipped)}', flush=True)

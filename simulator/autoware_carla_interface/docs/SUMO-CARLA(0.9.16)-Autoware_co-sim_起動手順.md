@@ -236,7 +236,7 @@ co-simで使う`.sumocfg`(2.4.1の`sumo_cfg_file`)をそのまま入力にする
 ```bash
 cd ~/autoware.1.9.0/src/universe/autoware_universe/simulator/autoware_carla_interface
 python3 tools/carla_fleet/build_carla_variants.py \
-    --sumocfg "$PWD"/sumo/examples/<Town>.sumocfg \
+    --sumocfg sumo/examples/<Town>.sumocfg \
     --geometry src/autoware_carla_interface/data/carla_fleet/mesh_measurements_carla<版>.json \
     --rules src/autoware_carla_interface/data/carla_fleet/carla_variant_rules.yaml \
     --out src/autoware_carla_interface/sumo_integration/data/carla_variants_sumo_<townを小文字>.yaml   # ← 生成物
@@ -245,7 +245,7 @@ python3 tools/carla_fleet/build_carla_variants.py \
 > 📄 **生成物:** SUMO車両-ブループリント割り当て一覧\
 > `src/autoware_carla_interface/sumo_integration/data/carla_variants_sumo_<townを小文字>.yaml`
 
-- `--sumocfg`は`"$PWD"/sumo/examples/...`の絶対パスで渡す(表に記録されるパス)。
+- 表には、`.sumocfg`のパスを、表のあるフォルダからの相対パスで記録する(`../../../../sumo/examples/<Town>.sumocfg`)。
 - `<Town>`は、2.4.1の`sumo_cfg_file`の`.sumocfg`の名前(`Town10HD`など)。`<townを小文字>`は、その小文字(`town10hd`)。
   この名前にしないと、ブリッジが表を見つけない(今までの選び方で動く)。
 - `<版>`は、(1)で付けた名前(`0.9.16_jp`)。
@@ -255,7 +255,7 @@ python3 tools/carla_fleet/build_carla_variants.py \
 ```bash
 cd ~/autoware.1.9.0/src/universe/autoware_universe/simulator/autoware_carla_interface
 python3 tools/carla_fleet/build_carla_variants.py \
-    --sumocfg "$PWD"/sumo/examples/Town10HD.sumocfg \
+    --sumocfg sumo/examples/Town10HD.sumocfg \
     --geometry src/autoware_carla_interface/data/carla_fleet/mesh_measurements_carla0.9.16_jp.json \
     --rules src/autoware_carla_interface/data/carla_fleet/carla_variant_rules.yaml \
     --out src/autoware_carla_interface/sumo_integration/data/carla_variants_sumo_town10hd.yaml   # ← 生成物
@@ -275,7 +275,7 @@ python3 tools/carla_fleet/build_carla_variants.py \
 ```bash
 cd ~/autoware.1.9.0/src/universe/autoware_universe/simulator/autoware_carla_interface
 python3 tools/carla_fleet/build_carla_variants.py \
-    --sumocfg "$PWD"/sumo/examples/Town01.sumocfg \
+    --sumocfg sumo/examples/Town01.sumocfg \
     --geometry src/autoware_carla_interface/data/carla_fleet/mesh_measurements_carla0.9.16_jp.json \
     --rules src/autoware_carla_interface/data/carla_fleet/carla_variant_rules.yaml \
     --out src/autoware_carla_interface/sumo_integration/data/carla_variants_sumo_town01.yaml   # ← 生成物

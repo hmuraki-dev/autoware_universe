@@ -206,7 +206,7 @@ co-simで使う`.sumocfg`(2.4.1の`sumo_cfg_file`)をそのまま入力にする
 ```bash
 cd ~/autoware.1.9.0/src/universe/autoware_universe/simulator/autoware_carla_interface
 python3 tools/carla_fleet/build_carla_variants.py \
-    --sumocfg "$PWD"/sumo/examples/Town01.sumocfg \
+    --sumocfg sumo/examples/Town01.sumocfg \
     --geometry src/autoware_carla_interface/data/carla_fleet/mesh_measurements_carla0.9.15.json \
     --rules src/autoware_carla_interface/data/carla_fleet/carla_variant_rules.yaml \
     --out src/autoware_carla_interface/sumo_integration/data/carla_variants_sumo_town01.yaml   # ← 生成物
@@ -216,7 +216,7 @@ python3 tools/carla_fleet/build_carla_variants.py \
 > `src/autoware_carla_interface/sumo_integration/data/carla_variants_sumo_town01.yaml`
 
 - 表には、`.sumocfg`のパスと、`route-files`の各ファイルのsha256が記録される。ブリッジは起動時にこのsha256を照合するので、どの版の`.rou.xml`から作った表かは、これで決まる。
-- `--sumocfg`は`"$PWD"/sumo/examples/...`の絶対パスで渡す(表に記録されるパス。テスト`test_sumo_fleet.py`は、同じ絶対パスで表を作り直して比べる)。
+- 表には、`.sumocfg`のパスを、表のあるフォルダからの相対パスで記録する(`../../../../sumo/examples/Town01.sumocfg`)。置き場所の違うPCでも、同じ表になる。
 - 出力先のファイル名は`carla_variants_sumo_<.sumocfgの名前を小文字>.yaml`にする。ブリッジは既定(`sumo_carla_variants:=auto`)で、この名前の表を探す(3.5)。
 - `.sumocfg`・規則・外形のどれも変えていなければ、作り直しても割り当ては変わらない(`generated_at`の記録だけが変わる)。
 

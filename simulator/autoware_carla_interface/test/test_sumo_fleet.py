@@ -179,6 +179,24 @@ def test_main_writes_sumo_variants(tmp_path, sumocfg):
     assert variants['assignment']['L12.000_W2.500']['method'] == 'fallback_stack'
 
 
+def test_main_records_the_sumocfg_path_relative_to_the_variants(tmp_path, sumocfg, monkeypatch):
+    # 絶対パスで渡しても、生成物には生成物のディレクトリからの相対パスを書く(置き場所の違う PC でも同じ生成物)
+    out = tmp_path / 'pkg' / 'sumo_integration' / 'data' / 'carla_variants_sumo_x.yaml'
+    monkeypatch.chdir(tmp_path)
+    assert builder.main(['--sumocfg', str(sumocfg.resolve()),
+                         '--geometry', str(MESH), '--rules', str(RULES), '--out', str(out),
+                         '--generated-at', '2026-11-16T00:00:00+09:00']) == 0
+    variants = carla_fleet.load_variants(out)
+    recorded = variants['sources']['sumocfg']['path']
+    assert not os.path.isabs(recorded)
+    assert carla_fleet.resolve_source(recorded, out.parent).resolve() == sumocfg.resolve()
+    assert variants['sources']['sumocfg']['sha256'] == carla_fleet.digest(sumocfg)
+    # 作り方のコメントも、今のディレクトリの下のファイルは相対パスで書く
+    text = out.read_text(encoding='utf-8')
+    assert str(tmp_path) not in text
+    assert f'--sumocfg {os.path.relpath(sumocfg.resolve(), tmp_path)} ' in text
+
+
 def test_main_needs_exactly_one_input(tmp_path, sumocfg):
     with pytest.raises(SystemExit):
         builder.main(['--geometry', str(MESH), '--rules', str(RULES), '--out', str(tmp_path / 'v.yaml')])
