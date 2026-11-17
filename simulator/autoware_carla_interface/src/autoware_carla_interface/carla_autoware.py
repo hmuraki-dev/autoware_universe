@@ -182,6 +182,7 @@ class InitializeInterface(object):
         self.ego_spawn_wait_timeout = self.param_["ego_spawn_wait_timeout"]
 
         try:
+            self._resolve_sumo_cfg_file()
             self._check_sumo_traffic_manager_exclusivity()
             self._check_sumo_warmup_params()
             self._check_traffic_light_params()
@@ -213,6 +214,21 @@ class InitializeInterface(object):
                 "use_traffic_manager when use_sumo is enabled (see "
                 "docs/SUMO_CARLA_Autoware_統合修正項目_v0.5.md section 2.11)."
             )
+
+    def _resolve_sumo_cfg_file(self):
+        """
+        Turn `sumo_cfg_file` into the path SUMO is started with.
+
+        A relative path (e.g. `Town01.sumocfg`) is taken from the installed
+        `share/autoware_carla_interface/sumo/examples/`; an absolute path is used as it is.
+        A missing file is reported as an invalid parameter before CARLA/SUMO are touched.
+        """
+        if not self.use_sumo:
+            return
+        from .sumo_integration.sumo_scenarios import resolve_sumo_cfg_file
+
+        self.sumo_cfg_file = resolve_sumo_cfg_file(self.sumo_cfg_file)
+        print(f"SUMO config: {self.sumo_cfg_file}", flush=True)
 
     def _check_sumo_warmup_params(self):
         """

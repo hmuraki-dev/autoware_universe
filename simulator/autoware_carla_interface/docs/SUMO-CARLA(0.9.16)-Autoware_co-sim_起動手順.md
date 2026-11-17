@@ -393,7 +393,7 @@ ros2 launch autoware_launch e2e_simulator.launch.xml \
   sensor_model:=carla_sensor_kit \
   use_sumo:=true \
   sumo_gui:=true \
-  sumo_cfg_file:=/home/divp/autoware.1.9.0/src/universe/autoware_universe/simulator/autoware_carla_interface/sumo/examples/Town10HD.sumocfg \
+  sumo_cfg_file:=Town10HD.sumocfg \
   tls_manager:=sumo \
   traffic_light.publish:=true \
   sync_vehicle_lights:=true \
@@ -409,7 +409,8 @@ ros2 launch autoware_launch e2e_simulator.launch.xml \
 - 起動ログの`[CARLA Interface] Map Path: '.../Town10HD_Opt' -> Loading CARLA Map: 'Town10HD_Opt'`で、読み込むマップ名を確かめられる。
 - `map_path`のフォルダ名(`Town10HD_Opt`)が、2.2.1でCARLAに読み込んだマップと同じであること。
   `map_path:=$HOME/autoware_map/Town10HD`のままにすると、ブリッジが`Town10HD`というマップを読み込もうとするが、0.9.16_jpにはない(3.1.2)。
-- `sumo_cfg_file`は、このリポジトリの`sumo/examples/Town10HD.sumocfg`(0.9.15と同じ。3.1.3)。
+- `sumo_cfg_file:=Town10HD.sumocfg`は、このリポジトリの`sumo/examples/Town10HD.sumocfg`(インストール先の`share/autoware_carla_interface/sumo/examples/`)を指す(0.9.15と同じ。3.1.3)。
+  `--symlink-install`でビルドしていれば、`sumo/examples/`のファイルを書き換えてもビルドし直さなくてよい。ファイルを足したときと、`--symlink-install`なしのときはビルドし直す。
 - `sumo_warmup_time`は`60`にする。Town10HDのSUMOのルートは0〜199秒に計200台だけなので、`600`にするとEGOのスポーン時には車がいなくなっている。
 - スポーン地点は信号954の手前(3.5.1の「Town10HD」)。
 - 起動ログに、SUMOの車両のブループリントをどう選ぶかが1行出る(3.6)。
@@ -423,7 +424,7 @@ ros2 launch autoware_launch e2e_simulator.launch.xml \
 | `vehicle_model` | 車両モデル | `sample_vehicle` | Launch既定値 |
 | `sensor_model` | センサキット | `carla_sensor_kit` | Launch既定値 |
 | `use_sumo` | SUMO連携 | `true` | `false` |
-| `sumo_cfg_file` | SUMO設定 | `...Town10HD.sumocfg` | なし |
+| `sumo_cfg_file` | SUMO設定。相対パス(`Town01.sumocfg`など)は、インストール先の`share/autoware_carla_interface/sumo/examples/`(ソースの`sumo/examples/`)から数える。絶対パスはそのまま使う。見つからなければ起動時に`Error: invalid parameters: sumo_cfg_file ... not found`で止まる。起動ログに`SUMO config: <使ったパス>`が出る | `Town10HD.sumocfg` | なし |
 | `sumo_carla_variants` | SUMOの車両に割り当てるCARLAのブループリントの表。`auto`は`sumo_integration/data/carla_variants_sumo_<.sumocfgの名前を小文字>.yaml`があれば使い、なければ今までの選び方。`legacy_vtypes`は今までの選び方(vTypeのIDのブループリント、なければ`vtypes.json`から乱数)。ファイル名を渡すと、その表を使う(相対パスは`sumo_integration/data/`から)。3.6参照 | `auto` | `auto` |
 | `sumo_gui` | GUI表示 | `true` | `false(ヘッドレス)` |
 | `sumo_host` | TraCIホスト | `localhost` | `localhost` |

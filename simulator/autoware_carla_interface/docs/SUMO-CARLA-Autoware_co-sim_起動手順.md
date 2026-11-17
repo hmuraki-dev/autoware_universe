@@ -300,7 +300,7 @@ ros2 launch autoware_launch e2e_simulator.launch.xml \
   sensor_model:=carla_sensor_kit \
   use_sumo:=true \
   sumo_gui:=true \
-  sumo_cfg_file:=/home/divp/autoware.1.9.0/src/universe/autoware_universe/simulator/autoware_carla_interface/sumo/examples/Town01.sumocfg \
+  sumo_cfg_file:=Town01.sumocfg \
   tls_manager:=sumo \
   traffic_light.publish:=true \
   sync_vehicle_lights:=true \
@@ -325,7 +325,7 @@ ros2 launch autoware_launch e2e_simulator.launch.xml \
   sensor_model:=carla_sensor_kit \
   use_sumo:=true \
   sumo_gui:=true \
-  sumo_cfg_file:=/home/divp/autoware.1.9.0/src/universe/autoware_universe/simulator/autoware_carla_interface/sumo/examples/Town05.sumocfg \
+  sumo_cfg_file:=Town05.sumocfg \
   tls_manager:=sumo \
   traffic_light.publish:=true \
   sync_vehicle_lights:=true \
@@ -346,7 +346,7 @@ ros2 launch autoware_launch e2e_simulator.launch.xml \
   sensor_model:=carla_sensor_kit \
   use_sumo:=true \
   sumo_gui:=true \
-  sumo_cfg_file:=/home/divp/autoware.1.9.0/src/universe/autoware_universe/simulator/autoware_carla_interface/sumo/examples/Town10HD.sumocfg \
+  sumo_cfg_file:=Town10HD.sumocfg \
   tls_manager:=sumo \
   traffic_light.publish:=true \
   sync_vehicle_lights:=true \
@@ -372,7 +372,7 @@ ros2 launch autoware_launch e2e_simulator.launch.xml \
 | `vehicle_model` | 車両モデル | `sample_vehicle` | Launch既定値 |
 | `sensor_model` | センサキット | `carla_sensor_kit` | Launch既定値 |
 | `use_sumo` | SUMO連携 | `true` | `false` |
-| `sumo_cfg_file` | SUMO設定 | `...Town01.sumocfg` | なし |
+| `sumo_cfg_file` | SUMO設定。相対パス(`Town01.sumocfg`など)は、インストール先の`share/autoware_carla_interface/sumo/examples/`(ソースの`sumo/examples/`)から数える。絶対パスはそのまま使う。見つからなければ起動時に`Error: invalid parameters: sumo_cfg_file ... not found`で止まる。起動ログに`SUMO config: <使ったパス>`が出る | `Town01.sumocfg` | なし |
 | `sumo_carla_variants` | SUMOの車両に割り当てるCARLAのブループリントの表。`auto`は`sumo_integration/data/carla_variants_sumo_<.sumocfgの名前を小文字>.yaml`があれば使い、なければ今までの選び方。`legacy_vtypes`は今までの選び方(vTypeのIDのブループリント、なければ`vtypes.json`から乱数)。ファイル名を渡すと、その表を使う(相対パスは`sumo_integration/data/`から)。3.5参照 | `auto` | `auto` |
 | `sumo_gui` | GUI表示 | `true` | `false(ヘッドレス)` |
 | `sumo_host` | TraCIホスト | `localhost` | `localhost` |
@@ -403,6 +403,9 @@ ros2 launch autoware_launch e2e_simulator.launch.xml \
   2.2.2の信号入りの地図(`lanelet2_map_with_tl.osm`)を先に作っておくこと。使わない場合はこの2行を省く(カメラによる信号認識になる)。
 - ウォームアップを使わない場合は、`sumo_warmup_time`と`spawn_point`の行を省く(EGOは起動直後にランダムな位置へスポーンされる)。
   `spawn_point`だけを指定すれば、ウォームアップなしで固定位置にスポーンする。スポーン地点の選び方は3.1.2。
+- `sumo_cfg_file:=Town01.sumocfg`は、このリポジトリの`sumo/examples/Town01.sumocfg`(インストール先の`share/autoware_carla_interface/sumo/examples/`)を指す。
+  `--symlink-install`でビルドしていれば、`sumo/examples/`のファイルを書き換えてもビルドし直さなくてよい。ファイルを足したときと、`--symlink-install`なしのときはビルドし直す。
+  別の場所の`.sumocfg`を使うときは、絶対パスで渡す。
 - `2>&1 | tee -i /tmp/autoware_carla.log`はログ保存用(3.1.3のgrepで使う)。不要なら省いてよい。
   `-i`を付けないと、Ctrl+Cで`tee`も終了し、それ以降(終了処理)のログが残らない。
 

@@ -437,6 +437,11 @@ SUMO vType, the same way as in the Vissim co-simulation (design and results:
   previous choice (the vType id as blueprint, else a random one of `sumo_integration/data/vtypes.json`).
   `sumo_carla_variants:=legacy_vtypes` forces the previous choice; on Town01 buses then have no CARLA
   body at all (no `bus` class in `vtypes.json`), so use it only for comparisons.
+- The SUMO scenarios (Town01, Town05, Town10HD: `.sumocfg`, net, routes) are kept in this package under
+  `sumo/examples/` and installed to `share/autoware_carla_interface/sumo/examples/`. A relative
+  `sumo_cfg_file` (e.g. `sumo_cfg_file:=Town01.sumocfg`) is taken from there; an absolute path is used
+  as it is. A missing file stops the bridge at startup with `Error: invalid parameters: sumo_cfg_file ...
+  not found`, and the startup log shows the file used (`SUMO config: <path>`).
 - On Town01 with Autoware, the bus seen from the side is perceived 12.1-13.1 m long and the truck
   7.56 m (models: 12.14 m, 7.93 m), close to the Vissim results; with `legacy_vtypes` both trucks
   and tractors are a single 5.11 m `carlacola`.

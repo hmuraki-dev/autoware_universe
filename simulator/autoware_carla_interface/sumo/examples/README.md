@@ -2,6 +2,10 @@
 
 co-simの`sumo_cfg_file`に渡すSUMOのシナリオ。CARLAの版(0.9.15・0.9.16)によらず、ここのものを使う。
 
+`share/autoware_carla_interface/sumo/examples/`にインストールされ(`CMakeLists.txt`)、`sumo_cfg_file:=Town01.sumocfg`のような相対パスは、
+そこから数える(`src/autoware_carla_interface/sumo_integration/sumo_scenarios.py`)。`--symlink-install`ならインストール先はここへのリンクなので、
+ファイルを書き換えてもビルドし直さなくてよい(ファイルを足したときはビルドし直す)。
+
 | ファイル | 内容 |
 | --- | --- |
 | `Town01.sumocfg`・`net/Town01.net.xml`・`rou/Town01.rou.xml` | Town01。CARLAの信号36個に対応する信号、Vissimと同じ車両グループ |

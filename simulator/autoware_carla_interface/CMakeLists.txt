@@ -72,6 +72,10 @@ install(DIRECTORY calibration_maps/ DESTINATION share/${PROJECT_NAME}/)
 # Install resource files
 install(DIRECTORY resource DESTINATION share/${PROJECT_NAME}/)
 
+# Install SUMO scenarios (.sumocfg / net / routes). A relative sumo_cfg_file is resolved
+# against share/${PROJECT_NAME}/sumo/examples (sumo_integration/sumo_scenarios.py)
+install(DIRECTORY sumo DESTINATION share/${PROJECT_NAME}/)
+
 # Skip flake8 test to avoid conflict with black formatter in pre-commit
 if(BUILD_TESTING)
   set(ament_cmake_flake8_FOUND FALSE)
