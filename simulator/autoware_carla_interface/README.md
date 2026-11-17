@@ -438,7 +438,7 @@ SUMO vType, the same way as in the Vissim co-simulation (design and results:
   `sumo_carla_variants:=legacy_vtypes` forces the previous choice; on Town01 buses then have no CARLA
   body at all (no `bus` class in `vtypes.json`), so use it only for comparisons.
 - The SUMO scenarios (Town01, Town05, Town10HD: `.sumocfg`, net, routes) are kept in this package under
-  `sumo/examples/` and installed to `share/autoware_carla_interface/sumo/examples/`. A relative
+  `sumo/` and installed to `share/autoware_carla_interface/sumo/`. A relative
   `sumo_cfg_file` (e.g. `sumo_cfg_file:=Town01.sumocfg`) is taken from there; an absolute path is used
   as it is. A missing file stops the bridge at startup with `Error: invalid parameters: sumo_cfg_file ...
   not found`, and the startup log shows the file used (`SUMO config: <path>`).

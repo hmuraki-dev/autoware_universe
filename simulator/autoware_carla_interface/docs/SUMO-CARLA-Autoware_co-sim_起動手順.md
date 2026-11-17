@@ -4,8 +4,8 @@
 Autoware環境を構築済みであること。
 環境構築については、「Autoware1.9.0環境構築ガイド_v1.0.md」を参照。
 
-SUMOのシナリオ(`.sumocfg`・net・ルート)は、このリポジトリの`simulator/autoware_carla_interface/sumo/examples/`のものを使う(1章)。
-CARLAリポジトリ(`~/CARLA`)の`Co-Simulation/Sumo/examples/`は、SUMOのnet・ルートを作る作業場所(作ったものを`sumo/examples/`へ写す)。
+SUMOのシナリオ(`.sumocfg`・net・ルート)は、このリポジトリの`simulator/autoware_carla_interface/sumo/`のものを使う(1章)。
+CARLAリポジトリ(`~/CARLA`)の`Co-Simulation/Sumo/examples/`は、SUMOのnet・ルートを作る作業場所(作ったものを`sumo/`へ写す)。
 
 
 # 1. リポジトリ
@@ -27,15 +27,15 @@ https://github.com/hmuraki-dev/autoware_universe/tree/feature/autoware-carla-int
         └── autoware_universe/      ← GitHubからcloneするリポジトリ
             └── simulator/
                 └── autoware_carla_interface/
-                    └── sumo/examples/  ← SUMOのシナリオ(.sumocfg・net/・rou/)
+                    └── sumo/  ← SUMOのシナリオ(.sumocfg・net/・rou/)
 ```
 
 `autoware_carla_interface` は独立したリポジトリではなく、`autoware_universe` リポジトリ配下のパッケージである。
 
-`sumo/examples/`には、Town01・Town05・Town10HDの`.sumocfg`・net・ルートと、それらが読む`carlavtypes.rou.xml`・`vissim_fleet_vtypes.rou.xml`・`viewsettings.xml`がある。
+`sumo/`には、Town01・Town05・Town10HDの`.sumocfg`・net・ルートと、それらが読む`carlavtypes.rou.xml`・`vissim_fleet_vtypes.rou.xml`・`viewsettings.xml`がある。
 2026-11-17に、CARLAリポジトリ(`~/CARLA`)の`main`(`4e22c5e`)の`Co-Simulation/Sumo/examples/`から写した。
 net・ルートを作り直すツール(`add_carla_tls.py`など)と、その手順書(`Co-Simulation/Sumo/docs/SUMO-CARLA_co-sim_起動手順.md`)は`~/CARLA`にある。
-`~/CARLA`で作り直したときは、`sumo/examples/`の同じ相対位置へ写す。
+`~/CARLA`で作り直したときは、`sumo/`の同じ相対位置へ写す。
 
 # 2. 起動・終了の手順
 
@@ -95,7 +95,7 @@ python3 tools/carla_tl_to_lanelet2.py ~/autoware_map/Town01/lanelet2_map.osm --s
 SUMOのnetと作った地図が、同じCARLAの信号を指しているかを確かめる。
 
 ```bash
-python3 tools/check_sumo_lanelet2_tl_ids.py sumo/examples/net/Town01.net.xml \
+python3 tools/check_sumo_lanelet2_tl_ids.py sumo/net/Town01.net.xml \
     ~/autoware_map/Town01/lanelet2_map_with_tl.osm --carla-json ~/autoware_map/Town01/carla_tl.json --report-mixed
 ```
 
@@ -112,7 +112,7 @@ python3 tools/fix_lanelet2_duplicate_points.py ~/autoware_map/Town05/lanelet2_ma
 # 2回目からは--dump-jsonの代わりに--from-json。
 python3 tools/carla_tl_to_lanelet2.py ~/autoware_map/Town05/lanelet2_map.osm \
     --dump-json ~/autoware_map/Town05/carla_tl.json --stop-line-forward-offset 0 --group-id-offset 100000   # ← 生成物
-python3 tools/check_sumo_lanelet2_tl_ids.py sumo/examples/net/Town05.net.xml \
+python3 tools/check_sumo_lanelet2_tl_ids.py sumo/net/Town05.net.xml \
     ~/autoware_map/Town05/lanelet2_map_with_tl.osm --carla-json ~/autoware_map/Town05/carla_tl.json \
     --report-mixed --group-id-offset 100000
 ```
@@ -129,7 +129,7 @@ python3 tools/fix_lanelet2_duplicate_points.py ~/autoware_map/Town10HD/lanelet2_
     ~/autoware_map/Town10HD/lanelet2_map.osm
 python3 tools/carla_tl_to_lanelet2.py ~/autoware_map/Town10HD/lanelet2_map.osm \
     --dump-json ~/autoware_map/Town10HD/carla_tl.json --stop-line-forward-offset 0 --group-id-offset 100000   # ← 生成物
-python3 tools/check_sumo_lanelet2_tl_ids.py sumo/examples/net/Town10HD.net.xml \
+python3 tools/check_sumo_lanelet2_tl_ids.py sumo/net/Town10HD.net.xml \
     ~/autoware_map/Town10HD/lanelet2_map_with_tl.osm --carla-json ~/autoware_map/Town10HD/carla_tl.json \
     --report-mixed --group-id-offset 100000
 ```
@@ -148,7 +148,7 @@ SUMOの車両1台ごとに、どのCARLAのブループリントを使うかを�
   | 変えたもの | 実行する手順 |
   | --- | --- |
   | SUMOの車両の設定(`Town01.sumocfg`の`route-files`の各ファイル。vType・車両グループ・flow) | (2)(3) |
-  | Vissimの車両の設定に合わせて、SUMOのvTypeを作り直したとき(CARLAリポジトリの`Co-Simulation/Sumo/docs/SUMO-CARLA_co-sim_起動手順.md`の「Town01の車両の構成」。作ったものを`sumo/examples/`へ写す) | (2)(3) |
+  | Vissimの車両の設定に合わせて、SUMOのvTypeを作り直したとき(CARLAリポジトリの`Co-Simulation/Sumo/docs/SUMO-CARLA_co-sim_起動手順.md`の「Town01の車両の構成」。作ったものを`sumo/`へ写す) | (2)(3) |
   | 割り当ての規則(`src/autoware_carla_interface/data/carla_fleet/carla_variant_rules.yaml`) | (2)(3) |
   | CARLAの版(ブループリントの形が変わりうる) | (1)(2)(3) |
 
@@ -206,7 +206,7 @@ co-simで使う`.sumocfg`(2.4.1の`sumo_cfg_file`)をそのまま入力にする
 ```bash
 cd ~/autoware.1.9.0/src/universe/autoware_universe/simulator/autoware_carla_interface
 python3 tools/carla_fleet/build_carla_variants.py \
-    --sumocfg sumo/examples/Town01.sumocfg \
+    --sumocfg sumo/Town01.sumocfg \
     --geometry src/autoware_carla_interface/data/carla_fleet/mesh_measurements_carla0.9.15.json \
     --rules src/autoware_carla_interface/data/carla_fleet/carla_variant_rules.yaml \
     --out src/autoware_carla_interface/sumo_integration/data/carla_variants_sumo_town01.yaml   # ← 生成物
@@ -216,7 +216,7 @@ python3 tools/carla_fleet/build_carla_variants.py \
 > `src/autoware_carla_interface/sumo_integration/data/carla_variants_sumo_town01.yaml`
 
 - 表には、`.sumocfg`のパスと、`route-files`の各ファイルのsha256が記録される。ブリッジは起動時にこのsha256を照合するので、どの版の`.rou.xml`から作った表かは、これで決まる。
-- 表には、`.sumocfg`のパスを、表のあるフォルダからの相対パスで記録する(`../../../../sumo/examples/Town01.sumocfg`)。置き場所の違うPCでも、同じ表になる。
+- 表には、`.sumocfg`のパスを、表のあるフォルダからの相対パスで記録する(`../../../../sumo/Town01.sumocfg`)。置き場所の違うPCでも、同じ表になる。
 - 出力先のファイル名は`carla_variants_sumo_<.sumocfgの名前を小文字>.yaml`にする。ブリッジは既定(`sumo_carla_variants:=auto`)で、この名前の表を探す(3.5)。
 - `.sumocfg`・規則・外形のどれも変えていなければ、作り直しても割り当ては変わらない(`generated_at`の記録だけが変わる)。
 
@@ -372,7 +372,7 @@ ros2 launch autoware_launch e2e_simulator.launch.xml \
 | `vehicle_model` | 車両モデル | `sample_vehicle` | Launch既定値 |
 | `sensor_model` | センサキット | `carla_sensor_kit` | Launch既定値 |
 | `use_sumo` | SUMO連携 | `true` | `false` |
-| `sumo_cfg_file` | SUMO設定。相対パス(`Town01.sumocfg`など)は、インストール先の`share/autoware_carla_interface/sumo/examples/`(ソースの`sumo/examples/`)から数える。絶対パスはそのまま使う。見つからなければ起動時に`Error: invalid parameters: sumo_cfg_file ... not found`で止まる。起動ログに`SUMO config: <使ったパス>`が出る | `Town01.sumocfg` | なし |
+| `sumo_cfg_file` | SUMO設定。相対パス(`Town01.sumocfg`など)は、インストール先の`share/autoware_carla_interface/sumo/`(ソースの`sumo/`)から数える。絶対パスはそのまま使う。見つからなければ起動時に`Error: invalid parameters: sumo_cfg_file ... not found`で止まる。起動ログに`SUMO config: <使ったパス>`が出る | `Town01.sumocfg` | なし |
 | `sumo_carla_variants` | SUMOの車両に割り当てるCARLAのブループリントの表。`auto`は`sumo_integration/data/carla_variants_sumo_<.sumocfgの名前を小文字>.yaml`があれば使い、なければ今までの選び方。`legacy_vtypes`は今までの選び方(vTypeのIDのブループリント、なければ`vtypes.json`から乱数)。ファイル名を渡すと、その表を使う(相対パスは`sumo_integration/data/`から)。3.5参照 | `auto` | `auto` |
 | `sumo_gui` | GUI表示 | `true` | `false(ヘッドレス)` |
 | `sumo_host` | TraCIホスト | `localhost` | `localhost` |
@@ -403,8 +403,8 @@ ros2 launch autoware_launch e2e_simulator.launch.xml \
   2.2.2の信号入りの地図(`lanelet2_map_with_tl.osm`)を先に作っておくこと。使わない場合はこの2行を省く(カメラによる信号認識になる)。
 - ウォームアップを使わない場合は、`sumo_warmup_time`と`spawn_point`の行を省く(EGOは起動直後にランダムな位置へスポーンされる)。
   `spawn_point`だけを指定すれば、ウォームアップなしで固定位置にスポーンする。スポーン地点の選び方は3.1.2。
-- `sumo_cfg_file:=Town01.sumocfg`は、このリポジトリの`sumo/examples/Town01.sumocfg`(インストール先の`share/autoware_carla_interface/sumo/examples/`)を指す。
-  `--symlink-install`でビルドしていれば、`sumo/examples/`のファイルを書き換えてもビルドし直さなくてよい。ファイルを足したときと、`--symlink-install`なしのときはビルドし直す。
+- `sumo_cfg_file:=Town01.sumocfg`は、このリポジトリの`sumo/Town01.sumocfg`(インストール先の`share/autoware_carla_interface/sumo/`)を指す。
+  `--symlink-install`でビルドしていれば、`sumo/`のファイルを書き換えてもビルドし直さなくてよい。ファイルを足したときと、`--symlink-install`なしのときはビルドし直す。
   別の場所の`.sumocfg`を使うときは、絶対パスで渡す。
 - `2>&1 | tee -i /tmp/autoware_carla.log`はログ保存用(3.1.3のgrepで使う)。不要なら省いてよい。
   `-i`を付けないと、Ctrl+Cで`tee`も終了し、それ以降(終了処理)のログが残らない。
@@ -617,7 +617,7 @@ CARLAが管理している信号の状態(赤・黄・青)を、カメラ画像�
 ブリッジ(`autoware_carla_interface`)から`/perception/traffic_light_recognition/traffic_signals`へ
 毎tick publishする機能。設計と確認結果は`docs/CARLA_Autoware_信号状態publish_実装計画_v1.0.md`を参照。
 `tls_manager:=sumo`のときは、SUMOが決めた信号状態がCARLA経由でそのままAutowareに届く。
-Town01のSUMOのnet(`sumo/examples/net/Town01.net.xml`)には、CARLAの信号36個すべてに対応する信号がある
+Town01のSUMOのnet(`sumo/net/Town01.net.xml`)には、CARLAの信号36個すべてに対応する信号がある
 (設置方法と信号パターンは`~/CARLA/Co-Simulation/Sumo/docs/SUMO-CARLA_co-sim_起動手順.md`の「SUMOの信号(Town01)」を参照)。
 Town05のnetにも、CARLAの信号54個すべてに対応する信号がある(同「SUMOの信号(Town05)」、地図は3.4.1の「Town05」)。
 Town10HDは、netとルートを作り、CARLAの信号15個すべてに対応する信号を置いた(同「SUMOの信号(Town10HD)」、地図は3.4.1の「Town10HD」)。
@@ -767,7 +767,7 @@ Vissim構成と同じ仕組み・同じ規則・同じ外形の計測結果を�
 
 ### 3.5.1 Town01の割り当て
 
-`sumo_integration/data/carla_variants_sumo_town01.yaml`(`sumo/examples/Town01.sumocfg`から作成。route-filesの中身は、CARLAリポジトリ`main`の`6a1c918`と同じ)。
+`sumo_integration/data/carla_variants_sumo_town01.yaml`(`sumo/Town01.sumocfg`から作成。route-filesの中身は、CARLAリポジトリ`main`の`6a1c918`と同じ)。
 14モデルの割り当ては、Vissim構成の`carla_variants_town01.yaml`と同じ。
 
 | SUMOのvType(Vissimのモデル) | CARLAのブループリント | 長さの差 |
@@ -801,7 +801,7 @@ Vissim構成と同じ車両の構成で比べられるように、`rou/Town01.ro
 | `D_bus` | 5% | `fusorosa` | `vissim.31.c2_standard`(12.135 × 2.55 m) |
 | `E_bike` | 10% | バイク3種 | `vissim.70.motorbike_yamaha_mt_07`(2.098 × 0.907 m) |
 
-- vTypeは`sumo/examples/vissim_fleet_vtypes.rou.xml`にあり、`Town01.sumocfg`の`route-files`は`carlavtypes.rou.xml,vissim_fleet_vtypes.rou.xml,rou/Town01.rou.xml`。
+- vTypeは`sumo/vissim_fleet_vtypes.rou.xml`にあり、`Town01.sumocfg`の`route-files`は`carlavtypes.rou.xml,vissim_fleet_vtypes.rou.xml,rou/Town01.rou.xml`。
   `carlavtypes.rou.xml`は、自車(CARLA→SUMO)のvTypeのために残している。
 - 大型車が長くなったので、SUMO単体の1時間の比較で、平均の所要時間が4〜22%延びた(乱数のシードによる)。既定のシードでは、teleportが3560秒に1件だけだった。
 - `sumo_carla_variants:=legacy_vtypes`(今までの選び方)で起動すると、vTypeの名前がブループリント名ではないので、乗用車は`vtypes.json`の14種から乱数で選ばれ、

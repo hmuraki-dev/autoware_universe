@@ -2,7 +2,7 @@
 
 co-simの`sumo_cfg_file`に渡すSUMOのシナリオ。CARLAの版(0.9.15・0.9.16)によらず、ここのものを使う。
 
-`share/autoware_carla_interface/sumo/examples/`にインストールされ(`CMakeLists.txt`)、`sumo_cfg_file:=Town01.sumocfg`のような相対パスは、
+`share/autoware_carla_interface/sumo/`にインストールされ(`CMakeLists.txt`)、`sumo_cfg_file:=Town01.sumocfg`のような相対パスは、
 そこから数える(`src/autoware_carla_interface/sumo_integration/sumo_scenarios.py`)。`--symlink-install`ならインストール先はここへのリンクなので、
 ファイルを書き換えてもビルドし直さなくてよい(ファイルを足したときはビルドし直す)。
 

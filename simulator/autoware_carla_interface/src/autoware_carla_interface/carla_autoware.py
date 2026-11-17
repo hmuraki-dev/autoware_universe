@@ -220,7 +220,7 @@ class InitializeInterface(object):
         Turn `sumo_cfg_file` into the path SUMO is started with.
 
         A relative path (e.g. `Town01.sumocfg`) is taken from the installed
-        `share/autoware_carla_interface/sumo/examples/`; an absolute path is used as it is.
+        `share/autoware_carla_interface/sumo/`; an absolute path is used as it is.
         A missing file is reported as an invalid parameter before CARLA/SUMO are touched.
         """
         if not self.use_sumo:

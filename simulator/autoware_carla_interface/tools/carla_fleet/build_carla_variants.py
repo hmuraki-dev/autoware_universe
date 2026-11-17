@@ -12,7 +12,7 @@ docs/SUMO_CARLA_Autoware_ブループリント割り当て_実装計画_v1.0.md 
         --out src/autoware_carla_interface/vissim_integration/data/carla_variants_town01.yaml
 
     python3 tools/carla_fleet/build_carla_variants.py \\
-        --sumocfg sumo/examples/Town01.sumocfg \\
+        --sumocfg sumo/Town01.sumocfg \\
         --geometry src/autoware_carla_interface/data/carla_fleet/mesh_measurements_carla0.9.15.json \\
         --rules src/autoware_carla_interface/data/carla_fleet/carla_variant_rules.yaml \\
         --out src/autoware_carla_interface/sumo_integration/data/carla_variants_sumo_town01.yaml

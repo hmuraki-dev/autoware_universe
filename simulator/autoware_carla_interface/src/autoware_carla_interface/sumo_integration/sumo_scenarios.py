@@ -2,7 +2,7 @@
 Where the `sumo_cfg_file` launch parameter points to.
 
 The SUMO scenarios of the co-simulation (`.sumocfg`, net, routes) live in this package under
-`sumo/examples/` and are installed to `share/autoware_carla_interface/sumo/examples/`
+`sumo/` and are installed to `share/autoware_carla_interface/sumo/`
 (CMakeLists.txt). A relative `sumo_cfg_file` (e.g. `Town01.sumocfg`) is taken from there, like a
 relative `sumo_carla_variants` is taken from `sumo_integration/data/`. An absolute path (or one
 starting with `~`) is used as it is.
@@ -17,11 +17,11 @@ import os
 PACKAGE_NAME = 'autoware_carla_interface'
 
 
-def examples_dir():
-    """`share/autoware_carla_interface/sumo/examples` of the installed package."""
+def scenarios_dir():
+    """`share/autoware_carla_interface/sumo/` of the installed package."""
     from ament_index_python.packages import get_package_share_directory
 
-    return os.path.join(get_package_share_directory(PACKAGE_NAME), 'sumo', 'examples')
+    return os.path.join(get_package_share_directory(PACKAGE_NAME), 'sumo')
 
 
 def resolve_sumo_cfg_file(value, base_dir=None):
@@ -30,7 +30,7 @@ def resolve_sumo_cfg_file(value, base_dir=None):
 
     - `''` stays `''` (no SUMO).
     - `~` is expanded; an absolute path is returned unchanged.
-    - A relative path is joined to `base_dir` (default: `examples_dir()`).
+    - A relative path is joined to `base_dir` (default: `scenarios_dir()`).
 
     Raises ValueError when the resulting file does not exist, naming the path that was tried, so a
     wrong name is reported before SUMO is started.
@@ -42,7 +42,7 @@ def resolve_sumo_cfg_file(value, base_dir=None):
     note = ''
     if not os.path.isabs(path):
         if base_dir is None:
-            base_dir = examples_dir()
+            base_dir = scenarios_dir()
         path = os.path.join(base_dir, path)
         note = ' (a relative sumo_cfg_file is taken from %s)' % (base_dir,)
     path = os.path.normpath(path)

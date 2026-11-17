@@ -17,7 +17,7 @@
 (Vissim 構成の test_vissim_fleet_plan.py と同じ項目を、SUMO の形で)
 
 CARLA サーバ・SUMO・ROS は使わない(carla モジュールは Transform などの値の型にだけ使う)。
-.sumocfg の route-files を照合するテストは、sumo/examples の Town01 を使う。
+.sumocfg の route-files を照合するテストは、sumo/ の Town01 を使う。
 生成物を使わないとき(vType = ブループリント)の動作は、既存の sumo_*_test.py が確かめる。
 
 Run with:
@@ -54,9 +54,9 @@ SRC = PACKAGE / 'src' / 'autoware_carla_interface'
 TOWN01 = SRC / 'sumo_integration' / 'data' / 'carla_variants_sumo_town01.yaml'
 MESH = SRC / 'data' / 'carla_fleet' / 'mesh_measurements_carla0.9.15.json'
 RULES = SRC / 'data' / 'carla_fleet' / 'carla_variant_rules.yaml'
-SUMO_EXAMPLES = PACKAGE / 'sumo' / 'examples'
-SUMOCFG = SUMO_EXAMPLES / 'Town01.sumocfg'
-needs_sumo_town01 = pytest.mark.skipif(not SUMOCFG.is_file(), reason='sumo/examples の Town01 が無い')
+SUMO_SCENARIOS = PACKAGE / 'sumo'
+SUMOCFG = SUMO_SCENARIOS / 'Town01.sumocfg'
+needs_sumo_town01 = pytest.mark.skipif(not SUMOCFG.is_file(), reason='sumo/ の Town01 が無い')
 
 FIAT = 'vissim.1.fiat_500'
 BUS = 'vissim.31.c2_standard'
@@ -90,11 +90,11 @@ def copy_variants(tmp_path, edit=None):
 
 
 def copy_sumocfg(tmp_path):
-    """sumo/examples の Town01.sumocfg と route-files を、同じ相対位置に写す。"""
+    """sumo/ の Town01.sumocfg と route-files を、同じ相対位置に写す。"""
     out = tmp_path / 'sumo'
     (out / 'rou').mkdir(parents=True)
     for name in ('Town01.sumocfg', 'carlavtypes.rou.xml', 'vissim_fleet_vtypes.rou.xml', 'rou/Town01.rou.xml'):
-        shutil.copy(SUMO_EXAMPLES / name, out / name)
+        shutil.copy(SUMO_SCENARIOS / name, out / name)
     return out / 'Town01.sumocfg'
 
 

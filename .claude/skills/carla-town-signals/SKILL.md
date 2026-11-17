@@ -16,7 +16,7 @@ CARLAの信号1つ = OpenDRIVEのlandmark ID 1つ。この**同じID**を次の2
 | -------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------- |
 | SUMOの信号ツール     | `~/CARLA/Co-Simulation/Sumo/util/add_carla_tls.py`                                                                                              |
 | SUMOのnet / ルート(作業場所) | `~/CARLA/Co-Simulation/Sumo/examples/net/<Town>.net.xml` / `examples/rou/<Town>.rou.xml`(ここで作り、下の正本へ写す)                  |
-| SUMOのシナリオ(co-simで使う正本) | `<autoware_universe>/simulator/autoware_carla_interface/sumo/examples/`(`.sumocfg`・`net/`・`rou/`・`carlavtypes.rou.xml`など。2026-11-17に`~/CARLA`から移した) |
+| SUMOのシナリオ(co-simで使う正本) | `<autoware_universe>/simulator/autoware_carla_interface/sumo/`(`.sumocfg`・`net/`・`rou/`・`carlavtypes.rou.xml`など。2026-11-17に`~/CARLA`から移した) |
 | SUMO側の手順書       | `~/CARLA/Co-Simulation/Sumo/docs/SUMO-CARLA_co-sim_起動手順.md`「SUMOの信号(Town01)」                                                           |
 | SUMO→CARLAの状態変換 | `~/CARLA/Co-Simulation/Sumo/sumo_integration/bridge_helper.py` `get_carla_traffic_light_state`                                                  |
 | Lanelet2の信号ツール | `<autoware_universe>/simulator/autoware_carla_interface/tools/carla_tl_to_lanelet2.py`(テスト: `test/test_carla_tl_to_lanelet2.py`)             |
@@ -84,13 +84,13 @@ SUMO_HOME=$(python3 -c 'import sumo; print(sumo.SUMO_HOME)') python3 util/add_ca
 ルートは`randomTrips.py`で、既存のTownと同じく0〜199秒に計200台を作り、車種は既存のルートと同じ種類から選ぶ。`examples/<Town>.sumocfg`も作る。
 xodrには、名前がなくCARLAにアクタのない信号がある(Town10HDの955・956)。CARLAの信号の数はCARLAから読んだ数(手順1)を正とする。
 
-**co-simで使う正本へ写す**: co-simの`sumo_cfg_file`は`<autoware_universe>/simulator/autoware_carla_interface/sumo/examples/`を指す。
+**co-simで使う正本へ写す**: co-simの`sumo_cfg_file`は`<autoware_universe>/simulator/autoware_carla_interface/sumo/`を指す。
 `~/CARLA`で作った・変えたnet・ルート・`.sumocfg`(と、それが読む`carlavtypes.rou.xml`など)を、同じ相対位置に写す。
 
 ```bash
-cp ~/CARLA/Co-Simulation/Sumo/examples/net/<Town>.net.xml <autoware_universe>/simulator/autoware_carla_interface/sumo/examples/net/
-cp ~/CARLA/Co-Simulation/Sumo/examples/rou/<Town>.rou.xml <autoware_universe>/simulator/autoware_carla_interface/sumo/examples/rou/
-cp ~/CARLA/Co-Simulation/Sumo/examples/<Town>.sumocfg <autoware_universe>/simulator/autoware_carla_interface/sumo/examples/
+cp ~/CARLA/Co-Simulation/Sumo/examples/net/<Town>.net.xml <autoware_universe>/simulator/autoware_carla_interface/sumo/net/
+cp ~/CARLA/Co-Simulation/Sumo/examples/rou/<Town>.rou.xml <autoware_universe>/simulator/autoware_carla_interface/sumo/rou/
+cp ~/CARLA/Co-Simulation/Sumo/examples/<Town>.sumocfg <autoware_universe>/simulator/autoware_carla_interface/sumo/
 ```
 
 Town01のルートを変えたときは、ブループリント表(`carla_variants_sumo_town01.yaml`)も作り直す(Autoware側の手順書2.2.3)。
@@ -119,7 +119,7 @@ python3 tools/carla_tl_to_lanelet2.py ~/autoware_map/<Town>/lanelet2_map.osm \
 ```bash
 cd <autoware_universe>/simulator/autoware_carla_interface
 python3 tools/check_sumo_lanelet2_tl_ids.py \
-    sumo/examples/net/<Town>.net.xml ~/autoware_map/<Town>/lanelet2_map_with_tl.osm \
+    sumo/net/<Town>.net.xml ~/autoware_map/<Town>/lanelet2_map_with_tl.osm \
     --carla-json ~/autoware_map/<Town>/carla_tl.json --report-mixed [--group-id-offset N]
 ```
 
@@ -158,4 +158,4 @@ grep -nE "Traffic-light matching|Traffic lights|traffic-light|Different SUMO" /t
   - 2.4.1: コマンド例を変えた場合
 - **README**: Lanelet2側の引数や既定値を変えた場合。
 - **ツールを変えたとき**: `test/test_carla_tl_to_lanelet2.py`にテストを足して実行する(`python3 -m pytest test/test_carla_tl_to_lanelet2.py`)。CARLAもROSもいらない。
-- **コミット**: リポジトリごとに分ける(`~/CARLA`の作業場所と、`sumo/examples`の正本の両方)。Autoware側は`feat(autoware_carla_interface): ...`/`docs(sumo-carla-autoware co-sim): ...`の形で、日本語で書く。実機で確かめた結果は、利用者が確認した内容として、`docs(...)`のコミットに残す。
+- **コミット**: リポジトリごとに分ける(`~/CARLA`の作業場所と、`sumo/`の正本の両方)。Autoware側は`feat(autoware_carla_interface): ...`/`docs(sumo-carla-autoware co-sim): ...`の形で、日本語で書く。実機で確かめた結果は、利用者が確認した内容として、`docs(...)`のコミットに残す。
