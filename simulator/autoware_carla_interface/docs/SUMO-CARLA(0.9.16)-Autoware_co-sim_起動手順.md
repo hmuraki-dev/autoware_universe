@@ -7,7 +7,7 @@ CARLA 0.9.15(`~/CARLA/`)用の「SUMO-CARLA-Autoware_co-sim_起動手順.md」�
 | --- | --- | --- |
 | CARLAサーバー | `~/CARLA/CarlaUE4.sh` | `~/CARLA_0.9.16_jp/LinuxNoEditor/CarlaUE4.sh` |
 | `get_server_version()`の値 | `0.9.15` | `294096eb1-dirty`(独自ビルドのため、版の番号ではない) |
-| CARLAのPythonクライアント | `carla==0.9.15`(pip) | `carla==0.9.16`(pip)。**0.9.15のクライアントは0.9.16のサーバーにつなぐと落ちる**(3.1.1) |
+| CARLAのPythonクライアント | `carla==0.9.15`(`pip --user`) | `carla==0.9.16`(`~/venvs/carla0916`)。0.9.16を使うターミナルで`PYTHONPATH`の先頭に足す(2.0.1)。`pip --user`の0.9.15はそのまま。**0.9.15のクライアントは0.9.16のサーバーにつなぐと落ちる**(3.1.1) |
 | 使えるマップ | Town01〜Town07・Town10HD など | **`Town10HD_Opt`のみ**(Town01・Town05は入っていない。3.1.2) |
 | Autowareの地図フォルダ | `~/autoware_map/Town10HD` など | `~/autoware_map/Town10HD_Opt`(`Town10HD`へのシンボリックリンク。2.0.2) |
 | SUMOのシナリオ(net・ルート・`.sumocfg`) | `sumo/`(autoware_universe) | 同じ(CARLAの版によらない。3.1.3) |
@@ -60,19 +60,38 @@ CARLA関係のフォルダは次のとおり。
 
 2.0から順に実行する。
 - 2.0は、**CARLAを0.9.16に切り替えたときに1回だけ**実行する(毎回の起動では不要)。
+- 2.2・2.4の最初の`export PYTHONPATH=...`は、**0.9.16を使うターミナル(2と3)で毎回**実行する(2.0.1)。
 - 2.2.2・2.2.3は、**対象を変えたときだけ**実行する(毎回の起動では不要)。
 
 ## 2.0 【ターミナル2】CARLA 0.9.16に切り替えたときだけ行う準備
 
-### 2.0.1 CARLAのPythonクライアントを0.9.16にする
+### 2.0.1 CARLA 0.9.16のPythonクライアントを用意する
+
+0.9.15の環境(`pip --user`で入れた`carla 0.9.15`)を変えずに、0.9.16のクライアントを別の場所に入れる。
+`~/CARLA_0.9.16_jp_incoming/手順書.md`の「3. Python の環境を分ける」で作ったvenv(`~/venvs/carla0916`)を使う。作ってあれば、このコマンドは不要。
 
 ```bash
-pip3 install --user carla==0.9.16
-python3 -c "import carla; print(carla.__file__)"
-pip3 show carla | grep Version   # Version: 0.9.16 と出ること
+python3 -m venv ~/venvs/carla0916   # ← 生成物
+~/venvs/carla0916/bin/pip install carla==0.9.16
+~/venvs/carla0916/bin/python -c "import carla, importlib.metadata as m; print(m.version('carla'), carla.__file__)"   # 0.9.16 と出ること
 ```
 
-- Autowareのブリッジ(`autoware_carla_interface`)・`config.py`・`tools/`のツールは、どれもこの`carla`を使う。
+> 📄 **生成物:** CARLA 0.9.16のPythonクライアントを入れたvenv\
+> `~/venvs/carla0916`
+
+**使い方**: 0.9.16を使うターミナル(2.2のターミナル2、2.4のターミナル3)で、最初に次を実行する。venvは有効にしない(`source .../activate`はしない)。
+
+```bash
+export PYTHONPATH=$HOME/venvs/carla0916/lib/python3.10/site-packages:$PYTHONPATH
+python3 -c "import carla, importlib.metadata as m; print(m.version('carla'), carla.__file__)"   # 0.9.16 .../venvs/carla0916/... と出ること
+```
+
+- `PYTHONPATH`の先頭に足したフォルダは、`pip --user`のフォルダ(`~/.local`)より先に探される。そのため、このターミナルでは`carla`だけが0.9.16になり、
+  ほかのパッケージ(`numpy`・`traci`・`sumolib`・`rclpy`など)は今までどおり`~/.local`・システム・SUMO・ROSのものが使われる。
+  `export`しないターミナルは、今までどおり0.9.15(0.9.15版の手順書がそのまま使える)。ROSの`setup.bash`の前後どちらで`export`しても0.9.16になる。
+- **venvを有効にしない理由**: venvには`carla`しか入っていないので、有効にすると、Autowareのブリッジ(`transforms3d`・`numpy`などが要る)や表の生成ツール(`yaml`が要る)が起動できない。
+  ブリッジの起動スクリプトは`#!/usr/bin/env python3`なので、有効にしたvenvのPythonで動いてしまう。
+- 2026-11-17に、この方法で、ブリッジのモジュールが読み込めること、起動中の0.9.16のサーバーにつながること(クライアント0.9.16、日本の車6台が見える)を確かめた。
 - `~/CARLA_0.9.16_jp/LinuxNoEditor/PythonAPI/carla/dist/`にあるwheelはPython 3.12用(`cp312`)だけで、
   Autoware(ROS 2 Humble)のPython 3.10では使えない。PyPIの`carla==0.9.16`にはPython 3.10用(`cp310`)がある。
 - 0.9.15に戻すときは3.7。
@@ -109,12 +128,14 @@ cd ~/CARLA_0.9.16_jp/LinuxNoEditor
 ### 2.2.1 マップのロード
 
 ```bash
+export PYTHONPATH=$HOME/venvs/carla0916/lib/python3.10/site-packages:$PYTHONPATH   # このターミナルを0.9.16にする(2.0.1)
 cd ~/CARLA_0.9.16_jp/LinuxNoEditor/PythonAPI/util
 python3 config.py --map Town10HD_Opt
 ```
 コマンドを実行すると、CARLAで読み込まれているマップが Town10HD_Opt に切り替わる(起動直後から Town10HD_Opt のときは、そのまま)。CARLA画面が Town10HD の地図になっていることを確認する。
 
-- 読み込めるマップは、次のコマンドで確かめられる。0.9.16_jpでは`/Game/Carla/Maps/Town10HD_Opt`・`OpenDriveMap`・`EmptyMap`だけ。
+- 2.2.2・2.2.3も、この`export`をしたターミナル2で実行する。
+- 読み込めるマップは、次のコマンドで確かめられる。0.9.16_jpでは`['Town10HD_Opt', 'AnnotationColorLandscape']`が出る(2026-11-17に確認)。
 
 ```bash
 python3 -c "import carla; c = carla.Client('localhost', 2000); c.set_timeout(10); print(c.get_available_maps())"
@@ -383,6 +404,7 @@ source ~/autoware.1.9.0/install/setup.bash
 
 ```bash
 source install/setup.bash
+export PYTHONPATH=$HOME/venvs/carla0916/lib/python3.10/site-packages:$PYTHONPATH   # ブリッジを0.9.16のクライアントで動かす(2.0.1)
 export ROS_DOMAIN_ID=33
 
 ros2 launch autoware_launch e2e_simulator.launch.xml \
@@ -513,7 +535,9 @@ Ctrl+Cで止めたときに、最後に`[ERROR] [launch]: Caught exception in la
 
 - 0.9.15のクライアント(`pip`の`carla 0.9.15`)で0.9.16_jpのサーバーにつなぐと、
   `WARNING: Version mismatch detected ... Simulator API version = 294096eb1-dirty`のあと`std::bad_alloc`で落ちる(コアダンプ)。
-  そのため、2.0.1でクライアントを0.9.16にする。
+  そのため、2.0.1で0.9.16のクライアントを用意し、0.9.16を使うターミナルではそちらを使う。
+- 0.9.16のクライアント(2.0.1の方法)では、`Version mismatch`の警告は出るが(サーバーの版が`294096eb1-dirty`のため)、つながる。
+  `get_available_maps()`は`['Town10HD_Opt', 'AnnotationColorLandscape']`、`vehicle.jp.*`の6台が見えた(2026-11-17)。
 - サーバーの版(`get_server_version()`)は`294096eb1-dirty`(CARLAのgitのコミットを元にした独自ビルドのため)。`VERSION`ファイルも同じ値。
 - 配布物の`PythonAPI/carla/dist/`には`carla-0.9.16-cp312-cp312-linux_x86_64.whl`だけがある。Python 3.10用は、PyPIの`carla==0.9.16`(`cp310`)を使う。
 
@@ -837,9 +861,10 @@ EGOがスポーンしてから走り出さずに止まっていると、SUMOの�
 
 ## 3.7 CARLA 0.9.15に戻すとき
 
+0.9.15の環境は変えていないので、**`PYTHONPATH`を足していない新しいターミナル**を使えば、そのまま0.9.15になる(2.0.1)。
+
 ```bash
-pip3 install --user carla==0.9.15
-pip3 show carla | grep Version   # Version: 0.9.15 と出ること
+python3 -c "import carla, importlib.metadata as m; print(m.version('carla'))"   # 0.9.15 と出ること(新しいターミナルで)
 ```
 
 - サーバーは`~/CARLA/CarlaUE4.sh`で起動し、手順は0.9.15版の「SUMO-CARLA-Autoware_co-sim_起動手順.md」に従う
