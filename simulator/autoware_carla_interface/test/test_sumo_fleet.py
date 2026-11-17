@@ -19,8 +19,8 @@
 Run with:
     python3 -m pytest test/test_sumo_fleet.py
 
-コミットした Town01 の生成物を、~/CARLA の .sumocfg から作り直して比べるテストは、~/CARLA の route-files が
-生成物に記録した sha256 と同じときだけ動く(CARLA リポジトリが main で、Town01 を変えていないとき)。
+コミットした Town01 の生成物を、sumo/examples の .sumocfg から作り直して比べるテストは、sumo/examples の route-files が
+生成物に記録した sha256 と同じときだけ動く(Town01 を変えて、表を作り直していないときは動かない)。
 """
 import importlib.util
 import os
@@ -38,7 +38,7 @@ RULES = DATA / 'carla_variant_rules.yaml'
 MESH = DATA / 'mesh_measurements_carla0.9.15.json'
 SUMO_TOWN01 = (PACKAGE / 'src' / 'autoware_carla_interface' / 'sumo_integration' / 'data'
                / 'carla_variants_sumo_town01.yaml')
-CARLA_TOWN01_SUMOCFG = Path(os.path.expanduser('~/CARLA/Co-Simulation/Sumo/examples/Town01.sumocfg'))
+CARLA_TOWN01_SUMOCFG = PACKAGE / 'sumo' / 'examples' / 'Town01.sumocfg'
 
 _spec = importlib.util.spec_from_file_location(
     'build_carla_variants', PACKAGE / 'tools' / 'carla_fleet' / 'build_carla_variants.py')
@@ -229,7 +229,7 @@ def _carla_town01_matches_shipped():
         os.path.isfile(p) and carla_fleet.digest(p) == recorded[n] for n, p in names)
 
 
-@pytest.mark.skipif(not _carla_town01_matches_shipped(), reason='~/CARLA の Town01 が生成物を作ったときと違う(または無い)')
+@pytest.mark.skipif(not _carla_town01_matches_shipped(), reason='sumo/examples の Town01 が生成物を作ったときと違う(または無い)')
 def test_town01_sumo_variants_are_what_the_generator_writes():
     shipped = carla_fleet.load_variants(SUMO_TOWN01)
     out = SUMO_TOWN01.parent / f'_rebuilt_{os.getpid()}.yaml'      # sources の相対パスが同じになる場所

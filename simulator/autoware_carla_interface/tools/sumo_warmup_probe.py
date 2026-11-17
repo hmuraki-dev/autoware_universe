@@ -20,7 +20,7 @@ Not installed with the package; run it from the source tree where SUMO runs (nee
 traci/sumolib on sys.path, i.e. SUMO_HOME):
 
     python3 tools/sumo_warmup_probe.py \
-        --sumo-cfg /home/divp/CARLA/Co-Simulation/Sumo/examples/Town01.sumocfg \
+        --sumo-cfg sumo/examples/Town01.sumocfg \
         --duration 300 --csv sumo_warmup_probe.csv
 """
 

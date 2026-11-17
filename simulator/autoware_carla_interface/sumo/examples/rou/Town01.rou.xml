@@ -1,0 +1,132 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- 車両グループ A〜E の割合と入力台数を指定してランダムに車両を発生させるサンプル。
+     vissim_fleet_vtypes.rou.xml と一緒に、この前に読み込むこと（車両グループの vType はそちらで定義）。
+     carlavtypes.rou.xml も読み込む（CARLA から SUMO へ送る自車の vType はそちらで定義）。 -->
+<routes xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:noNamespaceSchemaLocation="http://sumo.dlr.de/xsd/routes_file.xsd">
+
+    <!-- 車両グループ。中身は Vissim の Town01.inpx の 2D/3D モデルと、車両タイプ内の割合と同じ
+         (A_car=100 乗用車、B_truck=210 トラック、C_trailer=220 トレーラー(トラクター)、D_bus=300 バス、E_bike=700 バイク)。
+         Co-Simulation/Sumo/util/make_vissim_fleet_vtypes.py で書き換える。グループどうしの比率は下の flow で決まる -->
+    <vTypeDistribution id="A_car" vTypes="vissim.1.fiat_500 vissim.2.tesla_model_y vissim.3.volkswagen_golf vissim.4.mercedes_b_class vissim.5.mercedes_c_class vissim.6.skoda_superb_combi vissim.7.audi_a6_avant vissim.8.nissan_qashqai vissim.9.volkswagen_tiguan vissim.10.volkswagen_id_4" probabilities="0.06 0.05 0.18 0.11 0.14 0.05 0.11 0.07 0.18 0.05"/>
+    <vTypeDistribution id="B_truck" vTypes="vissim.23.delivery_daf_lf" probabilities="1"/>
+    <vTypeDistribution id="C_trailer" vTypes="vissim.22.semi_tractor_volvo_e" probabilities="1"/>
+    <vTypeDistribution id="D_bus" vTypes="vissim.31.c2_standard" probabilities="1"/>
+    <vTypeDistribution id="E_bike" vTypes="vissim.70.motorbike_yamaha_mt_07" probabilities="1"/>
+
+    <!-- 経路: duarouter（duaIterate）の均衡配分結果をもとに OD ごとに 4 ルートへ配分 -->
+    <routeDistribution id="rd_-19.0.00_-18.0.00">  <!-- -19.0.00 → -18.0.00: duaIterate 019 の混雑時所要時間で Kirchhoff 配分（k=3.5） -->
+        <route id="rd_-19.0.00_-18.0.00_0" edges="-19.0.00 6.0.00 24.0.00 23.0.00 22.0.00 -9.0.00 -10.0.00 -17.0.00 -18.0.00" probability="0.3454"/>  <!-- 所要時間 137 秒 -->
+        <route id="rd_-19.0.00_-18.0.00_1" edges="-19.0.00 6.0.00 5.0.00 2.0.00 1.0.00 -16.0.00 -17.0.00 -18.0.00" probability="0.2672"/>  <!-- 所要時間 147 秒 -->
+        <route id="rd_-19.0.00_-18.0.00_2" edges="-19.0.00 6.0.00 24.0.00 23.0.00 -4.0.00 -18.0.00" probability="0.2239"/>  <!-- 所要時間 155 秒 -->
+        <route id="rd_-19.0.00_-18.0.00_3" edges="-19.0.00 6.0.00 24.0.00 23.0.00 22.0.00 21.0.00 2.0.00 1.0.00 -16.0.00 -17.0.00 -18.0.00" probability="0.1636"/>  <!-- 所要時間 170 秒 -->
+    </routeDistribution>
+    <routeDistribution id="rd_5.0.00_-18.0.00">  <!-- 5.0.00 → -18.0.00: duaIterate 019 の混雑時所要時間で Kirchhoff 配分（k=3.5） -->
+        <route id="rd_5.0.00_-18.0.00_0" edges="5.0.00 2.0.00 1.0.00 -16.0.00 -17.0.00 -18.0.00" probability="0.4447"/>  <!-- 所要時間 88 秒 -->
+        <route id="rd_5.0.00_-18.0.00_1" edges="5.0.00 -21.0.00 -9.0.00 -10.0.00 -17.0.00 -18.0.00" probability="0.2323"/>  <!-- 所要時間 106 秒 -->
+        <route id="rd_5.0.00_-18.0.00_2" edges="5.0.00 2.0.00 -25.0.00 -10.0.00 -17.0.00 -18.0.00" probability="0.2311"/>  <!-- 所要時間 106 秒 -->
+        <route id="rd_5.0.00_-18.0.00_3" edges="5.0.00 -21.0.00 -22.0.00 -4.0.00 -18.0.00" probability="0.0919"/>  <!-- 所要時間 138 秒 -->
+    </routeDistribution>
+
+    <!-- 追加経路: 自由流所要時間で求めた k 最短路を OD ごとに Kirchhoff 配分 -->
+    <routeDistribution id="rd_-9.0.00_-19.0.00">  <!-- -9.0.00 → -19.0.00: 自由流所要時間の k 最短路(同じ交差点を2回通らない、最短の1.6倍まで) (k=3) を Kirchhoff 配分（k=3.5） -->
+        <route id="rd_-9.0.00_-19.0.00_0" edges="-9.0.00 -10.0.00 -17.0.00 -18.0.00 -19.0.00" probability="0.5413"/>  <!-- 自由流所要時間 29 秒 -->
+        <route id="rd_-9.0.00_-19.0.00_1" edges="-9.0.00 25.0.00 1.0.00 -16.0.00 -17.0.00 -18.0.00 -19.0.00" probability="0.3089"/>  <!-- 自由流所要時間 34 秒 -->
+        <route id="rd_-9.0.00_-19.0.00_2" edges="-9.0.00 25.0.00 -2.0.00 -21.0.00 -22.0.00 -4.0.00 -18.0.00 -19.0.00" probability="0.1498"/>  <!-- 自由流所要時間 42 秒 -->
+    </routeDistribution>
+    <routeDistribution id="rd_19.0.00_-25.0.00">  <!-- 19.0.00 → -25.0.00: 自由流所要時間の k 最短路(同じ交差点を2回通らない、最短の1.6倍まで) (k=3) を Kirchhoff 配分（k=3.5） -->
+        <route id="rd_19.0.00_-25.0.00_0" edges="19.0.00 18.0.00 17.0.00 16.0.00 -1.0.00 -25.0.00" probability="0.5261"/>  <!-- 自由流所要時間 31 秒 -->
+        <route id="rd_19.0.00_-25.0.00_1" edges="19.0.00 18.0.00 4.0.00 22.0.00 21.0.00 2.0.00 -25.0.00" probability="0.2389"/>  <!-- 自由流所要時間 39 秒 -->
+        <route id="rd_19.0.00_-25.0.00_2" edges="19.0.00 12.0.00 23.0.00 22.0.00 21.0.00 2.0.00 -25.0.00" probability="0.2350"/>  <!-- 自由流所要時間 39 秒 -->
+    </routeDistribution>
+    <routeDistribution id="rd_2.0.00_18.0.00">  <!-- 2.0.00 → 18.0.00: 自由流所要時間の k 最短路(同じ交差点を2回通らない、最短の1.6倍まで) (k=2) を Kirchhoff 配分（k=3.5） -->
+        <route id="rd_2.0.00_18.0.00_0" edges="2.0.00 -25.0.00 9.0.00 -22.0.00 -23.0.00 -12.0.00 18.0.00" probability="0.8232"/>  <!-- 自由流所要時間 35 秒 -->
+        <route id="rd_2.0.00_18.0.00_1" edges="2.0.00 1.0.00 0.0.00 -14.0.00 7.0.00 19.0.00 18.0.00" probability="0.1768"/>  <!-- 自由流所要時間 54 秒 -->
+    </routeDistribution>
+    <routeDistribution id="rd_10.0.00_-24.0.00">  <!-- 10.0.00 → -24.0.00: 自由流所要時間の k 最短路(同じ交差点を2回通らない、最短の1.6倍まで) (k=2) を Kirchhoff 配分（k=3.5） -->
+        <route id="rd_10.0.00_-24.0.00_0" edges="10.0.00 9.0.00 -22.0.00 -23.0.00 -24.0.00" probability="0.6347"/>  <!-- 自由流所要時間 29 秒 -->
+        <route id="rd_10.0.00_-24.0.00_1" edges="10.0.00 25.0.00 -2.0.00 -21.0.00 -22.0.00 -23.0.00 -24.0.00" probability="0.3653"/>  <!-- 自由流所要時間 34 秒 -->
+    </routeDistribution>
+    <routeDistribution id="rd_-18.0.00_-2.0.00">  <!-- -18.0.00 → -2.0.00: 自由流所要時間の k 最短路(同じ交差点を2回通らない、最短の1.6倍まで) (k=2) を Kirchhoff 配分（k=3.5） -->
+        <route id="rd_-18.0.00_-2.0.00_0" edges="-18.0.00 12.0.00 23.0.00 22.0.00 -9.0.00 25.0.00 -2.0.00" probability="0.7854"/>  <!-- 自由流所要時間 35 秒 -->
+        <route id="rd_-18.0.00_-2.0.00_1" edges="-18.0.00 -19.0.00 6.0.00 24.0.00 23.0.00 22.0.00 -9.0.00 25.0.00 -2.0.00" probability="0.2146"/>  <!-- 自由流所要時間 50 秒 -->
+    </routeDistribution>
+    <routeDistribution id="rd_-8.0.00_10.0.00">  <!-- -8.0.00 → 10.0.00: 自由流所要時間の k 最短路(同じ交差点を2回通らない、最短の1.6倍まで) (k=1) を Kirchhoff 配分（k=3.5） -->
+        <route id="rd_-8.0.00_10.0.00_0" edges="-8.0.00 -16.0.00 10.0.00" probability="1.0000"/>  <!-- 自由流所要時間 40 秒 -->
+    </routeDistribution>
+    <routeDistribution id="rd_-1.0.00_-3.0.00">  <!-- -1.0.00 → -3.0.00: 自由流所要時間の k 最短路(同じ交差点を2回通らない、最短の1.6倍まで) (k=2) を Kirchhoff 配分（k=3.5） -->
+        <route id="rd_-1.0.00_-3.0.00_0" edges="-1.0.00 -2.0.00 -3.0.00" probability="0.5861"/>  <!-- 自由流所要時間 50 秒 -->
+        <route id="rd_-1.0.00_-3.0.00_1" edges="-1.0.00 -25.0.00 9.0.00 21.0.00 -3.0.00" probability="0.4139"/>  <!-- 自由流所要時間 55 秒 -->
+    </routeDistribution>
+    <routeDistribution id="rd_24.0.00_-10.0.00">  <!-- 24.0.00 → -10.0.00: 自由流所要時間の k 最短路(同じ交差点を2回通らない、最短の1.6倍まで) (k=2) を Kirchhoff 配分（k=3.5） -->
+        <route id="rd_24.0.00_-10.0.00_0" edges="24.0.00 23.0.00 22.0.00 -9.0.00 -10.0.00" probability="0.6347"/>  <!-- 自由流所要時間 29 秒 -->
+        <route id="rd_24.0.00_-10.0.00_1" edges="24.0.00 23.0.00 22.0.00 21.0.00 2.0.00 -25.0.00 -10.0.00" probability="0.3653"/>  <!-- 自由流所要時間 34 秒 -->
+    </routeDistribution>
+
+    <!-- 入力1: -19.0.00 → -18.0.00
+         入力台数 300 台/h(多様な経路の入力3〜10を追加したときに 600 から減らした)、グループ割合 A:B:C:D:E = 70:10:5:5:10
+         グループごとの flow の台数 = 入力台数 × 割合。period="exp(台/h ÷ 3600)" でランダム（ポアソン）発生 -->
+    <flow id="in1_A" type="A_car"     route="rd_-19.0.00_-18.0.00" begin="0" end="3600" period="exp(0.058333)" departLane="best" departSpeed="desired"/> <!-- 210 台/h -->
+    <flow id="in1_B" type="B_truck"   route="rd_-19.0.00_-18.0.00" begin="0" end="3600" period="exp(0.008333)" departLane="best" departSpeed="desired"/> <!--  30 台/h -->
+    <flow id="in1_C" type="C_trailer" route="rd_-19.0.00_-18.0.00" begin="0" end="3600" period="exp(0.004167)" departLane="best" departSpeed="desired"/> <!--  15 台/h -->
+    <flow id="in1_D" type="D_bus"     route="rd_-19.0.00_-18.0.00" begin="0" end="3600" period="exp(0.004167)" departLane="best" departSpeed="desired"/> <!--  15 台/h -->
+    <flow id="in1_E" type="E_bike"    route="rd_-19.0.00_-18.0.00" begin="0" end="3600" period="exp(0.008333)" departLane="best" departSpeed="desired"/> <!--  30 台/h -->
+
+    <!-- 入力2: 5.0.00 → -18.0.00
+         入力台数 300 台/h(多様な経路の入力3〜10を追加したときに 600 から減らした)、グループ割合 A:B:C:D:E = 70:10:5:5:10 -->
+    <flow id="in2_A" type="A_car"     route="rd_5.0.00_-18.0.00" begin="0" end="3600" period="exp(0.058333)" departLane="best" departSpeed="desired"/> <!-- 210 台/h -->
+    <flow id="in2_B" type="B_truck"   route="rd_5.0.00_-18.0.00" begin="0" end="3600" period="exp(0.008333)" departLane="best" departSpeed="desired"/> <!--  30 台/h -->
+    <flow id="in2_C" type="C_trailer" route="rd_5.0.00_-18.0.00" begin="0" end="3600" period="exp(0.004167)" departLane="best" departSpeed="desired"/> <!--  15 台/h -->
+    <flow id="in2_D" type="D_bus"     route="rd_5.0.00_-18.0.00" begin="0" end="3600" period="exp(0.004167)" departLane="best" departSpeed="desired"/> <!--  15 台/h -->
+    <flow id="in2_E" type="E_bike"    route="rd_5.0.00_-18.0.00" begin="0" end="3600" period="exp(0.008333)" departLane="best" departSpeed="desired"/> <!--  30 台/h -->
+
+    <!-- 入力3〜10: 多様な経路の車両(各 OD 40 台/h、グループ割合 A:B:C:D:E = 70:10:5:5:10)
+         OD は Town01 のほぼ全道路を通るように選んだ。-6.0.00(EGO を待ちなしでスポーンする #36 の車線)は通らない -->
+    <!-- 入力3: -9.0.00 → -19.0.00 -->
+    <flow id="in3_A" type="A_car"     route="rd_-9.0.00_-19.0.00" begin="0" end="3600" period="exp(0.007778)" departLane="best" departSpeed="desired"/> <!--  28 台/h -->
+    <flow id="in3_B" type="B_truck"   route="rd_-9.0.00_-19.0.00" begin="0" end="3600" period="exp(0.001111)" departLane="best" departSpeed="desired"/> <!--   4 台/h -->
+    <flow id="in3_C" type="C_trailer" route="rd_-9.0.00_-19.0.00" begin="0" end="3600" period="exp(0.000556)" departLane="best" departSpeed="desired"/> <!--   2 台/h -->
+    <flow id="in3_D" type="D_bus"     route="rd_-9.0.00_-19.0.00" begin="0" end="3600" period="exp(0.000556)" departLane="best" departSpeed="desired"/> <!--   2 台/h -->
+    <flow id="in3_E" type="E_bike"    route="rd_-9.0.00_-19.0.00" begin="0" end="3600" period="exp(0.001111)" departLane="best" departSpeed="desired"/> <!--   4 台/h -->
+    <!-- 入力4: 19.0.00 → -25.0.00 -->
+    <flow id="in4_A" type="A_car"     route="rd_19.0.00_-25.0.00" begin="0" end="3600" period="exp(0.007778)" departLane="best" departSpeed="desired"/> <!--  28 台/h -->
+    <flow id="in4_B" type="B_truck"   route="rd_19.0.00_-25.0.00" begin="0" end="3600" period="exp(0.001111)" departLane="best" departSpeed="desired"/> <!--   4 台/h -->
+    <flow id="in4_C" type="C_trailer" route="rd_19.0.00_-25.0.00" begin="0" end="3600" period="exp(0.000556)" departLane="best" departSpeed="desired"/> <!--   2 台/h -->
+    <flow id="in4_D" type="D_bus"     route="rd_19.0.00_-25.0.00" begin="0" end="3600" period="exp(0.000556)" departLane="best" departSpeed="desired"/> <!--   2 台/h -->
+    <flow id="in4_E" type="E_bike"    route="rd_19.0.00_-25.0.00" begin="0" end="3600" period="exp(0.001111)" departLane="best" departSpeed="desired"/> <!--   4 台/h -->
+    <!-- 入力5: 2.0.00 → 18.0.00 -->
+    <flow id="in5_A" type="A_car"     route="rd_2.0.00_18.0.00" begin="0" end="3600" period="exp(0.007778)" departLane="best" departSpeed="desired"/> <!--  28 台/h -->
+    <flow id="in5_B" type="B_truck"   route="rd_2.0.00_18.0.00" begin="0" end="3600" period="exp(0.001111)" departLane="best" departSpeed="desired"/> <!--   4 台/h -->
+    <flow id="in5_C" type="C_trailer" route="rd_2.0.00_18.0.00" begin="0" end="3600" period="exp(0.000556)" departLane="best" departSpeed="desired"/> <!--   2 台/h -->
+    <flow id="in5_D" type="D_bus"     route="rd_2.0.00_18.0.00" begin="0" end="3600" period="exp(0.000556)" departLane="best" departSpeed="desired"/> <!--   2 台/h -->
+    <flow id="in5_E" type="E_bike"    route="rd_2.0.00_18.0.00" begin="0" end="3600" period="exp(0.001111)" departLane="best" departSpeed="desired"/> <!--   4 台/h -->
+    <!-- 入力6: 10.0.00 → -24.0.00 -->
+    <flow id="in6_A" type="A_car"     route="rd_10.0.00_-24.0.00" begin="0" end="3600" period="exp(0.007778)" departLane="best" departSpeed="desired"/> <!--  28 台/h -->
+    <flow id="in6_B" type="B_truck"   route="rd_10.0.00_-24.0.00" begin="0" end="3600" period="exp(0.001111)" departLane="best" departSpeed="desired"/> <!--   4 台/h -->
+    <flow id="in6_C" type="C_trailer" route="rd_10.0.00_-24.0.00" begin="0" end="3600" period="exp(0.000556)" departLane="best" departSpeed="desired"/> <!--   2 台/h -->
+    <flow id="in6_D" type="D_bus"     route="rd_10.0.00_-24.0.00" begin="0" end="3600" period="exp(0.000556)" departLane="best" departSpeed="desired"/> <!--   2 台/h -->
+    <flow id="in6_E" type="E_bike"    route="rd_10.0.00_-24.0.00" begin="0" end="3600" period="exp(0.001111)" departLane="best" departSpeed="desired"/> <!--   4 台/h -->
+    <!-- 入力7: -18.0.00 → -2.0.00 -->
+    <flow id="in7_A" type="A_car"     route="rd_-18.0.00_-2.0.00" begin="0" end="3600" period="exp(0.007778)" departLane="best" departSpeed="desired"/> <!--  28 台/h -->
+    <flow id="in7_B" type="B_truck"   route="rd_-18.0.00_-2.0.00" begin="0" end="3600" period="exp(0.001111)" departLane="best" departSpeed="desired"/> <!--   4 台/h -->
+    <flow id="in7_C" type="C_trailer" route="rd_-18.0.00_-2.0.00" begin="0" end="3600" period="exp(0.000556)" departLane="best" departSpeed="desired"/> <!--   2 台/h -->
+    <flow id="in7_D" type="D_bus"     route="rd_-18.0.00_-2.0.00" begin="0" end="3600" period="exp(0.000556)" departLane="best" departSpeed="desired"/> <!--   2 台/h -->
+    <flow id="in7_E" type="E_bike"    route="rd_-18.0.00_-2.0.00" begin="0" end="3600" period="exp(0.001111)" departLane="best" departSpeed="desired"/> <!--   4 台/h -->
+    <!-- 入力8: -8.0.00 → 10.0.00 -->
+    <flow id="in8_A" type="A_car"     route="rd_-8.0.00_10.0.00" begin="0" end="3600" period="exp(0.007778)" departLane="best" departSpeed="desired"/> <!--  28 台/h -->
+    <flow id="in8_B" type="B_truck"   route="rd_-8.0.00_10.0.00" begin="0" end="3600" period="exp(0.001111)" departLane="best" departSpeed="desired"/> <!--   4 台/h -->
+    <flow id="in8_C" type="C_trailer" route="rd_-8.0.00_10.0.00" begin="0" end="3600" period="exp(0.000556)" departLane="best" departSpeed="desired"/> <!--   2 台/h -->
+    <flow id="in8_D" type="D_bus"     route="rd_-8.0.00_10.0.00" begin="0" end="3600" period="exp(0.000556)" departLane="best" departSpeed="desired"/> <!--   2 台/h -->
+    <flow id="in8_E" type="E_bike"    route="rd_-8.0.00_10.0.00" begin="0" end="3600" period="exp(0.001111)" departLane="best" departSpeed="desired"/> <!--   4 台/h -->
+    <!-- 入力9: -1.0.00 → -3.0.00 -->
+    <flow id="in9_A" type="A_car"     route="rd_-1.0.00_-3.0.00" begin="0" end="3600" period="exp(0.007778)" departLane="best" departSpeed="desired"/> <!--  28 台/h -->
+    <flow id="in9_B" type="B_truck"   route="rd_-1.0.00_-3.0.00" begin="0" end="3600" period="exp(0.001111)" departLane="best" departSpeed="desired"/> <!--   4 台/h -->
+    <flow id="in9_C" type="C_trailer" route="rd_-1.0.00_-3.0.00" begin="0" end="3600" period="exp(0.000556)" departLane="best" departSpeed="desired"/> <!--   2 台/h -->
+    <flow id="in9_D" type="D_bus"     route="rd_-1.0.00_-3.0.00" begin="0" end="3600" period="exp(0.000556)" departLane="best" departSpeed="desired"/> <!--   2 台/h -->
+    <flow id="in9_E" type="E_bike"    route="rd_-1.0.00_-3.0.00" begin="0" end="3600" period="exp(0.001111)" departLane="best" departSpeed="desired"/> <!--   4 台/h -->
+    <!-- 入力10: 24.0.00 → -10.0.00 -->
+    <flow id="in10_A" type="A_car"     route="rd_24.0.00_-10.0.00" begin="0" end="3600" period="exp(0.007778)" departLane="best" departSpeed="desired"/> <!--  28 台/h -->
+    <flow id="in10_B" type="B_truck"   route="rd_24.0.00_-10.0.00" begin="0" end="3600" period="exp(0.001111)" departLane="best" departSpeed="desired"/> <!--   4 台/h -->
+    <flow id="in10_C" type="C_trailer" route="rd_24.0.00_-10.0.00" begin="0" end="3600" period="exp(0.000556)" departLane="best" departSpeed="desired"/> <!--   2 台/h -->
+    <flow id="in10_D" type="D_bus"     route="rd_24.0.00_-10.0.00" begin="0" end="3600" period="exp(0.000556)" departLane="best" departSpeed="desired"/> <!--   2 台/h -->
+    <flow id="in10_E" type="E_bike"    route="rd_24.0.00_-10.0.00" begin="0" end="3600" period="exp(0.001111)" departLane="best" departSpeed="desired"/> <!--   4 台/h -->
+</routes>

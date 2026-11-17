@@ -1,0 +1,21 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- Vissimの2D/3Dモデルと同じ寸法のvType(生成物。手で書き換えない)。
+     作り方: Co-Simulation/Sumo/util/make_vissim_fleet_vtypes.py
+     元の .inpx: ~/CARLA feature/vissim_windows 4213552 Co-Simulation/PTV-Vissim/examples/Town01/Town01.inpx(Windows PCのものと同じ版)(sha256 2265ff82928da408fcefee6848b565b8d8e3b647ed91e1cb9154250894b50f14、2026-11-16 に生成)
+     寸法は、モデルの全セグメントを繋いだ車体全体の値(丸めない)。vClass・guiShape は車両タイプのカテゴリから。 -->
+<routes xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:noNamespaceSchemaLocation="http://sumo.dlr.de/xsd/routes_file.xsd">
+  <vType id="vissim.1.fiat_500" length="3.5608121156692505" width="1.8827282245047856" height="1.6729680758395746" vClass="passenger" guiShape="passenger"/>  <!-- 1: Car - Fiat 500 -->
+  <vType id="vissim.2.tesla_model_y" length="4.201004266738892" width="1.9104951302009736" height="1.474122367062836" vClass="passenger" guiShape="passenger"/>  <!-- 2: Car - Tesla Model Y -->
+  <vType id="vissim.3.volkswagen_golf" length="4.211" width="2.003672" height="1.475281" vClass="passenger" guiShape="passenger"/>  <!-- 3: Car - Volkswagen Golf -->
+  <vType id="vissim.4.mercedes_b_class" length="4.414452478289604" width="2.047415933872572" height="1.5499691337815062" vClass="passenger" guiShape="passenger"/>  <!-- 4: Car - Mercedes B Class -->
+  <vType id="vissim.5.mercedes_c_class" length="4.751" width="2.032" height="1.437" vClass="passenger" guiShape="passenger"/>  <!-- 5: Car - Mercedes C Class -->
+  <vType id="vissim.6.skoda_superb_combi" length="4.781409859657288" width="2.021587571035916" height="1.4726253945572623" vClass="passenger" guiShape="passenger"/>  <!-- 6: Car - Skoda Superb Combi -->
+  <vType id="vissim.7.audi_a6_avant" length="4.991444498300552" width="2.118091561158776" height="1.4774334394371307" vClass="passenger" guiShape="passenger"/>  <!-- 7: Car - Audi A6 Avant -->
+  <vType id="vissim.8.nissan_qashqai" length="4.3279078006744385" width="1.992480950515431" height="1.634231634095855" vClass="passenger" guiShape="passenger"/>  <!-- 8: SUV - Nissan Qashqai -->
+  <vType id="vissim.9.volkswagen_tiguan" length="4.500308394432068" width="2.107412715805407" height="1.6681506553892882" vClass="passenger" guiShape="passenger"/>  <!-- 9: SUV - Volkswagen Tiguan -->
+  <vType id="vissim.10.volkswagen_id_4" length="4.6" width="2.0374618346728113" height="1.6646752606028086" vClass="passenger" guiShape="passenger"/>  <!-- 10: SUV - Volkswagen ID 4 -->
+  <vType id="vissim.23.delivery_daf_lf" length="7.93" width="2.55" height="4.0" vClass="truck" guiShape="truck"/>  <!-- 23: HGV - Delivery DAF LF -->
+  <vType id="vissim.22.semi_tractor_volvo_e" length="5.96" width="2.55" height="3.6" vClass="truck" guiShape="truck"/>  <!-- 22: HGV - Semi-Tractor Volvo E -->
+  <vType id="vissim.31.c2_standard" length="12.135" width="2.55" height="3.12" vClass="bus" guiShape="bus"/>  <!-- 31: Bus - C2 Standard -->
+  <vType id="vissim.70.motorbike_yamaha_mt_07" length="2.0981955528259277" width="0.9066094325526071" height="1.8584439506629806" vClass="motorcycle" guiShape="motorcycle"/>  <!-- 70: Bike - Motorbike Yamaha MT 07 -->
+</routes>

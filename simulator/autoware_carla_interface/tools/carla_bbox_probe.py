@@ -17,7 +17,7 @@ Not installed with the package; run it on the Linux machine with CARLA running:
 
     python3 tools/carla_bbox_probe.py vehicle.toyota.prius
     python3 tools/carla_bbox_probe.py --all-from-vtypes \
-        --sumo-vtypes /home/divp/CARLA/Co-Simulation/Sumo/examples/carlavtypes.rou.xml
+        --sumo-vtypes sumo/examples/carlavtypes.rou.xml
 """
 
 import argparse
