@@ -47,6 +47,7 @@ LIBRARY_SECTIONS = (
     'vehicleTypes', 'walkingBehaviors', 'weightDistributions',
 )
 DRIVING_SIMULATOR_ATTRS = ('drivSimActive', 'drivSimPedType', 'drivSimVehType')
+NETPARA_DEFAULT_REFS = ('defRefsElevator', 'defRefsParkingLot')
 
 # 信号灯を置く車線を決めるときの許容
 LANE_MATCH_TOLERANCE_M = 1.0       # 停止位置と車線の中心の横のずれ
@@ -362,7 +363,8 @@ def check_references(root):
     """よく使う参照(番号)の先があるか。写した定義と道路網の組み合わせの確認。"""
     numbers = {tag: {child.get('no') for child in root.find(tag)} for tag in
                ('displayTypes', 'linkBehaviorTypes', 'vehicleTypes', 'model2D3DDistributions', 'speedDistributions',
-                'vehicleCompositions', 'pedestrianTypes', 'drivingBehaviors', 'areaBehaviorTypes')
+                'vehicleCompositions', 'pedestrianTypes', 'drivingBehaviors', 'areaBehaviorTypes',
+                'timeDistributions')
                if root.find(tag) is not None}
     rules = [('links/link', 'linkBehavType', 'linkBehaviorTypes'), ('links/link', 'displayType', 'displayTypes'),
              ('areas/area', 'displayType', 'displayTypes'),
@@ -371,7 +373,15 @@ def check_references(root):
               'vehicleTypes'),
              ('vehicleCompositions/vehicleComposition/vehCompRelFlows/vehicleCompositionRelativeFlow', 'desSpeedDistr',
               'speedDistributions'),
-             ('vehicleInputs/vehicleInput/timeIntVehVols/timeIntervalVehVolume', 'vehComp', 'vehicleCompositions')]
+             ('vehicleInputs/vehicleInput/timeIntVehVols/timeIntervalVehVolume', 'vehComp', 'vehicleCompositions'),
+             ('netPara/defRefsParkingLot', 'dirChgDurDist', 'timeDistributions'),
+             ('netPara/defRefsElevator', 'areaBehavTypAlight', 'areaBehaviorTypes'),
+             ('netPara/defRefsElevator', 'areaBehavTypInCab', 'areaBehaviorTypes'),
+             ('netPara/defRefsElevator', 'displTypCabCeil', 'displayTypes'),
+             ('netPara/defRefsElevator', 'displTypCabFloor', 'displayTypes'),
+             ('netPara/defRefsElevator', 'displTypCabWall', 'displayTypes'),
+             ('netPara/defRefsElevator', 'displTypDoor', 'displayTypes'),
+             ('netPara/defRefsElevator', 'displTypShaft', 'displayTypes')]
     problems = []
     for path, attr, tag in rules:
         for element in root.findall(path):
@@ -393,6 +403,16 @@ def build(road_root, template_root, net_root, rou_root, carla_lights, total_volu
     net, template_net = root.find('netPara'), template_root.find('netPara')
     for attr in DRIVING_SIMULATOR_ATTRS:
         net.set(attr, template_net.get(attr))
+    # netPara の既定値(駐車場・エレベータ)は、写した時間分布・表示タイプなどを番号で指すので、雛形のものにする
+    for tag in NETPARA_DEFAULT_REFS:
+        old, new = net.find(tag), template_net.find(tag)
+        if new is not None:
+            if old is not None:
+                index = list(net).index(old)
+                net.remove(old)
+                net.insert(index, copy.deepcopy(new))
+            else:
+                net.insert(0, copy.deepcopy(new))
     links = road_links(root)
     signals = sumo_signals(net_root)
     build_signal_controllers(root, template_root, signals)

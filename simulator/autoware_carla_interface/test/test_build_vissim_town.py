@@ -142,3 +142,8 @@ def test_committed_town10hd_signals_follow_sumo_and_carla():
     net = root.find('netPara')
     assert (net.get('drivSimActive'), net.get('drivSimVehType'), net.get('trafReg')) == ('true', '101', 'RIGHTHANDTRAFFIC')
     assert len(root.find('signalControllers')) == 5
+    # netPara の既定値が指す時間分布があること(無いと、Vissim で開いたときに
+    # 'Could not resolve reference ... DEFAULTREFERENCESPARKINGLOT' の警告が出る。2026-11-17 に発生)
+    time_distributions = {t.get('no') for t in root.find('timeDistributions')}
+    assert net.find('defRefsParkingLot').get('dirChgDurDist') in time_distributions
+    tool.check_references(root)
