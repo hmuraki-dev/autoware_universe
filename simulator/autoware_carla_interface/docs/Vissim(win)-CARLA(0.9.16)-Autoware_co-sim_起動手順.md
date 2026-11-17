@@ -228,7 +228,9 @@ python3 tools/carla_fleet/build_carla_variants.py \
 > `src/autoware_carla_interface/vissim_integration/data/carla_variants_town10hd.yaml`
 
 - `--inpx`は、Windows PCで読み込む`.inpx`と同じもの(2.2.0)。リポジトリ内のファイルなので`--inpx-ref`は要らない(表には、渡したパス`vissim/Town10HD.inpx`がそのまま記録される。`.inpx`のsha256も記録される)。
-- `Town10HD.inpx`の車両の設定はTown01.inpxと同じなので、0.9.15の外形で作ると割り当てもTown01と同じ14モデルになる(2026-11-17に確認)。0.9.16の外形では、日本の車が候補に入るので変わることがある。
+- `Town10HD.inpx`の車両は、日本の車のモデル(乗用車3・トラック1・バス2)と、トレーラー(連結車)にしてある(3.4)。モデルファイル名が`vehicle.jp.*`なので、0.9.16の外形では日本の車がそのまま候補に入る見込み。
+- **トレーラー(モデル22)は連結車なので、表に入ると起動時に`Error: CARLA blueprint assignment: variant_articulated_unsupported`で止まる**(このブリッジは連結車を扱わない。0.9.15の外形で作った表に連結車が入ること、起動時の検査がそれで止めることを確かめた。ブリッジの起動は試していない)。
+  トレーラーの割合を0にする、セミトレーラーのセグメントを外す、または`vissim_carla_variants:=legacy_vtypes`で起動する。
 
 **(3) 確認**
 
@@ -361,7 +363,7 @@ pkill -INT -f "lib/autoware_carla_interface/autoware_carla_interface --ros-args"
 ### 3.3 Vissimの車両のCARLAブループリント
 
 - 仕組みは0.9.15版の3.3と同じ(Vissimの2D/3Dモデルの寸法に最も近いブループリント。大型車は`carlacola`の重ね置き)。
-- 表は、走行中にVissimの(車種, モデルファイル)で引く。`Town10HD.inpx`の車両の設定はTown01.inpxと同じ(乗用車10モデル・トラック・トレーラー・バス・バイク)。
+- 表は、走行中にVissimの(車種, モデルファイル)で引く。`Town10HD.inpx`の車両は、日本の車のモデル(乗用車3・トラック1・バス2)、トレーラー(連結車)、バイク(3.4)。
 - 止まったとき(`Error: CARLA blueprint assignment: <code>: ...`)の直し方は、0.9.15版の3.3.2を参照。0.9.15で作った表を0.9.16で使うと`variant_mesh_carla_version_changed`になる(2.4.3)。
 
 ### 3.4 Vissimのネットワーク(Town10HD)
@@ -376,7 +378,7 @@ pkill -INT -f "lib/autoware_carla_interface/autoware_carla_interface --ros-args"
 | 信号灯 | 30個(CARLAの15信号の停止位置 × 2車線)。CARLAの信号は、SUMOの最初のフェーズで青ならSG1、赤ならSG2 |
 | 信号の対応表 | `vissim/signal_mapping_town10hd.json`: `{"1": {"1": [949, 952], "2": [950, 951]}, "2": {"1": [943, 945], "2": [944]}, "3": {"1": [954], "2": [953]}, "4": {"1": [957, 958], "2": [959]}, "5": {"1": [961, 962], "2": [960]}}` |
 | 車両入力 | 19か所、合計600台/h(SUMOの出発地点の割合で分けたもの)。経路の指定はない(Town01.inpxと同じ) |
-| 車両設定 | Town01.inpxと同じ(自車はEGO・車両タイプ101、ドライブシミュレータ有効) |
+| 車両設定 | 車両タイプ・車両構成はTown01.inpxと同じ(自車はEGO・車両タイプ101、ドライブシミュレータ有効)。2D/3Dモデル分布は、日本の車(Toyota Alphard・NOAH・JPN Taxi、ISUZU GIGA・Erga・GALA)と連結車のトレーラーに直してある(2026-11-17、利用者。`vissim/README.md`の2.1.1) |
 | Vissimでの確認 | 開いたとき・RUNを止めたときとも、エラー・警告なし。RUNで信号が切り替わる(2026-11-17、利用者が確認) |
 
 **Town10HDで使えない、0.9.15版のツール**:
