@@ -23011,9 +23011,6 @@
 				<model2D3DSegment axleFront="1.44" axleRear="5.21" file3D="#3dmodels#Vehicles\Road\HGV - Semi-Tractor Volvo E (2019).u3dm" height="3.6" jointFront="1.44" jointRear="4.41" length="5.96" motionAnim="" partWOutPassFront="0" partWOutPassRear="0" scale="1" shaftLen="1.44" width="2.55" yawAngle="0">
 					<posRel xOffset="0" yOffset="0" zOffset="0"/>
 				</model2D3DSegment>
-				<model2D3DSegment axleFront="2.05" axleRear="9.6" file3D="#3dmodels#Vehicles\Road\HGV - Semi-Trailer Box 3-axles.u3dm" height="4.01" jointFront="2.05" jointRear="13.8" length="14.138" motionAnim="" partWOutPassFront="0" partWOutPassRear="0" scale="1" shaftLen="0" width="2.3" yawAngle="0">
-					<posRel xOffset="0" yOffset="0" zOffset="0"/>
-				</model2D3DSegment>
 			</model2D3DSegs>
 		</model2D3D>
 		<model2D3D name="HGV - Delivery DAF LF" no="23">
