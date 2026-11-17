@@ -106,5 +106,7 @@ python3 -m pytest test/test_build_vissim_town.py
 ## 2.4 Vissimでの確認
 
 - 2026-11-17に、Windows PCのVissim 2026で`Town10HD.inpx`を開き、エラーなく読み込めること、RUNで信号が切り替わることを確かめた(利用者が確認)。
-  そのとき出た警告2件(駐車場の既定値の参照、カーブの速度制限)は、ツールを直して出ないようにした(直した版をVissimで開いての確認はまだ)。
+  そのとき出た警告2件(駐車場の既定値の参照、カーブの速度制限)は、ツールを直して出ないようにした。
+  直した版(コミット`f82a6b31b`)も同じ日に確かめた: 開いたとき・RUNを止めたときとも、エラー・警告なし(利用者が確認)。
+- co-sim(Vissim-CARLA、Vissim-CARLA-Autoware)で動かす確認はまだ。
 - Vissimで実行したあとに保存すると、`drivSimActive`が`false`に戻ることがある。co-simで使う前に確かめる。
