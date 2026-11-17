@@ -114,8 +114,30 @@ def test_town10hd_is_what_the_tool_writes(tmp_path):
                       '--sumo-net', str(SUMO / 'net' / 'Town10HD.net.xml'),
                       '--sumo-rou', str(SUMO / 'rou' / 'Town10HD.rou.xml'),
                       '--carla-json', str(CARLA_JSON), '--out', str(out), '--signal-mapping-out', str(mapping)]) == 0
-    assert out.read_bytes() == (VISSIM / 'Town10HD.inpx').read_bytes()
+    # コミットした Town10HD.inpx は、ツールのあとに Vissim で車両の設定(2D/3D モデル分布など)を直して保存したもの
+    # (vissim/README.md の 2.1.1)。書式も Vissim のものになっているので、要素の中身で比べ、手で直した要素は除く
+    built, committed = ET.parse(out).getroot(), ET.parse(VISSIM / 'Town10HD.inpx').getroot()
+    assert [c.tag for c in built] == [c.tag for c in committed]
+    for tag in [c.tag for c in built]:
+        if tag in HAND_EDITED_SECTIONS:
+            continue
+        assert canonical(built.find(tag)) == canonical(committed.find(tag)), tag
     assert json.loads(mapping.read_text()) == json.loads((VISSIM / 'signal_mapping_town10hd.json').read_text())
+
+
+# ツールのあとに Vissim で直した要素(vissim/README.md の 2.1.1)
+HAND_EDITED_SECTIONS = {'colorDistributions', 'model2D3DDistributions', 'models2D3D', 'vehicleClasses', 'vehicleTypes'}
+
+
+def canonical(element):
+    """書式(属性の順、空白、数値の桁)によらない形。数値に見える属性は float で比べる。"""
+    def value(text):
+        try:
+            return float(text)
+        except ValueError:
+            return text
+    return (element.tag, tuple(sorted((k, value(v)) for k, v in element.attrib.items())),
+            (element.text or '').strip(), tuple(canonical(child) for child in element))
 
 
 def test_committed_town10hd_signals_follow_sumo_and_carla():

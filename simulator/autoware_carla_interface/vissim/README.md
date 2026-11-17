@@ -98,6 +98,28 @@ python3 -m pytest test/test_build_vissim_town.py
 
 取り込みで作られた信号制御(8つ)と信号灯(2つ。CARLAにない信号955・956のもの)は消した。
 
+## 2.1.1 ツールのあとにVissimで直したもの(2026-11-17、利用者)
+
+コミットしている`Town10HD.inpx`は、ツールで作ったあとに、VissimでCARLA 0.9.16_jpの日本の車に合わせて車両の設定を直したもの。
+**ツールで作り直すと、この変更は消える**(作り直したら、Vissimで同じように直す)。
+
+| 2D/3Dモデル分布 | ツールで作ったとき(Town01と同じ) | 直したあと |
+| --- | --- | --- |
+| 10 乗用車 | Vissimの乗用車10モデル | `[CUSTOM]Car - Toyota Alphard`・`Toyota NOAH`・`Toyota JPN Taxi`(各1:1:1。モデルファイル`vehicle.jp.alphard`・`vehicle.jp.minivan`・`vehicle.jp.taxi`) |
+| 21 トラック | 23 DAF LF | `[CUSTOM]HGV - ISUZU GIGA`(`vehicle.jp.large_truck`) |
+| 22 トレーラー | 22 Volvo E(トラクター、5.96 m) | 同じモデル22に、セミトレーラー(`HGV - Semi-Trailer Box 3-axles`、14.14 m)のセグメントを足した**連結車** |
+| 30 バス | 31 C2 Standard | `[CUSTOM]Bus - ISUZU Erga`・`ISUZU GALA`(`vehicle.jp.route_bus`・`vehicle.jp.tour_bus`) |
+
+- 2D/3Dモデルを6つ(1001〜1003・1021・1031・1032)と、色の分布`1006 grey`を足し、車両タイプ100・210・220・300の色の分布を変えた。
+- 車両クラス10(乗用車)から、自車の車両タイプ101(EGO)を外した(乗用車クラスは車両タイプ100だけ)。
+- 信号・車両入力・ドライブシミュレータの設定(`drivSimActive="true"`)は、ツールで作ったときのまま。
+- Vissimで保存したので、書式(`/>`の前の空白、数値の桁)がツールの出力と違う。
+- **Vissim-CARLA-Autowareで車両のブループリント表を使うときの注意**: 表に連結車(トレーラー、モデル22)が入り、2体目からが軌跡に沿う体になる。
+  Vissim構成のブリッジは連結車を扱わないので、その表で起動すると`Error: CARLA blueprint assignment: variant_articulated_unsupported`で止まる
+  (2026-11-17に、0.9.15の外形で表を作り、連結車が入ることを確かめた: 8モデル、トレーラーは`carlacola` × 4で2体目から`follows_path`。
+  ブリッジの起動時の検査(`carla_fleet.py`)がこれで止めることはコードで確かめた。実際にブリッジを起動しての確認はしていない)。
+  トレーラーの割合を0にするか、セミトレーラーのセグメントを外すか、`vissim_carla_variants:=legacy_vtypes`で起動する。
+
 ## 2.2 SUMO版との違い・注意
 
 - **信号の周期**: Vissimは94秒(青42秒・黄3秒・全赤2秒 ×2)、SUMOは90秒(青42秒・黄3秒 ×2)。
@@ -115,7 +137,7 @@ python3 -m pytest test/test_build_vissim_town.py
 
 - `Town10HD.inpx`をWindows PCへ写し、`server.py --vissim-network`に渡す。
 - `signal_mapping_town10hd.json`を、Vissimブリッジの`vissim_integration/data/signal_mapping.json`へ写す。今のブリッジは対応表を1つしか置けないので、Town01の対応表を上書きすることになる。
-- Autowareと使うときは、車両のブループリント表を`build_carla_variants.py --inpx vissim/Town10HD.inpx`で作る(車両設定がTown01と同じなので、0.9.15の外形では割り当てもTown01と同じ14モデルになる)。
+- Autowareと使うときは、車両のブループリント表を`build_carla_variants.py --inpx vissim/Town10HD.inpx`で作る(2.1.1の連結車の注意を参照)。
 
 ## 2.4 Vissimでの確認
 
