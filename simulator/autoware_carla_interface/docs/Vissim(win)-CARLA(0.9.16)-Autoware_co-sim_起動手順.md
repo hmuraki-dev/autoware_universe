@@ -7,7 +7,7 @@ CARLA 0.9.15(`~/CARLA/`)用の「Vissim(win)-CARLA-Autoware_co-sim_起動手順.
 | --- | --- | --- |
 | CARLAサーバー | `~/CARLA/CarlaUE4.sh` | `~/CARLA_0.9.16_jp/LinuxNoEditor/CarlaUE4.sh` |
 | `get_server_version()`の値 | `0.9.15` | `294096eb1-dirty`(独自ビルドのため、版の番号ではない) |
-| CARLAのPythonクライアント | `carla==0.9.15`(`~/carla310_env`、`pip --user`) | `carla==0.9.16`(`pip --user`)。**0.9.15のクライアントは0.9.16のサーバーにつなぐと落ちる**(3.1.1) |
+| CARLAのPythonクライアント | `carla==0.9.15`(`pip --user`。`~/carla310_env`にも0.9.15) | `carla==0.9.16`(`~/venvs/carla0916`)。0.9.16を使うターミナルで`PYTHONPATH`の先頭に足す(2.0.1)。`pip --user`の0.9.15はそのまま。**0.9.15のクライアントは0.9.16のサーバーにつなぐと落ちる**(3.1.1) |
 | マップ | Town01 | **Town10HD(`Town10HD_Opt`)**。0.9.16_jpに入っているマップはこれだけ(3.1.2) |
 | Autowareの地図フォルダ | `~/autoware_map/Town01` | `~/autoware_map/Town10HD_Opt`(`Town10HD`へのシンボリックリンク。2.0.2) |
 | Vissimのネットワーク | `Town01.inpx`(CARLAリポジトリ) | `Town10HD.inpx`(このリポジトリの`vissim/`。3.4) |
@@ -65,21 +65,40 @@ CARLA関係のフォルダは次のとおり。
 
 2.0から順に実行する。
 - 2.0は、**CARLAを0.9.16に切り替えたときに1回だけ**実行する(毎回の起動では不要)。
+- 2.4・2.6の最初の`export PYTHONPATH=...`は、**0.9.16を使うターミナル(2と3)で毎回**実行する(2.0.1)。
 - 2.2.0・2.4.2・2.4.3は、**対象を変えたときだけ**実行する(毎回の起動では不要)。
 
 ### 2.0 【Linux側/ターミナル2】CARLA 0.9.16に切り替えたときだけ行う準備
 
-#### 2.0.1 CARLAのPythonクライアントを0.9.16にする
+#### 2.0.1 CARLA 0.9.16のPythonクライアントを用意する
+
+0.9.15の環境(`pip --user`で入れた`carla 0.9.15`)を変えずに、0.9.16のクライアントを別の場所に入れる。
+`~/CARLA_0.9.16_jp_incoming/手順書.md`の「3. Python の環境を分ける」で作ったvenv(`~/venvs/carla0916`)を使う。作ってあれば、このコマンドは不要。
 
 ```bash
-pip3 install --user carla==0.9.16
-pip3 show carla | grep Version   # Version: 0.9.16 と出ること
+python3 -m venv ~/venvs/carla0916   # ← 生成物
+~/venvs/carla0916/bin/pip install carla==0.9.16
+~/venvs/carla0916/bin/python -c "import carla, importlib.metadata as m; print(m.version('carla'), carla.__file__)"   # 0.9.16 と出ること
 ```
 
-- Autowareのブリッジ(`autoware_carla_interface`)・`config.py`・`tools/`のツールは、どれもこの`carla`を使う。
-- **`~/carla310_env`は使わない**。中の`carla`は0.9.15で、0.9.16のサーバーにつなぐと落ちる(3.1.1)。0.9.15版の2.4.1は`carla310_env`で`config.py`を実行しているが、この手順書では使わない。
+> 📄 **生成物:** CARLA 0.9.16のPythonクライアントを入れたvenv\
+> `~/venvs/carla0916`
+
+**使い方**: 0.9.16を使うターミナル(2.4のターミナル2、2.6のターミナル3)で、最初に次を実行する。venvは有効にしない(`source .../activate`はしない)。
+
+```bash
+export PYTHONPATH=$HOME/venvs/carla0916/lib/python3.10/site-packages:$PYTHONPATH
+python3 -c "import carla, importlib.metadata as m; print(m.version('carla'), carla.__file__)"   # 0.9.16 .../venvs/carla0916/... と出ること
+```
+
+- `PYTHONPATH`の先頭に足したフォルダは、`pip --user`のフォルダ(`~/.local`)より先に探される。そのため、このターミナルでは`carla`だけが0.9.16になり、
+  ほかのパッケージ(`numpy`・`transforms3d`・`pyzmq`・`msgpack`・`rclpy`など)は今までどおり`~/.local`・システム・ROSのものが使われる。
+  `export`しないターミナルは、今までどおり0.9.15(0.9.15版の手順書がそのまま使える)。
+- **venvを有効にしない理由**: venvには`carla`しか入っていないので、有効にすると、Autowareのブリッジ(`transforms3d`・`numpy`・`pyzmq`・`msgpack`が要る)や
+  表の生成ツール(`yaml`が要る)が起動できない(0.9.15版の手順書の`carla310_env`の注意と同じ)。ブリッジの起動スクリプトは`#!/usr/bin/env python3`なので、有効にしたvenvのPythonで動いてしまう。
+- 2026-11-17に、この方法で、ブリッジのモジュールが読み込めること、起動中の0.9.16のサーバーにつながること(クライアント0.9.16、日本の車6台が見える)を確かめた。
+- **`~/carla310_env`は使わない**。中の`carla`は0.9.15で、0.9.16のサーバーにつなぐと落ちる(3.1.1)。
 - `~/CARLA_0.9.16_jp/LinuxNoEditor/PythonAPI/carla/dist/`のwheelはPython 3.12用(`cp312`)だけで、Python 3.10では使えない。PyPIの`carla==0.9.16`にはPython 3.10用がある。
-- 0.9.15に戻すときは3.5。
 
 #### 2.0.2 Autowareの地図フォルダ`Town10HD_Opt`を作る
 
@@ -157,11 +176,13 @@ cd ~/CARLA_0.9.16_jp/LinuxNoEditor
 #### 2.4.1 CARLAで使用するマップの設定
 
 ```bash
+export PYTHONPATH=$HOME/venvs/carla0916/lib/python3.10/site-packages:$PYTHONPATH   # このターミナルを0.9.16にする(2.0.1)
 cd ~/CARLA_0.9.16_jp/LinuxNoEditor/PythonAPI/util
 python3 config.py --map Town10HD_Opt
 ```
 
-- `carla310_env`は有効にしない(2.0.1)。有効になっていたら`deactivate`してから実行する。
+- 2.4.2・2.4.3も、この`export`をしたターミナル2で実行する。
+- venv(`~/venvs/carla0916`・`~/carla310_env`)は有効にしない(2.0.1)。有効になっていたら`deactivate`してから実行する。
 - CARLAは起動直後から`Town10HD_Opt`を読み込んでいる。ほかのマップ(`OpenDriveMap`など)にしたときに、このコマンドで戻す。
 
 #### 2.4.2 信号の対応表をTown10HD用にする
@@ -257,6 +278,7 @@ source ~/autoware.1.9.0/install/setup.bash
 #### 2.6.1 起動コマンド
 
 ```bash
+export PYTHONPATH=$HOME/venvs/carla0916/lib/python3.10/site-packages:$PYTHONPATH   # ブリッジを0.9.16のクライアントで動かす(2.0.1)
 export ROS_DOMAIN_ID=33
 
 ros2 launch autoware_launch e2e_simulator.launch.xml \
@@ -323,6 +345,8 @@ pkill -INT -f "lib/autoware_carla_interface/autoware_carla_interface --ros-args"
 #### 3.1.1 Pythonクライアント
 
 - 0.9.15のクライアントで0.9.16_jpのサーバーにつなぐと、`WARNING: Version mismatch detected ... Simulator API version = 294096eb1-dirty`のあと`std::bad_alloc`で落ちる(コアダンプ)。
+- 0.9.16のクライアント(2.0.1の方法)では、`Version mismatch`の警告は出るが(サーバーの版が`294096eb1-dirty`のため)、つながる。
+  `get_available_maps()`は`['Town10HD_Opt', 'AnnotationColorLandscape']`、`vehicle.jp.*`の6台が見えた(2026-11-17)。
 - サーバーの版(`get_server_version()`)は`294096eb1-dirty`。`VERSION`ファイルも同じ値。
 
 #### 3.1.2 マップ
@@ -401,8 +425,10 @@ SUMO構成で確かめた地点で、Vissimの車がこの車線を通るか、�
 
 ### 3.5 CARLA 0.9.15(Town01)に戻すとき
 
+0.9.15の環境は変えていないので、**`PYTHONPATH`を足していない新しいターミナル**を使えば、そのまま0.9.15になる(2.0.1)。
+
 ```bash
-pip3 install --user carla==0.9.15
+python3 -c "import carla, importlib.metadata as m; print(m.version('carla'))"   # 0.9.15 と出ること(新しいターミナルで)
 cd ~/autoware.1.9.0/src/universe/autoware_universe/simulator/autoware_carla_interface
 git checkout src/autoware_carla_interface/vissim_integration/data/signal_mapping.json   # Town01の対応表に戻す
 git status --short src/autoware_carla_interface/vissim_integration/data/                 # 何も出ないこと(表を足した場合は ?? が出る)
