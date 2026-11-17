@@ -126,7 +126,8 @@ def test_town10hd_is_what_the_tool_writes(tmp_path):
 
 
 # ツールのあとに Vissim で直した要素(vissim/README.md の 2.1.1)
-HAND_EDITED_SECTIONS = {'colorDistributions', 'model2D3DDistributions', 'models2D3D', 'vehicleClasses', 'vehicleTypes'}
+HAND_EDITED_SECTIONS = {'colorDistributions', 'model2D3DDistributions', 'models2D3D', 'vehicleClasses', 'vehicleCompositions',
+                        'vehicleTypes'}
 
 
 def canonical(element):

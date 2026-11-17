@@ -24208,10 +24208,10 @@
 	<vehicleCompositions>
 		<vehicleComposition name="Default" no="1">
 			<vehCompRelFlows>
-				<vehicleCompositionRelativeFlow desSpeedDistr="30" relFlow="0.6" vehType="100"/>
+				<vehicleCompositionRelativeFlow desSpeedDistr="30" relFlow="0.5" vehType="100"/>
 				<vehicleCompositionRelativeFlow desSpeedDistr="30" relFlow="0.1" vehType="210"/>
 				<vehicleCompositionRelativeFlow desSpeedDistr="30" relFlow="0.1" vehType="220"/>
-				<vehicleCompositionRelativeFlow desSpeedDistr="30" relFlow="0.1" vehType="300"/>
+				<vehicleCompositionRelativeFlow desSpeedDistr="30" relFlow="0.2" vehType="300"/>
 				<vehicleCompositionRelativeFlow desSpeedDistr="30" relFlow="0.1" vehType="700"/>
 			</vehCompRelFlows>
 		</vehicleComposition>
