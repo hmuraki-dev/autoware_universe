@@ -10,7 +10,7 @@ CARLA 0.9.15(`~/CARLA/`)用の「SUMO-CARLA-Autoware_co-sim_起動手順.md」�
 | CARLAのPythonクライアント | `carla==0.9.15`(pip) | `carla==0.9.16`(pip)。**0.9.15のクライアントは0.9.16のサーバーにつなぐと落ちる**(3.1.1) |
 | 使えるマップ | Town01〜Town07・Town10HD など | **`Town10HD_Opt`のみ**(Town01・Town05は入っていない。3.1.2) |
 | Autowareの地図フォルダ | `~/autoware_map/Town10HD` など | `~/autoware_map/Town10HD_Opt`(`Town10HD`へのシンボリックリンク。2.0.2) |
-| SUMOのシナリオ(net・ルート・`.sumocfg`) | `~/CARLA/Co-Simulation/Sumo/examples/` | `~/CARLA_0.9.16_jp/LinuxNoEditor/Co-Simulation/Sumo/examples/`(Town10HDの分を`~/CARLA`から写した。3.1.3) |
+| SUMOのシナリオ(net・ルート・`.sumocfg`) | `sumo/examples/`(autoware_universe) | 同じ(CARLAの版によらない。3.1.3) |
 | 車両 | CARLA標準 | CARLA標準 + 日本の車6台(`vehicle.jp.*`。3.1.4) |
 
 # 0. 前提条件
@@ -19,13 +19,7 @@ Autoware環境を構築済みであること。
 
 CARLA 0.9.16を`~/CARLA_0.9.16_jp/LinuxNoEditor/`に展開済みであること(受け渡し用のアーカイブは`~/CARLA_0.9.16_jp_incoming/`)。
 
-SUMOのシナリオは、`~/CARLA_0.9.16_jp/LinuxNoEditor/Co-Simulation/Sumo/examples/`のものを使う。
-Town10HDのファイル(`Town10HD.sumocfg`・`net/Town10HD.net.xml`・`rou/Town10HD.rou.xml`・`carlavtypes.rou.xml`)は、
-CARLA 0.9.15のリポジトリ(`~/CARLA`)の`main`から写したもの(3.1.3)。`~/CARLA_0.9.16_jp`のgitで管理している。
-
-```bash
-git -C ~/CARLA_0.9.16_jp status --short   # 何も出ないこと(examplesを書き換えていない)
-```
+SUMOのシナリオ(`.sumocfg`・net・ルート)は、このリポジトリの`simulator/autoware_carla_interface/sumo/examples/`のものを使う(0.9.15と同じ。3.1.3)。
 
 
 # 1. リポジトリ
@@ -47,6 +41,7 @@ https://github.com/hmuraki-dev/autoware_universe/tree/feature/autoware-carla-int
         └── autoware_universe/      ← GitHubからcloneするリポジトリ
             └── simulator/
                 └── autoware_carla_interface/
+                    └── sumo/examples/  ← SUMOのシナリオ(.sumocfg・net/・rou/)
 ```
 
 `autoware_carla_interface` は独立したリポジトリではなく、`autoware_universe` リポジトリ配下のパッケージである。
@@ -56,9 +51,9 @@ CARLA関係のフォルダは次のとおり。
 ```text
 ~/
 ├── CARLA_0.9.16_jp/
-│   └── LinuxNoEditor/          ← CARLA 0.9.16のサーバー(CarlaUE4.sh)・PythonAPI・SUMOのシナリオ(Co-Simulation/Sumo/examples/)
+│   └── LinuxNoEditor/          ← CARLA 0.9.16のサーバー(CarlaUE4.sh)・PythonAPI
 ├── CARLA_0.9.16_jp_incoming/   ← 受け渡し用のアーカイブと、日本の車の確認ツール
-└── CARLA/                      ← CARLA 0.9.15のリポジトリ。Town10HDのSUMOのシナリオの写し元
+└── CARLA/                      ← CARLA 0.9.15のリポジトリ。SUMOのnet・ルートを作るツールと、その手順書
 ```
 
 # 2. 起動・終了の手順
@@ -139,7 +134,7 @@ CARLAの信号状態をAutowareへ直接通知する(2.4.1の`traffic_light.publ
 
 ```bash
 cd ~/autoware.1.9.0/src/universe/autoware_universe/simulator/autoware_carla_interface
-python3 tools/check_sumo_lanelet2_tl_ids.py ~/CARLA_0.9.16_jp/LinuxNoEditor/Co-Simulation/Sumo/examples/net/Town10HD.net.xml \
+python3 tools/check_sumo_lanelet2_tl_ids.py sumo/examples/net/Town10HD.net.xml \
     ~/autoware_map/Town10HD_Opt/lanelet2_map_with_tl.osm --carla-json ~/autoware_map/Town10HD_Opt/carla_tl.json \
     --report-mixed --group-id-offset 100000
 ```
@@ -157,7 +152,7 @@ cd ~/autoware.1.9.0/src/universe/autoware_universe/simulator/autoware_carla_inte
 cp -n ~/autoware_map/Town10HD/carla_tl.json ~/autoware_map/Town10HD/carla_tl_carla0.9.15.json
 python3 tools/carla_tl_to_lanelet2.py ~/autoware_map/Town10HD_Opt/lanelet2_map.osm \
     --dump-json ~/autoware_map/Town10HD_Opt/carla_tl.json --stop-line-forward-offset 0 --group-id-offset 100000 --force   # ← 生成物
-python3 tools/check_sumo_lanelet2_tl_ids.py ~/CARLA_0.9.16_jp/LinuxNoEditor/Co-Simulation/Sumo/examples/net/Town10HD.net.xml \
+python3 tools/check_sumo_lanelet2_tl_ids.py sumo/examples/net/Town10HD.net.xml \
     ~/autoware_map/Town10HD_Opt/lanelet2_map_with_tl.osm --carla-json ~/autoware_map/Town10HD_Opt/carla_tl.json \
     --report-mixed --group-id-offset 100000
 ```
@@ -241,7 +236,7 @@ co-simで使う`.sumocfg`(2.4.1の`sumo_cfg_file`)をそのまま入力にする
 ```bash
 cd ~/autoware.1.9.0/src/universe/autoware_universe/simulator/autoware_carla_interface
 python3 tools/carla_fleet/build_carla_variants.py \
-    --sumocfg ~/CARLA_0.9.16_jp/LinuxNoEditor/Co-Simulation/Sumo/examples/<Town>.sumocfg \
+    --sumocfg "$PWD"/sumo/examples/<Town>.sumocfg \
     --geometry src/autoware_carla_interface/data/carla_fleet/mesh_measurements_carla<版>.json \
     --rules src/autoware_carla_interface/data/carla_fleet/carla_variant_rules.yaml \
     --out src/autoware_carla_interface/sumo_integration/data/carla_variants_sumo_<townを小文字>.yaml   # ← 生成物
@@ -250,6 +245,7 @@ python3 tools/carla_fleet/build_carla_variants.py \
 > 📄 **生成物:** SUMO車両-ブループリント割り当て一覧\
 > `src/autoware_carla_interface/sumo_integration/data/carla_variants_sumo_<townを小文字>.yaml`
 
+- `--sumocfg`は`"$PWD"/sumo/examples/...`の絶対パスで渡す(表に記録されるパス)。
 - `<Town>`は、2.4.1の`sumo_cfg_file`の`.sumocfg`の名前(`Town10HD`など)。`<townを小文字>`は、その小文字(`town10hd`)。
   この名前にしないと、ブリッジが表を見つけない(今までの選び方で動く)。
 - `<版>`は、(1)で付けた名前(`0.9.16_jp`)。
@@ -259,7 +255,7 @@ python3 tools/carla_fleet/build_carla_variants.py \
 ```bash
 cd ~/autoware.1.9.0/src/universe/autoware_universe/simulator/autoware_carla_interface
 python3 tools/carla_fleet/build_carla_variants.py \
-    --sumocfg ~/CARLA_0.9.16_jp/LinuxNoEditor/Co-Simulation/Sumo/examples/Town10HD.sumocfg \
+    --sumocfg "$PWD"/sumo/examples/Town10HD.sumocfg \
     --geometry src/autoware_carla_interface/data/carla_fleet/mesh_measurements_carla0.9.16_jp.json \
     --rules src/autoware_carla_interface/data/carla_fleet/carla_variant_rules.yaml \
     --out src/autoware_carla_interface/sumo_integration/data/carla_variants_sumo_town10hd.yaml   # ← 生成物
@@ -279,7 +275,7 @@ python3 tools/carla_fleet/build_carla_variants.py \
 ```bash
 cd ~/autoware.1.9.0/src/universe/autoware_universe/simulator/autoware_carla_interface
 python3 tools/carla_fleet/build_carla_variants.py \
-    --sumocfg ~/CARLA/Co-Simulation/Sumo/examples/Town01.sumocfg \
+    --sumocfg "$PWD"/sumo/examples/Town01.sumocfg \
     --geometry src/autoware_carla_interface/data/carla_fleet/mesh_measurements_carla0.9.16_jp.json \
     --rules src/autoware_carla_interface/data/carla_fleet/carla_variant_rules.yaml \
     --out src/autoware_carla_interface/sumo_integration/data/carla_variants_sumo_town01.yaml   # ← 生成物
@@ -289,7 +285,6 @@ python3 tools/carla_fleet/build_carla_variants.py \
 > `src/autoware_carla_interface/sumo_integration/data/carla_variants_sumo_town01.yaml`
 
 - 表は0.9.15用のものを上書きする。0.9.15に戻すときは、`git checkout`で0.9.15用の表に戻す(3.7)。
-- Town01は`~/CARLA`の`.sumocfg`を使う。0.9.16_jpの`examples`のTown01はCARLA公式のままで、信号・車両グループ(`vissim_fleet_vtypes.rou.xml`)が入っていない(3.1.3)。
 
 共通:
 - 割り当てられないモデルがあると、`[build_carla_variants] 止めた: variant_model_empty: ...`と出て、ファイルを書かない。
@@ -398,7 +393,7 @@ ros2 launch autoware_launch e2e_simulator.launch.xml \
   sensor_model:=carla_sensor_kit \
   use_sumo:=true \
   sumo_gui:=true \
-  sumo_cfg_file:=/home/divp/CARLA_0.9.16_jp/LinuxNoEditor/Co-Simulation/Sumo/examples/Town10HD.sumocfg \
+  sumo_cfg_file:=/home/divp/autoware.1.9.0/src/universe/autoware_universe/simulator/autoware_carla_interface/sumo/examples/Town10HD.sumocfg \
   tls_manager:=sumo \
   traffic_light.publish:=true \
   sync_vehicle_lights:=true \
@@ -409,12 +404,12 @@ ros2 launch autoware_launch e2e_simulator.launch.xml \
   2>&1 | tee -i /tmp/autoware_carla.log
 ```
 
-0.9.15版のTown10HDの起動コマンドとの違いは、`map_path`(`Town10HD` → `Town10HD_Opt`)と`sumo_cfg_file`(`~/CARLA` → `~/CARLA_0.9.16_jp/LinuxNoEditor`)の2行。
+0.9.15版のTown10HDの起動コマンドとの違いは`map_path`の1行だけ(`Town10HD` → `Town10HD_Opt`)。
 
 - 起動ログの`[CARLA Interface] Map Path: '.../Town10HD_Opt' -> Loading CARLA Map: 'Town10HD_Opt'`で、読み込むマップ名を確かめられる。
 - `map_path`のフォルダ名(`Town10HD_Opt`)が、2.2.1でCARLAに読み込んだマップと同じであること。
   `map_path:=$HOME/autoware_map/Town10HD`のままにすると、ブリッジが`Town10HD`というマップを読み込もうとするが、0.9.16_jpにはない(3.1.2)。
-- `sumo_cfg_file`は、0.9.16_jpの`examples`の`Town10HD.sumocfg`(`~/CARLA`から写したもの。中身は同じ。3.1.3)。
+- `sumo_cfg_file`は、このリポジトリの`sumo/examples/Town10HD.sumocfg`(0.9.15と同じ。3.1.3)。
 - `sumo_warmup_time`は`60`にする。Town10HDのSUMOのルートは0〜199秒に計200台だけなので、`600`にするとEGOのスポーン時には車がいなくなっている。
 - スポーン地点は信号954の手前(3.5.1の「Town10HD」)。
 - 起動ログに、SUMOの車両のブループリントをどう選ぶかが1行出る(3.6)。
@@ -536,23 +531,12 @@ Ctrl+Cで止めたときに、最後に`[ERROR] [launch]: Caught exception in la
 
 ### 3.1.3 SUMOのシナリオ
 
-- `~/CARLA_0.9.16_jp/LinuxNoEditor/Co-Simulation/Sumo/`は、もとはCARLA公式の配布のまま(Town01・Town04・Town05だけ)で、
-  Town10HDのSUMOのシナリオがなかった。2026-11-17に、`~/CARLA`(0.9.15)の`main`から次の4つを写した(`~/CARLA_0.9.16_jp`のgitで管理)。
-
-  | ファイル | 内容 |
-  | --- | --- |
-  | `examples/Town10HD.sumocfg` | SUMOの設定(新規) |
-  | `examples/net/Town10HD.net.xml` | ネットワーク。全交差点にCARLAの信号と紐づけた信号がある(新規) |
-  | `examples/rou/Town10HD.rou.xml` | 交通需要。0〜199秒に計200台(新規) |
-  | `examples/carlavtypes.rou.xml` | CARLAの車の寸法のvType(上書き)。公式の版(2020年、27種)から、0.9.15のCARLAから作り直した版(2026-10-01、41種)へ |
-
-  - `carlavtypes.rou.xml`は、`Town10HD.sumocfg`が読む。公式の版のままでも動くが、27種のうち23種の寸法が少し違う(`ford.mustang`の長さ4.90 mと4.72 mなど)ので、
-    0.9.15と同じ版にした。41種の版は27種をすべて含むので、Town01・Town04・Town05の`.sumocfg`も読み込める
-    (4つの`.sumocfg`をSUMO単体で300秒動かし、エラーがないことを確かめた)。
-  - 寸法は0.9.15のCARLAのもの。0.9.16の寸法(日本の車を含む)にするには、0.9.16のクライアントで`util/create_sumo_vtypes.py`を使って作り直す(未実施)。
-- 次の変更は写していない。Town01・Town05は0.9.16_jpにマップがないため。
-  - `Town01.net.xml`・`Town05.net.xml`の信号(CARLAの信号と紐づけたもの)
-  - `vissim_fleet_vtypes.rou.xml`(Town01の車両グループ)、`util/add_carla_tls.py`など
+- co-simのSUMOのシナリオは、CARLAの版によらず、このリポジトリの`simulator/autoware_carla_interface/sumo/examples/`のものを使う
+  (2026-11-17に`~/CARLA`(0.9.15)の`main`から移した。0.9.15版の手順書の1章)。
+- `~/CARLA_0.9.16_jp/LinuxNoEditor/Co-Simulation/Sumo/examples/`は、CARLA公式の配布のまま(Town01・Town04・Town05だけ)で、co-simでは使わない。
+  Town10HDのシナリオも、Town01・Town05の信号(CARLAの信号と紐づけたもの)も入っていない。
+- `sumo/examples/carlavtypes.rou.xml`(CARLAの車の寸法のvType)は、0.9.15のCARLAから作ったもの(2026-10-01、41種)。
+  0.9.16の寸法(日本の車を含む)にするには、0.9.16のクライアントで`~/CARLA`の`util/create_sumo_vtypes.py`を使って作り直す(未実施)。
 - co-simのSUMO-CARLAブリッジは`autoware_carla_interface`の中(`sumo_integration/`)にあり、`Co-Simulation/Sumo/`のPythonは使わない。
   使うのは`.sumocfg`とnet・ルートのファイルだけ。
 
@@ -709,7 +693,7 @@ CARLAが管理している信号の状態(赤・黄・青)を、カメラ画像�
 ブリッジ(`autoware_carla_interface`)から`/perception/traffic_light_recognition/traffic_signals`へ
 毎tick publishする機能。設計と確認結果は`docs/CARLA_Autoware_信号状態publish_実装計画_v1.0.md`を参照。
 `tls_manager:=sumo`のときは、SUMOが決めた信号状態がCARLA経由でそのままAutowareに届く。
-Town10HDのSUMOのnet(`~/CARLA_0.9.16_jp/LinuxNoEditor/Co-Simulation/Sumo/examples/net/Town10HD.net.xml`)には、CARLAの信号15個すべてに対応する信号がある
+Town10HDのSUMOのnet(`sumo/examples/net/Town10HD.net.xml`)には、CARLAの信号15個すべてに対応する信号がある
 (設置方法と信号パターンは`~/CARLA/Co-Simulation/Sumo/docs/SUMO-CARLA_co-sim_起動手順.md`の「SUMOの信号(Town10HD)」を参照)。
 
 ### 3.5.1 信号入りのLanelet2地図(Town10HD)
