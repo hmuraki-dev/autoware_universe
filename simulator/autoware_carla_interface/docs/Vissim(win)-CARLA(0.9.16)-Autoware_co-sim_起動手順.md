@@ -10,7 +10,7 @@ CARLA 0.9.15(`~/CARLA/`)用の「Vissim(win)-CARLA-Autoware_co-sim_起動手順.
 | CARLAのPythonクライアント | `carla==0.9.15`(`~/carla310_env`、`pip --user`) | `carla==0.9.16`(`pip --user`)。**0.9.15のクライアントは0.9.16のサーバーにつなぐと落ちる**(3.1.1) |
 | マップ | Town01 | **Town10HD(`Town10HD_Opt`)**。0.9.16_jpに入っているマップはこれだけ(3.1.2) |
 | Autowareの地図フォルダ | `~/autoware_map/Town01` | `~/autoware_map/Town10HD_Opt`(`Town10HD`へのシンボリックリンク。2.0.2) |
-| Vissimのネットワーク | `Town01.inpx` | `Town10HD.inpx`(`feature/sumo_co-sim`ブランチの`vissim/`。3.4) |
+| Vissimのネットワーク | `Town01.inpx`(CARLAリポジトリ) | `Town10HD.inpx`(このリポジトリの`vissim/`。3.4) |
 | 信号の対応表(`signal_mapping.json`) | Town01用(リポジトリに入っている) | Town10HD用に置き換える(2.4.2) |
 | 車両のブループリント表 | `carla_variants_town01.yaml`(0.9.15で測った外形) | `carla_variants_town10hd.yaml`(0.9.16で外形を測り直して作る。2.4.3) |
 | 車両 | CARLA標準 | CARLA標準 + 日本の車6台(`vehicle.jp.*`。3.1.4) |
@@ -38,7 +38,8 @@ CARLA 0.9.15(`~/CARLA/`)用の「Vissim(win)-CARLA-Autoware_co-sim_起動手順.
 このブランチはAutoware Universe(0.52.0)のautoware_carla_interfaceをベースに、CARLA公式のVissim-CARLAブリッジ(PTV Vissim Driving Simulator Interface経由)を盛り込み、fullstack(Vissim-CARLA-Autoware)のco-simを実装したものである。
 
 - `autoware_universe`: `feature/vissim_windows_co-sim`ブランチ
-- Town10HDのVissimネットワーク(`Town10HD.inpx`)と信号の対応表は、`feature/sumo_co-sim`ブランチの`simulator/autoware_carla_interface/vissim/`にある(2.2.0で取り出す)。
+- Town10HDのVissimネットワーク(`Town10HD.inpx`)と信号の対応表は、このブランチの`simulator/autoware_carla_interface/vissim/`にある。
+  作り方(OpenDRIVEの取り込みとツール)は`vissim/README.md`。ツールは`feature/sumo_co-sim`ブランチにあり、作り直したものをこのブランチへ写す。
 
 ```text
 ~/autoware.1.9.0/
@@ -47,6 +48,7 @@ CARLA 0.9.15(`~/CARLA/`)用の「Vissim(win)-CARLA-Autoware_co-sim_起動手順.
         └── autoware_universe/      ← GitHubからcloneするリポジトリ
             └── simulator/
                 └── autoware_carla_interface/
+                    └── vissim/     ← Vissimのネットワーク(Town10HD.inpx)と信号の対応表
 ```
 
 CARLA関係のフォルダは次のとおり。
@@ -110,28 +112,18 @@ New-NetFirewallRule -DisplayName "Vissim adapter (ZeroMQ 5555)" `
 
 `Town10HD.inpx`を変えたときだけ行う。
 
-1. 【Linux側/ターミナル2】`feature/sumo_co-sim`ブランチから取り出す(作業中のブランチは切り替えない)。
+【Windows側/PowerShell】Linuxからこのリポジトリの`vissim/Town10HD.inpx`を写す(IPアドレスとユーザー名は使うPCに合わせる)。
 
-   ```bash
-   cd ~/autoware.1.9.0/src/universe/autoware_universe
-   mkdir -p /tmp/vissim_town10hd
-   git show feature/sumo_co-sim:simulator/autoware_carla_interface/vissim/Town10HD.inpx > /tmp/vissim_town10hd/Town10HD.inpx   # ← 生成物
-   git show feature/sumo_co-sim:simulator/autoware_carla_interface/vissim/signal_mapping_town10hd.json > /tmp/vissim_town10hd/signal_mapping_town10hd.json   # ← 生成物
-   ```
+```powershell
+scp divp@192.168.16.33:/home/divp/autoware.1.9.0/src/universe/autoware_universe/simulator/autoware_carla_interface/vissim/Town10HD.inpx C:\Users\divp\SBIR\Vissim\work_muraki\CARLA\Town10HD.inpx   # ← 生成物(Windows側)
+```
 
-   > 📄 **生成物:** Town10HDのVissimネットワークと、その信号の対応表(Linux側。2.4.2・2.4.3でも使う)\
-   > `/tmp/vissim_town10hd/Town10HD.inpx`、`/tmp/vissim_town10hd/signal_mapping_town10hd.json`
+> 📄 **生成物:** Windows PCで読み込むVissimネットワーク(2.2.1の`--vissim-network`)\
+> `C:\Users\divp\SBIR\Vissim\work_muraki\CARLA\Town10HD.inpx`
 
-2. 【Windows側/PowerShell】Windows PCへ写す(IPアドレスとユーザー名は使うPCに合わせる)。
-
-   ```powershell
-   scp divp@192.168.16.33:/tmp/vissim_town10hd/Town10HD.inpx C:\Users\divp\SBIR\Vissim\work_muraki\CARLA\Town10HD.inpx   # ← 生成物(Windows側)
-   ```
-
-   > 📄 **生成物:** Windows PCで読み込むVissimネットワーク(2.2.1の`--vissim-network`)\
-   > `C:\Users\divp\SBIR\Vissim\work_muraki\CARLA\Town10HD.inpx`
-
-   - USBメモリや共有フォルダで写してもよい。置き場所は書き込みのできるフォルダにする(アダプタが同じフォルダに`Town10HD.cosim.inpx`を作るため)。
+- USBメモリや共有フォルダで写してもよい。置き場所は書き込みのできるフォルダにする(アダプタが同じフォルダに`Town10HD.cosim.inpx`を作るため)。
+- Windows側で`.inpx`を直したときは、Linuxへ写し戻して`vissim/Town10HD.inpx`にコミットする(2.4.3の表の入力と同じものにするため)。
+  ただし、`vissim/Town10HD.inpx`はツールで作り直すと上書きされる(`vissim/README.md`の2章)。
 
 #### 2.2.1 アダプタの起動
 
@@ -183,7 +175,7 @@ python3 config.py --map Town10HD_Opt
 
 ```bash
 cd ~/autoware.1.9.0/src/universe/autoware_universe/simulator/autoware_carla_interface
-cp /tmp/vissim_town10hd/signal_mapping_town10hd.json src/autoware_carla_interface/vissim_integration/data/signal_mapping.json   # ← 生成物
+cp vissim/signal_mapping_town10hd.json src/autoware_carla_interface/vissim_integration/data/signal_mapping.json   # ← 生成物
 cat src/autoware_carla_interface/vissim_integration/data/signal_mapping.json
 ```
 
@@ -226,8 +218,7 @@ python3 tools/carla_fleet/measure_blueprint_mesh.py \
 ```bash
 cd ~/autoware.1.9.0/src/universe/autoware_universe/simulator/autoware_carla_interface
 python3 tools/carla_fleet/build_carla_variants.py \
-    --inpx /tmp/vissim_town10hd/Town10HD.inpx \
-    --inpx-ref "feature/sumo_co-sim simulator/autoware_carla_interface/vissim/Town10HD.inpx" \
+    --inpx vissim/Town10HD.inpx \
     --geometry src/autoware_carla_interface/data/carla_fleet/mesh_measurements_carla0.9.16_jp.json \
     --rules src/autoware_carla_interface/data/carla_fleet/carla_variant_rules.yaml \
     --out src/autoware_carla_interface/vissim_integration/data/carla_variants_town10hd.yaml   # ← 生成物
@@ -236,7 +227,7 @@ python3 tools/carla_fleet/build_carla_variants.py \
 > 📄 **生成物:** Vissim車両-ブループリント割り当て一覧(Town10HD)\
 > `src/autoware_carla_interface/vissim_integration/data/carla_variants_town10hd.yaml`
 
-- `--inpx`は、Windows PCで読み込む`.inpx`と同じもの(2.2.0)。Windows側で`.inpx`を直したときは、それをLinuxへ写して入力にする(0.9.15版の2.4.3の(2))。
+- `--inpx`は、Windows PCで読み込む`.inpx`と同じもの(2.2.0)。リポジトリ内のファイルなので`--inpx-ref`は要らない(表には、渡したパス`vissim/Town10HD.inpx`がそのまま記録される。`.inpx`のsha256も記録される)。
 - `Town10HD.inpx`の車両の設定はTown01.inpxと同じなので、0.9.15の外形で作ると割り当てもTown01と同じ14モデルになる(2026-11-17に確認)。0.9.16の外形では、日本の車が候補に入るので変わることがある。
 
 **(3) 確認**
@@ -375,15 +366,15 @@ pkill -INT -f "lib/autoware_carla_interface/autoware_carla_interface --ros-args"
 
 ### 3.4 Vissimのネットワーク(Town10HD)
 
-`Town10HD.inpx`は、Windows PCのVissim 2026でTown10HDのOpenDRIVEを取り込んだ道路網に、ツールで信号・交通需要・車両設定を足したもの(2026-11-17)。
-作り方とSUMO構成との違いは、`feature/sumo_co-sim`ブランチの`simulator/autoware_carla_interface/vissim/README.md`を参照。
+`vissim/Town10HD.inpx`は、Windows PCのVissim 2026でTown10HDのOpenDRIVEを取り込んだ道路網(`vissim/Town10HD_road.inpx`)に、ツールで信号・交通需要・車両設定を足したもの(2026-11-17)。
+作り方とSUMO構成との違いは`vissim/README.md`を参照(ツールは`feature/sumo_co-sim`ブランチ)。
 
 | 項目 | 内容 |
 | --- | --- |
 | 道路網 | リンク111本(1車線54・2車線57)、コネクタ148本、conflictArea 228個(OpenDRIVEの取り込みのまま) |
 | 信号制御 | 5個(SUMOの信号189・23・468・532・719に1つずつ)。中身はTown01.inpxと同じ固定時間の制御: 周期94秒、SG1の青0〜42秒、SG2の青47〜89秒、黄3秒、全赤2秒、オフセット0 |
 | 信号灯 | 30個(CARLAの15信号の停止位置 × 2車線)。CARLAの信号は、SUMOの最初のフェーズで青ならSG1、赤ならSG2 |
-| 信号の対応表 | `signal_mapping_town10hd.json`: `{"1": {"1": [949, 952], "2": [950, 951]}, "2": {"1": [943, 945], "2": [944]}, "3": {"1": [954], "2": [953]}, "4": {"1": [957, 958], "2": [959]}, "5": {"1": [961, 962], "2": [960]}}` |
+| 信号の対応表 | `vissim/signal_mapping_town10hd.json`: `{"1": {"1": [949, 952], "2": [950, 951]}, "2": {"1": [943, 945], "2": [944]}, "3": {"1": [954], "2": [953]}, "4": {"1": [957, 958], "2": [959]}, "5": {"1": [961, 962], "2": [960]}}` |
 | 車両入力 | 19か所、合計600台/h(SUMOの出発地点の割合で分けたもの)。経路の指定はない(Town01.inpxと同じ) |
 | 車両設定 | Town01.inpxと同じ(自車はEGO・車両タイプ101、ドライブシミュレータ有効) |
 | Vissimでの確認 | 開いたとき・RUNを止めたときとも、エラー・警告なし。RUNで信号が切り替わる(2026-11-17、利用者が確認) |
