@@ -114,6 +114,21 @@ ls ~/autoware_map/Town10HD_Opt/
 - 中身(信号入りのLanelet2地図`lanelet2_map_with_tl.osm`・点群・`carla_tl.json`)は`Town10HD`のものをそのまま使う(3.2)。
 - SUMO版の手順書(「SUMO-CARLA(0.9.16)-Autoware_co-sim_起動手順.md」の2.0.2)ですでに作ってあれば不要。
 
+#### 2.0.3 車線変更できる地図を作る
+
+```bash
+source /opt/ros/humble/setup.bash
+cd ~/autoware.1.9.0/src/universe/autoware_universe/simulator/autoware_carla_interface
+python3 tools/add_lanelet2_line_types.py ~/autoware_map/Town10HD_Opt/lanelet2_map_with_tl.osm \
+    ~/autoware_map/Town10HD_Opt/lanelet2_map_with_tl_lc.osm   # ← 生成物
+```
+
+> 📄 **生成物:** 車線の境界線に線の種類を付けた、信号入りのLanelet2地図(2.6.1の`lanelet2_map_file`)\
+> `~/autoware_map/Town10HD_Opt/lanelet2_map_with_tl_lc.osm`
+
+- 出力の`line_thin dashed: 44`・`line_thin solid: 235`を確かめる(3.2)。
+- すでに作ってあれば不要。`lanelet2_map_with_tl.osm`を作り直したときは、これも作り直す。
+
 ### 2.1 【Windows側】ファイアウォールの受信規則
 0.9.15版の2.1と同じ。管理者として PowerShell を開き、Linux機のIPを <LINUX_IP> に入れて実行する(登録済みなら不要)。
 
@@ -290,7 +305,7 @@ export ROS_DOMAIN_ID=33
 ros2 launch autoware_launch e2e_simulator.launch.xml \
   simulator_type:=carla \
   map_path:=$HOME/autoware_map/Town10HD_Opt \
-  lanelet2_map_file:=lanelet2_map_with_tl.osm \
+  lanelet2_map_file:=lanelet2_map_with_tl_lc.osm \
   vehicle_model:=sample_vehicle \
   sensor_model:=carla_sensor_kit \
   use_vissim:=true \
@@ -311,7 +326,7 @@ ros2 launch autoware_launch e2e_simulator.launch.xml \
 | 引数 | 0.9.15版 | この手順書 | 理由 |
 | --- | --- | --- | --- |
 | `map_path` | `$HOME/autoware_map/Town01` | `$HOME/autoware_map/Town10HD_Opt` | フォルダ名がCARLAのマップ名になる(2.0.2) |
-| `lanelet2_map_file`・`traffic_light.publish` | (3.2.2で足す) | 最初から付ける | Town10HDの信号入りの地図がある(3.2) |
+| `lanelet2_map_file`・`traffic_light.publish` | (3.2.2で足す) | 最初から付ける。地図は`lanelet2_map_with_tl_lc.osm` | Town10HDの信号入りの地図がある(3.2)。車線変更できるようにした地図を使う(2.0.3) |
 | `vissim_carla_variants` | (既定の`carla_variants_town01.yaml`) | `carla_variants_town10hd.yaml` | 2.4.3で作った表。作っていないときは`legacy_vtypes` |
 | `spawn_point` | Town01の地点 | 信号954の手前(CARLAのスポーン地点#80) | Town10HDの地点(3.4) |
 
@@ -387,6 +402,13 @@ pkill -INT -f "lib/autoware_carla_interface/autoware_carla_interface --ros-args"
 - 同じフォルダの`carla_tl.json`は、地図を作ったときのCARLAの信号の記録(位置・停止位置)。交差点の`group`は入っていない(0.9.15版のTown01の手順の`split_signal_controllers.py`を使うときは、作り直す必要がある)。
 - Vissimの信号灯(3.4)も同じCARLAの停止位置に置いてあるので、EGOとVissimの車がほぼ同じ位置で止まる。
 - 作り直すときの手順は、SUMO版の手順書(「SUMO-CARLA(0.9.16)-Autoware_co-sim_起動手順.md」)の2.2.2。
+- **車線変更**: CARLAから変換した地図は、車線の境界線(279本)に線の種類(`type`・`subtype`)が無い。Lanelet2の交通ルールはこれを越えられない線として扱うので、
+  `lanelet2_map_with_tl.osm`のままでは、どこでも車線変更できない。経路が隣の車線を使うと、EGOは自分の車線の終わりで止まる
+  (2026-11-24。信号954の手前の左車線(lanelet 891)で、右折の経路(右車線 860 → 8218)に移れずに止まった。車線変更のモジュールは一度も動かなかった)。
+- 2.0.3の`tools/add_lanelet2_line_types.py`は、種類の無い境界線に、同じ向きの車線どうしの間は`line_thin`/`dashed`(車線変更できる)、
+  それ以外(外側・対向車線との間・交差点の中の車線)は`line_thin`/`solid`を付ける。交差点の中の車線は、分かれる・合わさる車線で見分ける(地図に`turn_direction`が無いため)。
+  Town10HDでは44組の車線の間で車線変更できるようになる(891→860・569→692・2156→2179 を含む)。付けるのはタグだけで、点・車線・信号は変えない。
+- 元の`lanelet2_map_with_tl.osm`は変えない(SUMO構成もこの地図を使う)。
 
 ### 3.3 Vissimの車両のCARLAブループリント
 
