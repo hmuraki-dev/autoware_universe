@@ -207,11 +207,11 @@ SUMOの車両1台ごとに、どのCARLAのブループリントを使うかを�
   | --- | --- |
   | CARLAの版(0.9.15 → 0.9.16など) | (1)(2)(3) |
   | SUMOの車両の設定(`.sumocfg`の`route-files`の各ファイル。vTypeの寸法・割合など) | (2)(3) |
-  | 割り当ての規則(`src/autoware_carla_interface/data/carla_fleet/carla_variant_rules.yaml`) | (2)(3) |
+  | 割り当ての規則(0.9.16_jpでは`carla_variant_rules_carla0.9.16_jp.yaml`。(2)の`--rules`で渡したもの) | (2)(3) |
 
 - Town01の表(0.9.15で作ったもの)は、0.9.16_jpにはTown01がないので使わない。Town01を読み込める0.9.16を使うときは、
   外形を測ったCARLAの版(`0.9.15`)が接続先(`294096eb1-dirty`)と違うので、`variant_mesh_carla_version_changed`で止まる。(1)(2)(3)で作り直す。
-- (1)の計測結果は、Town10HD・Town01で共通(CARLAの版ごとに1つ)。
+- (1)の計測結果は、Town10HD・Town01で共通(CARLAの版ごとに1つ)。0.9.16_jpの計測結果(修正版の日本の車を含む)はコミット済みなので、測り直すときだけ(1)を行う。
 - 作った表と計測結果は、autoware_universeにコミットする。`--symlink-install`でビルドしていれば、ビルドし直さなくても使われる。
 
 **(1) CARLAのブループリントの外形の計測**
@@ -240,7 +240,7 @@ python3 tools/carla_fleet/measure_blueprint_mesh.py \
 
 - ブリッジが照合するのは、ファイル名ではなく、ファイルの中に記録された版(`carla_server_version`。ツールが接続先のCARLAから書き込む。0.9.16_jpでは`294096eb1-dirty`)。
 - 日本の車6台(`vehicle.jp.*`)も測られ、割り当ての候補になる。タクシー(`vehicle.jp.taxi`)・路線バスなど塗装に意味がある車を候補から外すときは、
-  規則(`carla_variant_rules.yaml`)の`excluded`に足す(0.9.15のパトカー・タクシーと同じ扱い。まだ決めていない)。
+  規則(`carla_variant_rules_carla0.9.16_jp.yaml`)の`excluded`に足す(0.9.15のパトカー・タクシーと同じ扱い。まだ決めていない)。
 - 出力先のファイルがあるとツールはエラーで止まる。
 
 | オプション | 説明 | 省略可/不可 | デフォルト値 |
@@ -259,7 +259,7 @@ cd ~/autoware.1.9.0/src/universe/autoware_universe/simulator/autoware_carla_inte
 python3 tools/carla_fleet/build_carla_variants.py \
     --sumocfg sumo/<Town>.sumocfg \
     --geometry src/autoware_carla_interface/data/carla_fleet/mesh_measurements_carla<版>.json \
-    --rules src/autoware_carla_interface/data/carla_fleet/carla_variant_rules.yaml \
+    --rules src/autoware_carla_interface/data/carla_fleet/<規則>.yaml \
     --out src/autoware_carla_interface/sumo_integration/data/carla_variants_sumo_<townを小文字>.yaml   # ← 生成物
 ```
 
@@ -270,6 +270,9 @@ python3 tools/carla_fleet/build_carla_variants.py \
 - `<Town>`は、2.4.1の`sumo_cfg_file`の`.sumocfg`の名前(`Town10HD`など)。`<townを小文字>`は、その小文字(`town10hd`)。
   この名前にしないと、ブリッジが表を見つけない(今までの選び方で動く)。
 - `<版>`は、(1)で付けた名前(`0.9.16_jp`)。
+- `<規則>`は、その版の割り当ての規則。0.9.16_jpでは`carla_variant_rules_carla0.9.16_jp.yaml`。
+  0.9.15用の`carla_variant_rules.yaml`(0.9.15のTown01の表が使う)と違い、大型車(HGV・BUS)の幅の上限を0.45 mにし、
+  ブループリントの分類(`base_type`)で候補を絞る(3.6.1)。
 
 **Town10HD**(0.9.16_jp。2.4.1の起動コマンドで使う)
 
@@ -278,7 +281,7 @@ cd ~/autoware.1.9.0/src/universe/autoware_universe/simulator/autoware_carla_inte
 python3 tools/carla_fleet/build_carla_variants.py \
     --sumocfg sumo/Town10HD.sumocfg \
     --geometry src/autoware_carla_interface/data/carla_fleet/mesh_measurements_carla0.9.16_jp.json \
-    --rules src/autoware_carla_interface/data/carla_fleet/carla_variant_rules.yaml \
+    --rules src/autoware_carla_interface/data/carla_fleet/carla_variant_rules_carla0.9.16_jp.yaml \
     --out src/autoware_carla_interface/sumo_integration/data/carla_variants_sumo_town10hd.yaml   # ← 生成物
 ```
 
@@ -286,9 +289,9 @@ python3 tools/carla_fleet/build_carla_variants.py \
 > `src/autoware_carla_interface/sumo_integration/data/carla_variants_sumo_town10hd.yaml`
 
 - 日本の車を割り当てたいvTypeは、`length`・`width`を、(1)で測ったその車の外形(計測結果の`mesh_length_m`・`mesh_width_m`)に合わせておく。
-  規則は、除外していない全ブループリントから寸法(長さ、同じなら幅)が最も近いものを選ぶ(日本の車を優先するわけではない)。
-  諸元の寸法のままだと、CARLA標準の車のほうが近くなったり、ミラーの分で幅の許容(+0.35 m)を超えて外れたりすることがある。
-  大型車(バス・トラック)が外れると、`carlacola`を重ねた形になる(3.6)。
+  規則は、除外していない、分類の合うブループリントから寸法(長さ、同じなら幅)が最も近いものを選ぶ(日本の車を優先するわけではない)。
+  諸元の寸法のままだと、CARLA標準の車のほうが近くなったり、ミラーの分で幅の上限(乗用車+0.35 m、トラック・バス+0.45 m)を超えて外れたりすることがある。
+  大型車(バス・トラック)が外れると、`carlacola`を重ねた形になる(3.6.1)。
 - 作り直すときは、同じコマンドで上書きする。
 
 **Town01**(Town01を読み込める0.9.16を使うときだけ)
@@ -298,7 +301,7 @@ cd ~/autoware.1.9.0/src/universe/autoware_universe/simulator/autoware_carla_inte
 python3 tools/carla_fleet/build_carla_variants.py \
     --sumocfg sumo/Town01.sumocfg \
     --geometry src/autoware_carla_interface/data/carla_fleet/mesh_measurements_carla0.9.16_jp.json \
-    --rules src/autoware_carla_interface/data/carla_fleet/carla_variant_rules.yaml \
+    --rules src/autoware_carla_interface/data/carla_fleet/carla_variant_rules_carla0.9.16_jp.yaml \
     --out src/autoware_carla_interface/sumo_integration/data/carla_variants_sumo_town01.yaml   # ← 生成物
 ```
 
@@ -817,7 +820,18 @@ SUMOの車両1台をCARLAに出すとき、どのブループリントを使う�
 
 **表を作るとき(2.2.3)**
 
-- vTypeごとに、寸法が最も近いブループリントが割り当たる。vTypeのIDの名前は使わない。
+- vTypeごとに、分類の合う、寸法が最も近いブループリントが割り当たる。vTypeのIDの名前は使わない。
+- 0.9.16_jp用の規則(`carla_variant_rules_carla0.9.16_jp.yaml`、2026-11-24。Vissim構成と同じファイル)は、0.9.15用の規則から次の2つを変えた。
+  - 幅の上限(dW、太い側)を車種カテゴリごとにした。乗用車・二輪は0.35 m のまま、トラック・バス(HGV・BUS・TRAM)は0.45 m。
+    大型車のミラーは乗用車より張り出す。日本の車のdW(ミラー込みの外形 − Vissimのモデルの幅)は、乗用車 +0.18〜+0.34 m、トラック・バス +0.35〜+0.40 m だった。
+  - 1体で表す候補を、ブループリントの分類(`base_type`)で絞る(乗用車: car・van・空、トラック: truck、バス: bus、二輪: motorcycle・bicycle)。
+    絞らないと、トラックに長さの近いバスが割り当たることがある。`carlacola`の重ね置きは絞らない(バスにも使う)。
+  - SUMOのvTypeの車種カテゴリはvClassから決める(passenger → 乗用車、truck・trailer・delivery・emergency → トラック、bus・coach → バス、
+    motorcycle・bicycleなど → 二輪)。vClassが乗用車でも、長さが6 mを超えるvTypeはトラックとして扱う。
+  - 分類の合う車も重ね置きも使えないモデルがあると、2.2.3の(2)は`variant_model_empty`で止まり、表を書かない。
+- 今の`rou/Town10HD.rou.xml`(CARLA標準の車の名前のvType。日本の車のvTypeは無い)では、0.9.16_jp用の規則で作った表と、
+  0.9.15用の規則で作った表は、27モデルすべてで同じ割り当てになる(2026-11-24に確認)。
+  違いが出るのは、日本のトラック・バスに合わせたvTypeを足したとき。
 - 今の(CARLA標準の車の名前の)vTypeのまま表を作ると、今までの選び方と違う車になるvTypeがある。
   2026-11-17に、0.9.15の計測結果で試しに作った結果では、27モデルすべてに割り当てがあり、生成は止まらなかった。
   ただし、27のvTypeのうち11は、IDと違うブループリントが割り当たった。
