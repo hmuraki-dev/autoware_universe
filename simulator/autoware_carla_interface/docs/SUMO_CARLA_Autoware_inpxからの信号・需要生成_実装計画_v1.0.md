@@ -256,6 +256,29 @@ Vissimの車は経路を持たず、分岐でコネクタを選びながら走�
 - `build_carla_variants.py --sumocfg`で`carla_variants_sumo_town10hd_vissim.yaml`を作り、モデルごとの体を確かめる
   (とくにバイク・トレーラー・バス)。
 
+#### 結果(S4、2026-11-24)
+
+- `sumo/Town10HD_vissim.sumocfg`: net `net/Town10HD.net.xml`、route-files `rou/Town10HD_vissim.rou.xml`だけ、additional-files `tll/Town10HD_vissim.tll.xml`。
+  EGOのvTypeは、`carlavtypes.rou.xml`が無くても、ブリッジがCARLAの寸法から作る(`bridge_helper.py`の`_create_sumo_vtype`)。
+- `carla_variants_sumo_town10hd_vissim.yaml`(0.9.16_jpの計測結果と規則): 8モデルすべてに割り当てがあり、**Vissim構成の`carla_variants_town10hd.yaml`と同じ**
+  (ブループリント・dL・dW・割合まで同じ)。
+
+  | vType | CARLAの体 | dL [m] | dW [m] | 割合 |
+  | ----- | --------- | -----: | -----: | ---: |
+  | 乗用車 アルファード(1001) | `vehicle.jp.alphard` | +0.021 | +0.310 | 0.1667 |
+  | 乗用車 ノア(1002) | `vehicle.jp.minivan` | +0.015 | +0.344 | 0.1667 |
+  | 乗用車 JPNタクシー(1003) | `vehicle.jp.taxi` | −0.001 | +0.176 | 0.1667 |
+  | トラック GIGA(1021) | `vehicle.jp.large_truck` | +0.361 | +0.374 | 0.1 |
+  | トレーラー Volvo E(22) | `carlacola` × 2 | 0.000 | +0.009 | 0.1 |
+  | バス エルガ(1031) | `vehicle.jp.route_bus` | +0.269 | +0.396 | 0.1 |
+  | バス ガーラ(1032) | `vehicle.jp.tour_bus` | +0.119 | +0.350 | 0.1 |
+  | バイク MT-07(70) | `vehicle.kawasaki.ninja` | −0.081 | −0.032 | 0.1 |
+
+- `sumo_carla_variants:=auto`で、`Town10HD_vissim.sumocfg`からこの表が選ばれ、起動時の検査(ブループリントの有無・計測結果と規則の照合・
+  route-filesのsha256・CARLAの版`294096eb1-dirty`)を通ることを、`test/test_sumo_fleet_plan.py`に足したテストで確かめた。
+- `sumo/README.md`に、ファイルの表と作り直しの手順を書いた。
+- `python3 -m pytest test/`: 293件が通った(3件skip)。
+
 ### S5: SUMO単体での確認と手順書
 
 - `sumo -c sumo/Town10HD_vissim.sumocfg`をTraCIで動かし、各信号の`getRedYellowGreenState`が0・42・45・47・89・92 sで切り替わること、

@@ -1,0 +1,82 @@
+# carla_variants_sumo_town10hd_vissim — 生成物。手で書き換えない
+# 作り方:
+#   python3 tools/carla_fleet/build_carla_variants.py \
+#       --sumocfg sumo/Town10HD_vissim.sumocfg \
+#       --geometry src/autoware_carla_interface/data/carla_fleet/mesh_measurements_carla0.9.16_jp.json \
+#       --rules src/autoware_carla_interface/data/carla_fleet/carla_variant_rules_carla0.9.16_jp.yaml \
+#       --out src/autoware_carla_interface/sumo_integration/data/carla_variants_sumo_town10hd_vissim.yaml
+#
+# assignment: モデル(SUMO の vType を寸法でまとめたもの。名前 L<長さ>_W<幅>) -> CARLA の体の並び
+#   vtypes: まとめた vType の ID。share: 出現割合(flow・vehicle の台数 × vTypeDistribution の確率を読んだもの)
+#           ブリッジは車の vType ID で引く。無ければ止める(npc_model_unknown)
+#   front_offset_m: 車両の前端から、その actor の前端までの距離 [m]
+#   follows_path:   true なら車両の軌跡を遡った位置・向きに置く(連結の近似)
+#   dL・dW = CARLA の外形(LiDAR で測った外形、幅はミラー込み) − モデルの寸法 [m]
+name: carla_variants_sumo_town10hd_vissim
+generated_by: tools/carla_fleet/build_carla_variants.py
+generated_at: '2026-11-24T19:01:38+09:00'
+
+# 生成元。ブリッジは起動時に geometry と rules の sha256 を照合し、違えば止める(variant_source_changed)
+#   geometry・rules のパスは、このファイルのあるディレクトリからの相対パス
+#   sumocfg は .sumocfg(パスはこのファイルのあるディレクトリからの相対パス。記録だけ)。route_files は
+#   route-files の各ファイル(.sumocfg に書かれた名前)。ブリッジは起動時に、渡された .sumocfg の
+#   route-files の sha256 と照合し、違えば止める(variant_source_changed)
+sources:
+  sumocfg: {path: ../../../../sumo/Town10HD_vissim.sumocfg, sha256: f058fdfd19df77b1acc07c81d8fe946bf3b4def43c80ea8df2e3acbb08f55324}
+  route_files: {rou/Town10HD_vissim.rou.xml: df72a0ab76890e1ffecf601d920a6c3b29d389864215244851990ee672debfd0}
+  geometry: {path: ../../data/carla_fleet/mesh_measurements_carla0.9.16_jp.json, sha256: "6fc7afa0f7a21938da8c0db3075ddedfa056ae37df72c57413fb5bdab88f89f6", carla_server_version: "294096eb1-dirty"}
+  rules: {path: ../../data/carla_fleet/carla_variant_rules_carla0.9.16_jp.yaml, sha256: d4cb633fbd86c98451238732fc4e2ccb91e54308f0513bca79a409207ae1987b}
+
+# 適用した規則の写し(読む人のため。ブリッジは使わない)
+rules:
+  length_tolerance_m: 0.75
+  width_over_tolerance_m: {CAR: 0.35, HGV: 0.45, BUS: 0.45, TRAM: 0.45, BIKE: 0.35}
+  width_under_tolerance_m: {CAR: 0.35, HGV: 0.10, BUS: 0.10, TRAM: 0.10, BIKE: 0.35}
+  blueprint_classes: {CAR: [car, van, ""], HGV: [truck], BUS: [bus], TRAM: [], BIKE: [motorcycle, bicycle]}
+  select: nearest_length
+  fallback: {blueprint: vehicle.carlamotors.carlacola, kind: stack}
+  excluded: [vehicle.carlamotors.firetruck, vehicle.carlamotors.european_hgv, vehicle.ford.ambulance, "vehicle.dodge.charger_police*", vehicle.ford.crown, "vehicle.volkswagen.t2*", vehicle.toyota.prius]
+
+assignment:
+  # --- 車両グループ vissim_c1(BUS) ---
+  'L10.430_W2.484': {L: 10.430, W: 2.484, share: 0.1000, method: nearest, dL: +0.269, dW: +0.396,
+        vtypes: [vissim_bus1031_s30_b0], segments: 1,
+        actors: [{blueprint: vehicle.jp.route_bus, front_offset_m: 0.0}]}   # BUS 10.430x2.484 m (vissim_bus1031_s30_b0)
+  'L11.810_W2.490': {L: 11.810, W: 2.490, share: 0.1000, method: nearest, dL: +0.361, dW: +0.374,
+        vtypes: [vissim_truck1021_s30_b0], segments: 1,
+        actors: [{blueprint: vehicle.jp.large_truck, front_offset_m: 0.0}]}   # HGV 11.810x2.490 m (vissim_truck1021_s30_b0)
+  'L11.990_W2.490': {L: 11.990, W: 2.490, share: 0.1000, method: nearest, dL: +0.119, dW: +0.350,
+        vtypes: [vissim_bus1032_s30_b0], segments: 1,
+        actors: [{blueprint: vehicle.jp.tour_bus, front_offset_m: 0.0}]}   # BUS 11.990x2.490 m (vissim_bus1032_s30_b0)
+  'L2.098_W0.907': {L: 2.098, W: 0.907, share: 0.1000, method: nearest, dL: -0.081, dW: -0.032,
+        vtypes: [vissim_motorcycle70_s30_b0], segments: 1,
+        actors: [{blueprint: vehicle.kawasaki.ninja, front_offset_m: 0.0}]}   # BIKE 2.098x0.907 m (vissim_motorcycle70_s30_b0)
+  'L4.400_W1.696': {L: 4.400, W: 1.696, share: 0.1667, method: nearest, dL: -0.001, dW: +0.176,
+        vtypes: [vissim_passenger1003_s30_b0], segments: 1,
+        actors: [{blueprint: vehicle.jp.taxi, front_offset_m: 0.0}]}   # CAR 4.400x1.696 m (vissim_passenger1003_s30_b0)
+  'L4.710_W1.736': {L: 4.710, W: 1.736, share: 0.1667, method: nearest, dL: +0.015, dW: +0.344,
+        vtypes: [vissim_passenger1002_s30_b0], segments: 1,
+        actors: [{blueprint: vehicle.jp.minivan, front_offset_m: 0.0}]}   # CAR 4.710x1.736 m (vissim_passenger1002_s30_b0)
+  'L4.950_W1.850': {L: 4.950, W: 1.850, share: 0.1667, method: nearest, dL: +0.021, dW: +0.310,
+        vtypes: [vissim_passenger1001_s30_b0], segments: 1,
+        actors: [{blueprint: vehicle.jp.alphard, front_offset_m: 0.0}]}   # CAR 4.950x1.850 m (vissim_passenger1001_s30_b0)
+  'L5.960_W2.550': {L: 5.960, W: 2.550, share: 0.1000, method: fallback_stack, dL: +0.000, dW: +0.009,
+        vtypes: [vissim_trailer22_s30_b0], segments: 1,
+        actors: [{blueprint: vehicle.carlamotors.carlacola, front_offset_m: 0.0},
+                 {blueprint: vehicle.carlamotors.carlacola, front_offset_m: 0.851142}]}   # HGV 5.960x2.550 m (vissim_trailer22_s30_b0)
+
+# 割り当てなし(割合 0 のモデル。交通シムが出さない。走行中に来たら variant_model_empty で止まる)
+skipped:
+  'L5.000_W1.800': {L: 5.000, W: 1.800, reason: share_zero,
+        vtypes: [DEFAULT_VEHTYPE], segments: 1}   # CAR 5.000x1.800 m (DEFAULT_VEHTYPE)
+
+# 100 台あたりのブループリントの体数(レビュー用。ブリッジは使わない)
+expected_bodies_per_100_vehicles:
+  vehicle.carlamotors.carlacola:   20.0
+  vehicle.jp.alphard:              16.7
+  vehicle.jp.minivan:              16.7
+  vehicle.jp.taxi:                 16.7
+  vehicle.jp.large_truck:          10.0
+  vehicle.jp.route_bus:            10.0
+  vehicle.jp.tour_bus:             10.0
+  vehicle.kawasaki.ninja:          10.0

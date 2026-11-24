@@ -1,0 +1,18 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- Town10HD を、Vissim 構成(vissim/Town10HD.inpx)と同じ信号・需要・車両寸法で走らせる。
+     tll/・rou/ のファイルは tools/sumo_inpx/ が inpx から作ったもの(sumo/README.md)。
+     route-files に carlavtypes.rou.xml を入れない(ブループリント表のモデルに使わない vType が入らないように)。
+     EGO の vType は、無ければブリッジが CARLA の寸法から作る。 -->
+<configuration xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:noNamespaceSchemaLocation="http://sumo.dlr.de/xsd/sumoConfiguration.xsd">
+
+    <input>
+        <net-file value="net/Town10HD.net.xml"/>
+        <route-files value="rou/Town10HD_vissim.rou.xml"/>
+        <additional-files value="tll/Town10HD_vissim.tll.xml"/>
+    </input>
+
+    <gui_only>
+        <gui-settings-file value="viewsettings.xml"/>
+    </gui_only>
+
+</configuration>

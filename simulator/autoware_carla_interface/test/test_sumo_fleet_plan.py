@@ -521,3 +521,31 @@ def test_legacy_mode_without_a_plan(fresh_plan):
     updated = sync.carla.synchronize_vehicle.call_args.args[1]
     assert updated.location.x == pytest.approx(48.0)         # 前端 50 から SUMO の長さの半分(2.0)
     assert sync.sumo2carla_extra_ids == {}
+
+
+# ---------------------------------------------------------------- Town10HD_vissim(inpx から作った需要。0.9.16_jp)
+# docs/SUMO_CARLA_Autoware_inpxからの信号・需要生成_実装計画_v1.0.md S4
+
+TOWN10HD_VISSIM = SRC / 'sumo_integration' / 'data' / 'carla_variants_sumo_town10hd_vissim.yaml'
+TOWN10HD_VISSIM_CFG = SUMO_SCENARIOS / 'Town10HD_vissim.sumocfg'
+MESH_0916JP = SRC / 'data' / 'carla_fleet' / 'mesh_measurements_carla0.9.16_jp.json'
+# Vissim 構成の vissim_integration/data/carla_variants_town10hd.yaml と同じ割り当て(2026-11-24)
+TOWN10HD_VISSIM_BODIES = {
+    'vissim_passenger1001_s30_b0': ['vehicle.jp.alphard'],
+    'vissim_passenger1002_s30_b0': ['vehicle.jp.minivan'],
+    'vissim_passenger1003_s30_b0': ['vehicle.jp.taxi'],
+    'vissim_truck1021_s30_b0': ['vehicle.jp.large_truck'],
+    'vissim_trailer22_s30_b0': ['vehicle.carlamotors.carlacola', 'vehicle.carlamotors.carlacola'],
+    'vissim_bus1031_s30_b0': ['vehicle.jp.route_bus'],
+    'vissim_bus1032_s30_b0': ['vehicle.jp.tour_bus'],
+    'vissim_motorcycle70_s30_b0': ['vehicle.kawasaki.ninja'],
+}
+
+
+@pytest.mark.skipif(not TOWN10HD_VISSIM_CFG.is_file(), reason='sumo/ の Town10HD_vissim が無い')
+def test_town10hd_vissim_plan_loads():
+    assert fp.resolve_variants_path(fp.AUTO, str(TOWN10HD_VISSIM_CFG))[0] == str(TOWN10HD_VISSIM)
+    blueprints = set(carla_fleet.load_mesh(MESH_0916JP)[0])
+    plan = fp.FleetPlan(str(TOWN10HD_VISSIM), blueprints, '294096eb1-dirty', sumo_cfg_file=str(TOWN10HD_VISSIM_CFG))
+    bodies = {vtype: [a['blueprint'] for a in plan.actors_for(vtype)] for vtype in TOWN10HD_VISSIM_BODIES}
+    assert bodies == TOWN10HD_VISSIM_BODIES
