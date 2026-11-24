@@ -196,3 +196,79 @@ def test_town10hd_controllers(town10hd):
     assert len(reader.carla_signal_groups(inpx)) == 15
     assert not inpx.has_static_routes
     assert inpx.pedestrian_inputs == 0
+
+
+# ---------------------------------------------------------------- S2: 信号プログラム(vissim_to_tll.py)
+
+tll = _load('vissim_to_tll')
+TLL = SUMO / 'tll' / 'Town10HD_vissim.tll.xml'
+
+
+def _program(phases, links):
+    return dict(phases=phases, links=links, program='0',
+                params=[(f'linkSignalID:{i}', v) for i, v in sorted(links.items())])
+
+
+def test_green_chars_are_copied_from_the_current_program():
+    groups, chars = tll.green_chars(['GgGrr', 'yyyrr', 'rrrGG', 'rrryy'])
+    assert groups == {frozenset({0, 1, 2}), frozenset({3, 4})}
+    assert chars == {0: 'G', 1: 'g', 2: 'G', 3: 'G', 4: 'G'}
+
+
+def test_mixed_g_and_G_for_one_link_is_refused():
+    with pytest.raises(tll.TllError):
+        tll.green_chars(['Gr', 'gr'])
+
+
+def test_small_controller_becomes_six_phases(tmp_path):
+    heads = ('<signalHead no="1" name="CARLA 949" sg="1 1" lane="1 1"/>'
+             '<signalHead no="2" name="CARLA 950" sg="1 2" lane="1 1"/>')
+    inpx = reader.Inpx(_inpx(tmp_path, heads=heads))
+    programs = {'189': _program(['GgGrr', 'yyyrr', 'rrrGG', 'rrryy'],
+                                {0: '949', 1: '949', 2: '949', 3: '950', 4: '950'})}
+    logics, leftover = tll.build(inpx, programs)
+    assert leftover == []
+    assert logics[0]['phases'] == [(42.0, 'GgGrr'), (3.0, 'yyyrr'), (2.0, 'rrrrr'),
+                                   (42.0, 'rrrGG'), (3.0, 'rrryy'), (2.0, 'rrrrr')]
+
+
+def test_green_group_not_in_the_current_program_is_refused(tmp_path):
+    # Vissim では 949 と 950 が別の信号グループだが、網では同じフェーズで青 -> 青の組が今のプログラムに無い
+    heads = ('<signalHead no="1" name="CARLA 949" sg="1 1" lane="1 1"/>'
+             '<signalHead no="2" name="CARLA 950" sg="1 2" lane="1 1"/>')
+    inpx = reader.Inpx(_inpx(tmp_path, heads=heads))
+    programs = {'189': _program(['GG', 'yy'], {0: '949', 1: '950'})}
+    with pytest.raises(tll.TllError):
+        tll.build(inpx, programs)
+
+
+def test_carla_signal_missing_in_the_net_is_refused(tmp_path):
+    heads = '<signalHead no="1" name="CARLA 999" sg="1 1" lane="1 1"/>'
+    inpx = reader.Inpx(_inpx(tmp_path, heads=heads))
+    with pytest.raises(tll.TllError):
+        tll.build(inpx, {'189': _program(['G'], {0: '949'})})
+
+
+def test_town10hd_tll_is_reproduced(tmp_path):
+    out = tmp_path / 'Town10HD_vissim.tll.xml'
+    assert tll.main(['--inpx', str(VISSIM / 'Town10HD.inpx'), '--net', str(SUMO / 'net' / 'Town10HD.net.xml'),
+                     '--out', str(out)]) == 0
+    assert out.read_bytes() == TLL.read_bytes()
+
+
+def test_town10hd_tll_values():
+    import xml.etree.ElementTree as ET
+    net = tll.read_net_programs(SUMO / 'net' / 'Town10HD.net.xml')
+    logics = {t.get('id'): t for t in ET.parse(str(TLL)).getroot().iter('tlLogic')}
+    assert sorted(logics) == sorted(net) == ['189', '23', '468', '532', '719']
+    for tl_id, logic in logics.items():
+        assert logic.get('programID') == 'vissim'
+        assert logic.get('offset') == '0'
+        phases = [(float(p.get('duration')), p.get('state')) for p in logic.findall('phase')]
+        assert [d for d, _ in phases] == [42, 3, 2, 42, 3, 2]
+        current = net[tl_id]['phases']
+        # 青の 2 フェーズと黄の 2 フェーズは、今のプログラム(青 42・黄 3 ×2)と同じ。全赤 2 s を足しただけ
+        assert [phases[0][1], phases[1][1], phases[3][1], phases[4][1]] == current
+        assert set(phases[2][1]) == set(phases[5][1]) == {'r'}
+        # ブリッジが CARLA の信号機を引く param は、今のプログラムと同じ
+        assert [(p.get('key'), p.get('value')) for p in logic.findall('param')] == net[tl_id]['params']

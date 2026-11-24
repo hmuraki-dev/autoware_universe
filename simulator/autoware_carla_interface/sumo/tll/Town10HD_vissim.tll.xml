@@ -1,0 +1,110 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- tools/sumo_inpx/vissim_to_tll.py が Vissim の信号プログラムから作ったもの(手で編集しない)。
+     Vissim: Town10HD.inpx sha256 95f866e476a0b3168d54e65578d1d29f3274ebfe087b27db01ad25e875d5ee3a
+     網:     Town10HD.net.xml sha256 71bb24b8ac4695dec449b0d6ceeb4c217be7370f39dd617f8ec04ae53bdf2c31
+     ツール: vissim_to_tll.py sha256 3dbf4a6186480be9a1d745be1a924f7db2605bb0817c19b76dfb3cca159717af
+     信号制御 5 個を programID="vissim" の信号プログラムにする(網の今のプログラムの代わりに使われる)。
+     青の G/g は網の今のプログラムから写す。param の linkSignalID は網の今のプログラムと同じ。
+     tlLogic 189 <- 信号制御 1 (SUMO tlLogic 189: 949,950,951,952)、周期 94 s
+     tlLogic 23 <- 信号制御 2 (SUMO tlLogic 23: 943,944,945)、周期 94 s
+     tlLogic 468 <- 信号制御 3 (SUMO tlLogic 468: 953,954)、周期 94 s
+     tlLogic 532 <- 信号制御 4 (SUMO tlLogic 532: 957,958,959)、周期 94 s
+     tlLogic 719 <- 信号制御 5 (SUMO tlLogic 719: 960,961,962)、周期 94 s -->
+<additional xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:noNamespaceSchemaLocation="http://sumo.dlr.de/xsd/additional_file.xsd">
+    <tlLogic id="189" type="static" programID="vissim" offset="0">
+        <phase duration="42" state="GGGgrrrrGGGggrrrrr"/>
+        <phase duration="3" state="yyyyrrrryyyyyrrrrr"/>
+        <phase duration="2" state="rrrrrrrrrrrrrrrrrr"/>
+        <phase duration="42" state="rrrrGGGgrrrrrGGGgg"/>
+        <phase duration="3" state="rrrryyyyrrrrryyyyy"/>
+        <phase duration="2" state="rrrrrrrrrrrrrrrrrr"/>
+        <param key="linkSignalID:0" value="952"/>
+        <param key="linkSignalID:1" value="952"/>
+        <param key="linkSignalID:10" value="949"/>
+        <param key="linkSignalID:11" value="949"/>
+        <param key="linkSignalID:12" value="949"/>
+        <param key="linkSignalID:13" value="951"/>
+        <param key="linkSignalID:14" value="951"/>
+        <param key="linkSignalID:15" value="951"/>
+        <param key="linkSignalID:16" value="951"/>
+        <param key="linkSignalID:17" value="951"/>
+        <param key="linkSignalID:2" value="952"/>
+        <param key="linkSignalID:3" value="952"/>
+        <param key="linkSignalID:4" value="950"/>
+        <param key="linkSignalID:5" value="950"/>
+        <param key="linkSignalID:6" value="950"/>
+        <param key="linkSignalID:7" value="950"/>
+        <param key="linkSignalID:8" value="949"/>
+        <param key="linkSignalID:9" value="949"/>
+    </tlLogic>
+    <tlLogic id="23" type="static" programID="vissim" offset="0">
+        <phase duration="42" state="GGgrrrrGGG"/>
+        <phase duration="3" state="yyyrrrryyy"/>
+        <phase duration="2" state="rrrrrrrrrr"/>
+        <phase duration="42" state="rrrGGGGrrr"/>
+        <phase duration="3" state="rrryyyyrrr"/>
+        <phase duration="2" state="rrrrrrrrrr"/>
+        <param key="linkSignalID:0" value="943"/>
+        <param key="linkSignalID:1" value="943"/>
+        <param key="linkSignalID:2" value="943"/>
+        <param key="linkSignalID:3" value="944"/>
+        <param key="linkSignalID:4" value="944"/>
+        <param key="linkSignalID:5" value="944"/>
+        <param key="linkSignalID:6" value="944"/>
+        <param key="linkSignalID:7" value="945"/>
+        <param key="linkSignalID:8" value="945"/>
+        <param key="linkSignalID:9" value="945"/>
+    </tlLogic>
+    <tlLogic id="468" type="static" programID="vissim" offset="0">
+        <phase duration="42" state="GGGGrr"/>
+        <phase duration="3" state="yyyyrr"/>
+        <phase duration="2" state="rrrrrr"/>
+        <phase duration="42" state="rrrrGG"/>
+        <phase duration="3" state="rrrryy"/>
+        <phase duration="2" state="rrrrrr"/>
+        <param key="linkSignalID:0" value="954"/>
+        <param key="linkSignalID:1" value="954"/>
+        <param key="linkSignalID:2" value="954"/>
+        <param key="linkSignalID:3" value="954"/>
+        <param key="linkSignalID:4" value="953"/>
+        <param key="linkSignalID:5" value="953"/>
+    </tlLogic>
+    <tlLogic id="532" type="static" programID="vissim" offset="0">
+        <phase duration="42" state="GGGGGggrrrr"/>
+        <phase duration="3" state="yyyyyyyrrrr"/>
+        <phase duration="2" state="rrrrrrrrrrr"/>
+        <phase duration="42" state="rrrrrrrGGGG"/>
+        <phase duration="3" state="rrrrrrryyyy"/>
+        <phase duration="2" state="rrrrrrrrrrr"/>
+        <param key="linkSignalID:0" value="957"/>
+        <param key="linkSignalID:1" value="957"/>
+        <param key="linkSignalID:10" value="959"/>
+        <param key="linkSignalID:2" value="957"/>
+        <param key="linkSignalID:3" value="958"/>
+        <param key="linkSignalID:4" value="958"/>
+        <param key="linkSignalID:5" value="958"/>
+        <param key="linkSignalID:6" value="958"/>
+        <param key="linkSignalID:7" value="959"/>
+        <param key="linkSignalID:8" value="959"/>
+        <param key="linkSignalID:9" value="959"/>
+    </tlLogic>
+    <tlLogic id="719" type="static" programID="vissim" offset="0">
+        <phase duration="42" state="GGggrrrrGGG"/>
+        <phase duration="3" state="yyyyrrrryyy"/>
+        <phase duration="2" state="rrrrrrrrrrr"/>
+        <phase duration="42" state="rrrrGGGGrrr"/>
+        <phase duration="3" state="rrrryyyyrrr"/>
+        <phase duration="2" state="rrrrrrrrrrr"/>
+        <param key="linkSignalID:0" value="962"/>
+        <param key="linkSignalID:1" value="962"/>
+        <param key="linkSignalID:10" value="961"/>
+        <param key="linkSignalID:2" value="962"/>
+        <param key="linkSignalID:3" value="962"/>
+        <param key="linkSignalID:4" value="960"/>
+        <param key="linkSignalID:5" value="960"/>
+        <param key="linkSignalID:6" value="960"/>
+        <param key="linkSignalID:7" value="960"/>
+        <param key="linkSignalID:8" value="961"/>
+        <param key="linkSignalID:9" value="961"/>
+    </tlLogic>
+</additional>

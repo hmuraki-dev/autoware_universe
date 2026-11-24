@@ -206,6 +206,16 @@ Vissimの車は経路を持たず、分岐でコネクタを選びながら走�
 - 期待値: tlLogic 5つ、各6フェーズ(42・3・2・42・3・2 s、計94 s)、`linkSignalID`は今の網と同じ。
 - テスト: 作り直した結果がコミットしたファイルと同じ、フェーズの時刻、`G`/`g`が今の網と同じ。
 
+#### 結果(S2、2026-11-24)
+
+- `sumo/tll/Town10HD_vissim.tll.xml`: tlLogic 5つ(189・23・468・532・719 ← 信号制御1〜5)、各6フェーズ(42・3・2・42・3・2 s)。
+  青と黄のフェーズは今の網のプログラム(青42・黄3 ×2)と同じ文字列で、全赤2 sを2回足した形になった。`linkSignalID`の`param`も今のプログラムと同じ。
+- SUMO 1.20.0で網と一緒に読ませる(`sumo -n net/Town10HD.net.xml -a tll/Town10HD_vissim.tll.xml`)と、5つとも`vissim`のプログラムが使われ、
+  TraCIで読んだプログラムごとの`param`(ブリッジが読むもの)も18・10・6・11・11個あった。
+- tlLogic 189の色は、0 s 青 → 42.1 s 黄 → 45.1 s 全赤 → 47.1 s 横の青 → 89.1 s 黄 → 92.1 s 全赤 → 94.1 s 青、で切り替わった。
+  0.1 s(1ステップ)遅れて見えるのはSUMOの動きで、今のプログラムでも同じ(42.1 sに黄)。
+- `python3 -m pytest test/test_sumo_inpx.py`: 17件が通った(S2の分は7件)。
+
 ### S3: 需要と寸法
 
 - `tools/sumo_inpx/vissim_to_rou.py --inpx vissim/Town10HD.inpx --net sumo/net/Town10HD.net.xml --out sumo/rou/Town10HD_vissim.rou.xml`
