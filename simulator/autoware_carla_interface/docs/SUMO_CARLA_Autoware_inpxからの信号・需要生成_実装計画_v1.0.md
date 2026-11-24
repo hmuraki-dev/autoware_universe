@@ -285,6 +285,17 @@ Vissimの車は経路を持たず、分岐でコネクタを選びながら走�
   1時間の出発台数(約600台)、テレポート・衝突の数を見る。
 - `docs/SUMO-CARLA(0.9.16)-Autoware_co-sim_起動手順.md`に、生成の手順と`sumo_cfg_file:=Town10HD_vissim.sumocfg`での起動を書く。
 
+#### 結果(S5、2026-11-24)
+
+- `sumo -c sumo/Town10HD_vissim.sumocfg`(SUMO 1.20.0、ステップ0.1 s)をTraCIで700 s動かした。
+  - 信号5つとも`vissim`のプログラムで、42.1・45.1・47.1・89.1・92.1・94.1 s(以降94 sごと)に切り替わった(0.1 s遅れはSUMOの動き。S2)。
+  - 網の中の台数と平均速度: 100 sで14台・6.6 m/s、300 sで51台・5.3 m/s、500 sで86台・1.8 m/s、700 sで129台・0.8 m/s。テレポート・衝突なし。
+- `colcon build --packages-select autoware_carla_interface --symlink-install`のあと、インストール先の`share/autoware_carla_interface/sumo/`に
+  `Town10HD_vissim.sumocfg`・`tll/`・`rou/`のファイルが入り、`sumo_cfg_file:=Town10HD_vissim.sumocfg`がそこへ解決され、
+  `sumo_carla_variants:=auto`で`carla_variants_sumo_town10hd_vissim.yaml`が選ばれることを確かめた。
+- `docs/SUMO-CARLA(0.9.16)-Autoware_co-sim_起動手順.md`: 2.2.3の表に`Town10HD_vissim`の行、2.4.1に起動コマンド(`sumo_warmup_time:=100`)、
+  3.8にシナリオの説明を足した。
+
 ### S6: CARLA・Autowareでの確認(利用者)
 
 - CARLA 0.9.16_jpのTown10HD_Optで起動し、CARLAの信号機とAutowareが受け取る色が、SUMOの信号と同じ時刻で切り替わることを見る。

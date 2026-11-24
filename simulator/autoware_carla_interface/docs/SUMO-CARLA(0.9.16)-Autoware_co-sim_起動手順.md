@@ -196,6 +196,7 @@ SUMOの車両1台ごとに、どのCARLAのブループリントを使うかを�
 | `sumo_cfg_file` | 使う表 | 表がないとき |
 | --- | --- | --- |
 | `.../Town10HD.sumocfg` | `carla_variants_sumo_town10hd.yaml` | 今までの選び方(vTypeのIDのブループリント、なければ`vtypes.json`から乱数) |
+| `.../Town10HD_vissim.sumocfg` | `carla_variants_sumo_town10hd_vissim.yaml`(リポジトリに入っている。3.8) | 同上 |
 | `.../Town01.sumocfg` | `carla_variants_sumo_town01.yaml` | 同上 |
 
 **注意**:
@@ -482,6 +483,36 @@ ros2 launch autoware_launch e2e_simulator.launch.xml \
   `spawn_point`だけを指定すれば、ウォームアップなしで固定位置にスポーンする。スポーン地点の選び方は3.2.2。
 - `2>&1 | tee -i /tmp/autoware_carla.log`はログ保存用(3.2.3のgrepで使う)。不要なら省いてよい。
   `-i`を付けないと、Ctrl+Cで`tee`も終了し、それ以降(終了処理)のログが残らない。
+
+**Vissim構成と同じ条件で走らせるとき**(`Town10HD_vissim.sumocfg`。3.8)
+
+`vissim/Town10HD.inpx`から作った信号(周期94 s)・交通需要(600台/h)・日本の車の寸法で走らせる。上のコマンドから`sumo_cfg_file`と`sumo_warmup_time`の2行を変える。
+
+```bash
+ros2 launch autoware_launch e2e_simulator.launch.xml \
+  simulator_type:=carla \
+  map_path:=$HOME/autoware_map/Town10HD_Opt \
+  lanelet2_map_file:=lanelet2_map_with_tl.osm \
+  vehicle_model:=sample_vehicle \
+  sensor_model:=carla_sensor_kit \
+  use_sumo:=true \
+  sumo_gui:=true \
+  sumo_cfg_file:=Town10HD_vissim.sumocfg \
+  tls_manager:=sumo \
+  traffic_light.publish:=true \
+  sync_vehicle_lights:=true \
+  sync_vehicle_color:=true \
+  sumo_warmup_time:=100 \
+  spawn_point:="30.02,133.95,0.30,0.0,0.0,-179.7" \
+  spectator_follow:=true \
+  2>&1 | tee -i /tmp/autoware_carla.log
+```
+
+- `sumo_warmup_time:=100`は、Vissim構成の起動手順書のウォームアップ(`vissim_warmup_time:=100`)と同じ。
+- 起動ログで確かめること:
+  - `SUMO config: .../sumo/Town10HD_vissim.sumocfg`
+  - `CARLA blueprints of SUMO vehicles: .../carla_variants_sumo_town10hd_vissim.yaml (8 models, sumo_carla_variants=auto)`
+- 600 sを過ぎると、網が混んで車がほとんど動かなくなる(3.8)。試験は600 s以内に収める。
 
 ### 2.4.2 目的地の設定と自動運転の開始
 
@@ -885,3 +916,29 @@ python3 -c "import carla, importlib.metadata as m; print(m.version('carla'))"   
   (`map_path:=$HOME/autoware_map/Town10HD`など)。
 - `~/autoware_map/Town10HD_Opt`(シンボリックリンク)は残しておいてよい(0.9.15でも`Town10HD_Opt`のマップはある)。
 - 2.2.3でTown01の表を0.9.16用に作り直してコミットしたときは、0.9.15用の表と計測結果をgitで戻す。
+
+## 3.8 Vissim構成と同じ条件のシナリオ(`Town10HD_vissim`)
+
+`sumo/Town10HD_vissim.sumocfg`は、Vissim構成のTown10HD(`vissim/Town10HD.inpx`)から、信号・交通需要・車両寸法を作ったシナリオ(2026-11-24)。
+網は今の`net/Town10HD.net.xml`のまま。設計と確認結果は`docs/SUMO_CARLA_Autoware_inpxからの信号・需要生成_実装計画_v1.0.md`、作り直しの手順は`sumo/README.md`。
+
+| 項目 | `Town10HD.sumocfg` | `Town10HD_vissim.sumocfg` |
+| --- | --- | --- |
+| 信号 | 周期90 s(青42・黄3 ×2) | 周期94 s(青42・黄3・全赤2 ×2)。Vissimの信号制御と同じ |
+| 交通需要 | 0〜199 sに200台(決まった経路) | 流入19本・合計600台/h(ポアソン到着)で0〜3600 sに582台。経路は車1台ごとに分岐ごとに等分して選び、2000 m進んだら消える |
+| 車両 | CARLAの車の名前のvType(27種) | inpxの3Dモデルの寸法のvType 8つ(アルファード・ノア・JPNタクシー・GIGA・Volvo E・エルガ・ガーラ・MT-07) |
+| ブループリント表 | 作れば使う(2.2.3) | `carla_variants_sumo_town10hd_vissim.yaml`(リポジトリに入っている)。Vissim構成の表と同じ割り当て(日本の車6台・`carlacola` × 2・`kawasaki.ninja`) |
+| 追従モデル | Krauss(SUMOの既定) | Wiedemann(`minGap` 2 m)。希望速度30〜35 km/h |
+
+- 信号は追加ファイル(`tll/Town10HD_vissim.tll.xml`)の新しいプログラム`vissim`で、網のプログラムの代わりに使われる。
+  `linkSignalID`は網と同じなので、`tls_manager:=sumo`でCARLAの信号機が同じように動く。
+- Vissimの網もSUMOの網も閉じている(出口が無い)ので、流し続けると台数が増える。SUMO単体では次のとおり(2026-11-24):
+
+  | 時刻 [s] | 100 | 300 | 500 | 700 |
+  | -------- | --: | --: | --: | --: |
+  | 網の中の台数 | 14 | 51 | 86 | 129 |
+  | 平均速度 [m/s] | 6.6 | 5.3 | 1.8 | 0.8 |
+
+  700 sまではテレポート・衝突なし。860 sごろからテレポートが出始める。Vissimの車は網から出ないので、Vissimでも同じように溜まる見込み(未確認)。
+- 0.9.15でも使える。ただし表は0.9.16_jpで測った外形で作ったので、0.9.15では`variant_mesh_carla_version_changed`で止まる。
+  0.9.15では`sumo_carla_variants:=legacy_vtypes`にするか、0.9.15の計測結果と規則で表を作る。
