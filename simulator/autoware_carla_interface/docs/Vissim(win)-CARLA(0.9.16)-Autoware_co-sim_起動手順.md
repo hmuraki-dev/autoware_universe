@@ -213,7 +213,9 @@ Vissimの車両1台ごとに、どのCARLAのブループリントを使うか�
 - **0.9.16に切り替えたときは、(1)(2)(3)をすべて行う**。0.9.15で作った表(`carla_variants_town01.yaml`)は、外形を測ったCARLAの版(`0.9.15`)が
   接続先(`294096eb1-dirty`)と違うので、起動時に`Error: CARLA blueprint assignment: variant_mesh_carla_version_changed: ...`で止まる。
 - そのあとは、0.9.15版の2.4.3の表のとおり、変えたものに応じて実行する(`Town10HD.inpx`の車両の設定を変えたときは(2)(3))。
-- 作った表と計測結果は、autoware_universeにコミットする。`--symlink-install`でビルドしていれば、ビルドし直さなくても使われる。
+- 作った表と計測結果は、autoware_universeにコミットする。`--symlink-install`でビルドしていれば、**前からあるファイル**を作り直しただけなら、ビルドし直さなくても使われる。
+  **新しいファイル**(初めて作った`carla_variants_town10hd.yaml`・`mesh_measurements_carla0.9.16_jp.json`・`carla_variant_rules_carla0.9.16_jp.yaml`など)は、
+  2.5でビルドし直すまでインストール先にリンクが無く、ブリッジが読めない(`--symlink-install`のリンクはファイルごとに、ビルドのときに作られる)。
 - 表を作らずに試すときは、2.6.1で`vissim_carla_variants:=legacy_vtypes`にする(以前の選び方。3.3)。
 
 **(1) CARLAのブループリントの外形の計測**
@@ -269,6 +271,7 @@ python3 -m pytest test/test_carla_fleet.py test/test_build_carla_variants.py tes
 ### 2.5 【Linux側/ターミナル3】ビルド
 
 0.9.15版の2.5と同じ。CARLAを差し替えただけなら、ビルドし直す必要はない(`carla`はPythonのパッケージとして実行時に読み込まれる)。
+2.4.3で新しいファイル(表・計測結果・規則)を作ったときは、ビルドし直す(2.4.3の注意)。
 
 ```bash
 source /opt/ros/humble/setup.bash
