@@ -162,6 +162,76 @@ def test_narrow_side_is_strict_for_heavy_vehicles(rules):
     assert caught.value.code == "variant_category_unknown"
 
 
+def test_wide_side_can_be_set_per_category(rules):
+    """太い側の許容は、数値 1 つなら全カテゴリ共通、表ならカテゴリごと(複数のカテゴリは厳しいほう)。"""
+    assert carla_fleet.width_over_tolerance(rules, {"HGV"}) == pytest.approx(0.35)
+    per_category = dict(rules, width_over_tolerance_m={"CAR": 0.35, "HGV": 0.45, "BUS": 0.45})
+    assert carla_fleet.width_over_tolerance(per_category, {"HGV"}) == pytest.approx(0.45)
+    assert carla_fleet.width_over_tolerance(per_category, {"CAR", "BUS"}) == pytest.approx(0.35)
+    with pytest.raises(VariantError) as caught:
+        carla_fleet.width_over_tolerance(per_category, {"BIKE"})
+    assert caught.value.code == "variant_category_unknown"
+
+
+def body(length, width, base_type):
+    return dict(length=length, width=width, center_x=0.0, center_y=0.0, base_type=base_type)
+
+
+# 0.9.16_jp の日本の大型車(ミラー込みの外形)と fallback
+HEAVY_MESH = {"vehicle.jp.large_truck": body(12.171, 2.864, "truck"),
+              "vehicle.jp.tour_bus": body(12.109, 2.840, "bus"),
+              "vehicle.carlamotors.carlacola": body(5.109, 2.559, "truck")}
+CLASSES = {"CAR": ["car", "van", ""], "HGV": ["truck"], "BUS": ["bus"], "TRAM": [], "BIKE": ["motorcycle"]}
+CARLACOLA = {"blueprint": "vehicle.carlamotors.carlacola", "kind": "stack"}
+
+
+def test_classes_keep_trucks_off_buses(rules):
+    """分類で絞らないと、トラック(GIGA)に長さの近いバスが割り当たる。絞ればトラックになる。"""
+    giga = dict(L=11.81, W=2.49, segments=1, categories={"HGV"})
+    wide = dict(rules, width_over_tolerance_m={"CAR": 0.35, "HGV": 0.45, "BUS": 0.45})
+    assert blueprints(carla_fleet.assign(giga, wide, HEAVY_MESH)) == ["vehicle.jp.tour_bus"]
+    classed = dict(wide, blueprint_classes=CLASSES)
+    result = carla_fleet.assign(giga, classed, HEAVY_MESH)
+    assert blueprints(result) == ["vehicle.jp.large_truck"]
+    assert result["dW"] == pytest.approx(0.374)
+    gala = carla_fleet.assign(dict(L=11.99, W=2.49, segments=1, categories={"BUS"}), classed, HEAVY_MESH)
+    assert blueprints(gala) == ["vehicle.jp.tour_bus"]
+
+
+def test_classes_compare_without_case(rules):
+    classed = dict(rules, blueprint_classes=CLASSES)
+    mesh = dict(HEAVY_MESH, **{"vehicle.mitsubishi.fusorosa": body(10.0, 2.6, "Bus")})
+    bus = carla_fleet.assign(dict(L=10.0, W=2.55, segments=1, categories={"BUS"}), classed, mesh)
+    assert blueprints(bus) == ["vehicle.mitsubishi.fusorosa"]
+
+
+def test_fallback_is_not_filtered_by_class(rules):
+    """fallback(carlacola は truck)は分類で絞らない。分類の合う車が無いバスも重ねて表す。"""
+    classed = dict(rules, blueprint_classes=CLASSES, fallback=CARLACOLA)
+    mesh = {"vehicle.carlamotors.carlacola": HEAVY_MESH["vehicle.carlamotors.carlacola"]}
+    bus = carla_fleet.assign(dict(L=10.43, W=2.484, segments=1, categories={"BUS"}), classed, mesh)
+    assert bus["method"] == "fallback_stack"
+    assert blueprints(bus) == ["vehicle.carlamotors.carlacola"] * 3
+
+
+def test_no_car_of_the_class_gives_no_assignment(rules):
+    """分類の合う車が無く、fallback も使えない(乗用車)なら割り当てなし(生成ツールが止める)。"""
+    classed = dict(rules, blueprint_classes=CLASSES, fallback=CARLACOLA)
+    mesh = dict(HEAVY_MESH, **{"vehicle.bh.crossbike": body(4.5, 1.9, "bicycle")})
+    assert carla_fleet.assign(car(4.5, 1.9), classed, mesh) is None
+
+
+def test_classes_need_base_type_and_known_categories(rules):
+    classed = dict(rules, blueprint_classes={"CAR": ["car"]})
+    with pytest.raises(VariantError) as caught:
+        carla_fleet.assign(car(4.5, 1.9), classed, {"a.car": dict(length=4.5, width=1.9, center_x=0, center_y=0)})
+    assert caught.value.code == "variant_base_type_unmeasured"
+    assert caught.value.evidence == {"blueprint": "a.car"}
+    with pytest.raises(VariantError) as caught:
+        carla_fleet.assign(dict(L=12.0, W=2.5, segments=1, categories={"BUS"}), classed, HEAVY_MESH)
+    assert caught.value.code == "variant_category_unknown"
+
+
 def test_ties_are_broken_by_width_then_name(rules):
     mesh = {"b.wide": dict(length=4.5, width=2.3, center_x=0, center_y=0),
             "a.close": dict(length=4.5, width=2.0, center_x=0, center_y=0),
@@ -231,6 +301,32 @@ def test_package_rules_on_town01_models(model, expected):
     assert not any(carla_fleet.excluded(rules, name) for name in expected)
 
 
+JP_RULES = PACKAGE_RULES.parent / "carla_variant_rules_carla0.9.16_jp.yaml"
+
+# Town10HD.inpx(vissim/)で割合 > 0 のモデル: (L, W, カテゴリ)
+TOWN10HD_MODELS = {
+    "1001": (4.950, 1.850, "CAR"), "1002": (4.710, 1.736, "CAR"), "1003": (4.400, 1.696, "CAR"),
+    "1021": (11.810, 2.490, "HGV"), "22": (5.960, 2.550, "HGV"),
+    "1031": (10.430, 2.484, "BUS"), "1032": (11.990, 2.490, "BUS"), "70": (2.098, 0.907, "BIKE"),
+}
+
+
+@pytest.mark.parametrize("model, expected", [
+    ("1001", ["vehicle.jp.alphard"]), ("1002", ["vehicle.jp.minivan"]), ("1003", ["vehicle.jp.taxi"]),
+    ("1021", ["vehicle.jp.large_truck"]), ("22", ["vehicle.carlamotors.carlacola"] * 2),
+    ("1031", ["vehicle.jp.route_bus"]), ("1032", ["vehicle.jp.tour_bus"]), ("70", ["vehicle.kawasaki.ninja"]),
+])
+def test_jp_rules_on_town10hd_models(model, expected):
+    """0.9.16_jp の規則と実メッシュでの Town10HD の割り当て。トラック・バスは日本の同じ分類の車になる。"""
+    rules = carla_fleet.load_rules(JP_RULES)
+    mesh, meta = carla_fleet.load_mesh(JP_RULES.parent / "mesh_measurements_carla0.9.16_jp.json")
+    assert meta["carla_server_version"] == "294096eb1-dirty"
+    length, width, category = TOWN10HD_MODELS[model]
+    result = carla_fleet.assign(dict(L=length, W=width, segments=1, categories={category}), rules, mesh)
+    assert blueprints(result) == expected
+    assert not any(carla_fleet.excluded(rules, name) for name in expected)
+
+
 def test_invalid_rules_stop(tmp_path):
     path = tmp_path / "rules.yaml"
     path.write_text("length_tolerance_m: 0.75\n", encoding="utf-8")
@@ -247,6 +343,13 @@ def test_load_mesh_skips_unmeasured_blueprints(tmp_path):
     mesh, meta = carla_fleet.load_mesh(path)
     assert mesh == {"a": dict(length=4.0, width=2.0, center_x=0.1, center_y=0.0)}
     assert meta == {"carla_server_version": "0.9.15"}
+
+
+def test_load_mesh_keeps_base_type(tmp_path):
+    path = tmp_path / "mesh.json"
+    path.write_text('{"measurements": [{"blueprint": "a", "base_type": "Bus", '
+                    '"mesh_length_m": 10.0, "mesh_width_m": 2.6}]}', encoding="utf-8")
+    assert carla_fleet.load_mesh(path)[0]["a"]["base_type"] == "Bus"
 
 
 # ---------- 起動時の検査(移植元 設計案 §6、計画書 2.5) ----------

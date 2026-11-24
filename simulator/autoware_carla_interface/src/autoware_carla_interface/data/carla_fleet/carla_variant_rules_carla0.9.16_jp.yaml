@@ -1,0 +1,71 @@
+# ============================================================================
+# carla_variant_rules_carla0.9.16_jp.yaml — CARLA のブループリントを交通シムのモデルに割り当てる規則
+#                                         (CARLA 0.9.16_jp。日本の車 vehicle.jp.* 入り)
+#
+#   tools/carla_fleet/build_carla_variants.py がこの規則で carla_variants_<網>.yaml を作る。
+#   0.9.16_jp の実メッシュ(data/carla_fleet/mesh_measurements_carla0.9.16_jp.json)と組で使う。
+#   変えたら、この規則で作った carla_variants をすべて作り直す
+#   (ブリッジは起動時にこのファイルの sha256 を照合し、違えば variant_source_changed で止まる)。
+#
+#   0.9.15 用の carla_variant_rules.yaml(Town01 の表が使う)から変えたところ(2026-11-24):
+#     1. 太い側の幅の許容(width_over_tolerance_m)を車種カテゴリごとにし、HGV・BUS・TRAM を 0.45 m にした。
+#        大型車のミラーは乗用車より張り出す。0.9.16_jp で測った日本の車の dW(ミラー込みの外形 − モデルの幅):
+#        乗用車 +0.18〜+0.34 m、トラック・バス +0.35〜+0.40 m(tour_bus +0.35・large_truck +0.37・
+#        route_bus +0.40。ガーラの公式の全幅はミラー無しで 2,490 mm)。0.45 は最大の +0.40 に 0.05 の余裕を足した値。
+#     2. ブループリントの分類(blueprint_classes)で候補を絞る。絞らないと、幅の許容を広げたときに
+#        トラック(GIGA 11.81 m)に長さの近いバス(jp.tour_bus 12.11 m)が割り当たる。
+#
+# 規則(移植元 SBIR_sim 設計案 §4.1)。モデルごとに上から試す:
+#   1. 1 体で表す: 下の許容に入り、分類が合うブループリントのうち |dL| が最小のもの
+#      (同点は |dW|、次に名前順)。同じブループリントを複数のモデルに割り当ててよい。
+#   2. fallback を重ねて表す: 1 が無く、モデルが fallback のブループリントより長いとき。
+#      体の数 n = ceil(L / fallback の長さ)。前端は等間隔(外形の長さが L に一致)。
+#      連結車(セグメント 2 つ以上)は 2 体目以降が軌跡に従う(follows_path)。幅は 1 と同じ許容で検査する。
+#      分類では絞らない(fallback の carlacola は truck だが、バスのモデルにも使う)。
+#   3. どちらもできなければ生成を止める(variant_model_empty)。交通シムの定義で割合 0 のモデルは対象外(skipped)。
+#
+#   dL・dW = CARLA の外形(LiDAR で測った外形、幅はミラー込み) − モデルの寸法 [m]
+# ============================================================================
+name: carla_variant_rules_carla0.9.16_jp_v1
+
+# |dL| の上限(1 体で表すとき)。移植元と同じ
+length_tolerance_m: 0.75
+
+# dW の上限(太い側)。ミラー相当。車種カテゴリ(Vissim の vehicleType の category)ごと。
+#   乗用車・二輪は移植元と同じ 0.35。大型車・バス・路面電車はミラーが大きいので 0.45(上の 1)。
+#   1 つのモデルを複数のカテゴリが使うときは、最も厳しい値を使う。ここに無いカテゴリは生成を止める
+width_over_tolerance_m: {CAR: 0.35, HGV: 0.45, BUS: 0.45, TRAM: 0.45, BIKE: 0.35}
+
+# dW の下限(細い側)の絶対値。車種カテゴリごと。移植元と同じ。
+#   大型車・バスは知覚にとって危険側なので厳しくする。
+#   1 つのモデルを複数のカテゴリが使うときは、最も厳しい値を使う。ここに無いカテゴリは生成を止める
+width_under_tolerance_m: {CAR: 0.35, HGV: 0.10, BUS: 0.10, TRAM: 0.10, BIKE: 0.35}
+
+# 1 体で表すときの候補を、ブループリントの分類(base_type。実メッシュの計測結果に記録)で絞る(上の 2)。
+#   車種カテゴリごとに許す base_type。大文字・小文字は区別しない(fusorosa は "Bus")。
+#   car: 0.9.16_jp で base_type が空のもの(bmw.grandtourer・mini.cooper_s)は乗用車なので "" も許す。
+#        van(mercedes.sprinter など)は大きな乗用車のモデルに合うことがあるので許す。
+#   TRAM: CARLA に路面電車は無いので、1 体では表さない(fallback だけ)。
+#   1 つのモデルを複数のカテゴリが使うときは、すべてのカテゴリが許す base_type だけ。ここに無いカテゴリは生成を止める
+blueprint_classes:
+  CAR: [car, van, ""]
+  HGV: [truck]
+  BUS: [bus]
+  TRAM: []
+  BIKE: [motorcycle, bicycle]
+
+select: nearest_length
+
+# 1 体で表せないときに重ねるブループリント。トラックの見た目で、幅 2.559 m が大型車(2.55 m)に合う。
+# 救急車(移植元の fallback)は特殊な塗装なので外した(excluded)
+fallback: {blueprint: vehicle.carlamotors.carlacola, kind: stack}
+
+# 候補から外すブループリント(fnmatch の形)。0.9.15 の規則と同じ(2026-11-16 に Town01 で撮影して決めた)
+excluded:
+  vehicle.carlamotors.firetruck: 消防車の塗装
+  vehicle.carlamotors.european_hgv: 見た目はトラクターだが、LiDAR には消防車と同じ形(8.43 x 3.34 m)で映る
+  vehicle.ford.ambulance: 救急車の塗装
+  vehicle.dodge.charger_police*: パトカーの塗装(charger_police・charger_police_2020)
+  vehicle.ford.crown: タクシーの塗装
+  vehicle.volkswagen.t2*: バン(高さ約 2.0 m)。乗用車のモデル(高さ 1.4〜1.7 m)に割り当たるのを避ける
+  vehicle.toyota.prius: 自車のブループリント(launch の vehicle_type の既定値)
