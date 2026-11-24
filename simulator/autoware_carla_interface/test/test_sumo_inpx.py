@@ -272,3 +272,71 @@ def test_town10hd_tll_values():
         assert set(phases[2][1]) == set(phases[5][1]) == {'r'}
         # ブリッジが CARLA の信号機を引く param は、今のプログラムと同じ
         assert [(p.get('key'), p.get('value')) for p in logic.findall('param')] == net[tl_id]['params']
+
+
+# ---------------------------------------------------------------- S3: 需要と寸法(vissim_to_rou.py)
+
+rou = _load('vissim_to_rou')
+ROU = SUMO / 'rou' / 'Town10HD_vissim.rou.xml'
+
+
+def test_speed_bins():
+    assert rou.speed_bins([(30.0, 0.0), (35.0, 1.0)]) == [(1.0, 30 / 3.6, 35 / 3.6)]
+    assert rou.speed_bins([(30.0, 0.0), (35.0, 0.5), (35.0, 0.5), (40.0, 1.0)]) == \
+        [(0.5, 30 / 3.6, 35 / 3.6), (0.5, 35 / 3.6, 40 / 3.6)]
+
+
+def test_static_routes_are_refused(tmp_path):
+    extra = '<vehicleRoutingDecisionsStatic><vehicleRoutingDecisionStatic no="1" link="1">' \
+            '<vehRoutSta><vehicleRouteStatic no="1" destLink="1"/></vehRoutSta>' \
+            '</vehicleRoutingDecisionStatic></vehicleRoutingDecisionsStatic>'
+    with pytest.raises(rou.RouError):
+        rou.check_supported(reader.Inpx(_inpx(tmp_path, extra=extra)))
+
+
+@needs_sumolib
+def test_town10hd_types(town10hd):
+    inpx, _ = town10hd
+    vtypes, distributions = rou.build_types(inpx, {'1'}, 'vissim')
+    members = dict(distributions['vissim_c1'])
+    assert sum(members.values()) == pytest.approx(1.0)
+    share = {}
+    for key, p in members.items():
+        share[vtypes[key]['vClass']] = share.get(vtypes[key]['vClass'], 0.0) + p
+    assert share == pytest.approx({'passenger': 0.5, 'truck': 0.1, 'trailer': 0.1, 'bus': 0.2, 'motorcycle': 0.1})
+    sizes = {key: (vtypes[key]['length'], vtypes[key]['width']) for key in vtypes}
+    assert sizes['vissim_passenger1001_s30_b0'] == ('4.95', '1.85')       # アルファード
+    assert sizes['vissim_truck1021_s30_b0'] == ('11.81', '2.49')          # GIGA
+    assert sizes['vissim_motorcycle70_s30_b0'] == ('2.098', '0.907')      # MT-07
+    assert vtypes['vissim_trailer22_s30_b0']['guiShape'] == 'truck'
+    for spec in vtypes.values():
+        assert spec['carFollowModel'] == 'Wiedemann'
+        assert spec['minGap'] == '2'
+        assert spec['speedFactor'] == 'normc(9.0278,100,8.3333,9.7222)'   # 30〜35 km/h
+
+
+@needs_sumolib
+def test_town10hd_routes_follow_the_net(town10hd):
+    inpx, net = town10hd
+    vehicles, origins = rou.build_vehicles(inpx, net, 'vissim', 1, 600.0, 2000.0)
+    assert len(origins) == 19
+    assert [v['depart'] for v in vehicles] == sorted(v['depart'] for v in vehicles)
+    for v in vehicles:
+        assert v['length'] >= 2000.0
+        for a, b in zip(v['edges'], v['edges'][1:]):
+            assert b in [e.getID() for e in rou.successors(net.getEdge(a))]
+    again, _ = rou.build_vehicles(inpx, net, 'vissim', 1, 600.0, 2000.0)
+    assert again == vehicles
+    other, _ = rou.build_vehicles(inpx, net, 'vissim', 2, 600.0, 2000.0)
+    assert other != vehicles
+
+
+@needs_sumolib
+def test_town10hd_rou_is_reproduced(tmp_path):
+    out = tmp_path / 'Town10HD_vissim.rou.xml'
+    assert rou.main(['--inpx', str(VISSIM / 'Town10HD.inpx'), '--net', str(SUMO / 'net' / 'Town10HD.net.xml'),
+                     '--out', str(out)]) == 0
+    assert out.read_bytes() == ROU.read_bytes()
+    text = out.read_text(encoding='utf-8')
+    assert text.count('<vehicle ') == 582
+    assert '--' not in text.split('-->')[0][len('<?xml version="1.0" encoding="UTF-8"?>\n<!--'):]
