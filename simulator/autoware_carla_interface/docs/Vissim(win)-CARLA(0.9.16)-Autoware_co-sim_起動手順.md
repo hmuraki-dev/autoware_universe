@@ -241,7 +241,7 @@ cd ~/autoware.1.9.0/src/universe/autoware_universe/simulator/autoware_carla_inte
 python3 tools/carla_fleet/build_carla_variants.py \
     --inpx vissim/Town10HD.inpx \
     --geometry src/autoware_carla_interface/data/carla_fleet/mesh_measurements_carla0.9.16_jp.json \
-    --rules src/autoware_carla_interface/data/carla_fleet/carla_variant_rules.yaml \
+    --rules src/autoware_carla_interface/data/carla_fleet/carla_variant_rules_carla0.9.16_jp.yaml \
     --out src/autoware_carla_interface/vissim_integration/data/carla_variants_town10hd.yaml   # ← 生成物
 ```
 
@@ -249,7 +249,9 @@ python3 tools/carla_fleet/build_carla_variants.py \
 > `src/autoware_carla_interface/vissim_integration/data/carla_variants_town10hd.yaml`
 
 - `--inpx`は、Windows PCで読み込む`.inpx`と同じもの(2.2.0)。リポジトリ内のファイルなので`--inpx-ref`は要らない(表には、渡したパス`vissim/Town10HD.inpx`がそのまま記録される。`.inpx`のsha256も記録される)。
-- `Town10HD.inpx`の車両は、日本の車のモデル(乗用車3・トラック1・バス2)にしてある(3.4)。モデルファイル名が`vehicle.jp.*`なので、0.9.16の外形では日本の車がそのまま候補に入る見込み。
+- `--rules`は0.9.16_jp用の規則(`carla_variant_rules_carla0.9.16_jp.yaml`)。0.9.15用の`carla_variant_rules.yaml`(Town01の表が使う)と違い、
+  大型車(HGV・BUS)の幅の上限を0.45 mにし、ブループリントの分類(`base_type`)で候補を絞る(3.3)。
+- `Town10HD.inpx`の車両は、日本の車のモデル(乗用車3・トラック1・バス2)にしてある(3.4)。2026-11-24に作った表では、6つとも同じ日本の車に割り当たった(3.3)。
 - トレーラー(モデル22)は連結車にしない(トラクターだけ)。連結車があると、起動時に`Error: CARLA blueprint assignment: variant_articulated_unsupported`で止まる(このブリッジは連結車を扱わない)。
 
 **(3) 確認**
@@ -260,8 +262,9 @@ python3 -m pytest test/test_carla_fleet.py test/test_build_carla_variants.py tes
 ```
 
 - 表の`assignment`(モデルごとのブループリント・dL・dW)を見て、意図した割り当てか確かめる。タクシー(`vehicle.jp.taxi`)など、塗装に意味のある車が割り当たったときは、
-  規則(`carla_variant_rules.yaml`)の`excluded`に足して(2)から作り直す。
-- テストはTown01の表(`carla_variants_town01.yaml`)を期待値にしているので、Town10HDの表を足しても結果は変わらない。
+  規則(`carla_variant_rules_carla0.9.16_jp.yaml`)の`excluded`に足して(2)から作り直す。
+- テストは、Town01の割り当て(0.9.15の規則と外形)と、Town10HDの割り当て(0.9.16_jpの規則と`mesh_measurements_carla0.9.16_jp.json`。3.3の表)を期待値にしている。
+  (1)で測り直して割り当てが変わると、`test_jp_rules_on_town10hd_models`が落ちる。意図した変化なら、テストの期待値を直す。
 
 ### 2.5 【Linux側/ターミナル3】ビルド
 
@@ -371,7 +374,6 @@ pkill -INT -f "lib/autoware_carla_interface/autoware_carla_interface --ros-args"
 | 項目 | 確かめ方 |
 | --- | --- |
 | 2.6.1の起動コマンドで、Vissimとつながり、EGOがスポーンし、目的地まで自動運転できるか | 2.6.1・2.6.2 |
-| 0.9.16で測った外形での割り当て(日本の車が入るか) | 2.4.3の(3) |
 | Vissimの信号がCARLA・Autowareに届くか(`Traffic-light matching: 15 matched`) | 2.6.1の起動ログ、0.9.15版の3.2.4の確認用ツール |
 | 2.6.1のスポーン地点の車線に、Vissimの車が通るか(ウォームアップの空き待ちの確認になるか) | 2.6.1の起動ログの`[EGO SPAWN CHECK]` |
 
@@ -385,7 +387,25 @@ pkill -INT -f "lib/autoware_carla_interface/autoware_carla_interface --ros-args"
 
 ### 3.3 Vissimの車両のCARLAブループリント
 
-- 仕組みは0.9.15版の3.3と同じ(Vissimの2D/3Dモデルの寸法に最も近いブループリント。大型車は`carlacola`の重ね置き)。
+- 仕組みは0.9.15版の3.3と同じ(Vissimの2D/3Dモデルの寸法に最も近いブループリント。合うものが無い大型車は`carlacola`の重ね置き)。
+- 0.9.16_jp用の規則(`carla_variant_rules_carla0.9.16_jp.yaml`、2026-11-24)は、0.9.15用の規則から次の2つを変えた。
+  - 幅の上限(dW、太い側)を車種カテゴリごとにした。乗用車・二輪は0.35 m のまま、トラック・バス(HGV・BUS・TRAM)は0.45 m。
+    大型車のミラーは乗用車より張り出す。日本の車のdW(ミラー込みの外形 − モデルの幅)は、乗用車 +0.18〜+0.34 m、トラック・バス +0.35〜+0.40 m だった。
+  - 1体で表す候補を、ブループリントの分類(`base_type`)で絞る(乗用車: car・van・空、トラック: truck、バス: bus、二輪: motorcycle・bicycle)。
+    絞らないと、トラック(GIGA)に長さの近いバス(`jp.tour_bus`)が割り当たる。`carlacola`の重ね置きは絞らない(バスにも使う)。
+  - 分類の合う車も重ね置きも使えないモデルがあると、(2)は`variant_model_empty`で止まり、表を書かない。
+- 2026-11-24に作ったTown10HDの表(修正版の日本の車を測った外形):
+
+  | Vissimのモデル | ブループリント | dL / dW [m] |
+  | --- | --- | --- |
+  | 1001 Toyota Alphard | `vehicle.jp.alphard` | +0.021 / +0.310 |
+  | 1002 Toyota NOAH | `vehicle.jp.minivan` | +0.015 / +0.344 |
+  | 1003 Toyota JPN Taxi | `vehicle.jp.taxi` | −0.001 / +0.176 |
+  | 1021 ISUZU GIGA | `vehicle.jp.large_truck` | +0.361 / +0.374 |
+  | 22 Semi-Tractor Volvo E | `vehicle.carlamotors.carlacola` ×2(重ね置き) | 0.000 / +0.009 |
+  | 1031 ISUZU Erga | `vehicle.jp.route_bus` | +0.269 / +0.396 |
+  | 1032 ISUZU GALA | `vehicle.jp.tour_bus` | +0.119 / +0.350 |
+  | 70 Yamaha MT 07 | `vehicle.kawasaki.ninja` | −0.081 / −0.032 |
 - 表は、走行中にVissimの(車種, モデルファイル)で引く。`Town10HD.inpx`の車両は、日本の車のモデル(乗用車3・トラック1・バス2)、トレーラー(トラクターだけ)、バイク(3.4)。
 - 止まったとき(`Error: CARLA blueprint assignment: <code>: ...`)の直し方は、0.9.15版の3.3.2を参照。0.9.15で作った表を0.9.16で使うと`variant_mesh_carla_version_changed`になる(2.4.3)。
 
