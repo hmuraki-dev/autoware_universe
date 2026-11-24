@@ -149,6 +149,11 @@ class InitializeInterface(object):
         self.vissim_max_consecutive_failures = self.param_["vissim_max_consecutive_failures"]
         # See docs/Vissim_CARLA_Autoware_ブループリント割り当て_実装計画_v1.0.md (F5).
         self.vissim_carla_variants = self.param_["vissim_carla_variants"]
+        # Vissim signal group -> CARLA signal mapping file (vissim_integration/signal_mapping.py):
+        # auto = data/signal_mapping_<CARLA map>.json. Resolved (and checked to exist) at startup
+        # by _check_vissim_signal_mapping() when use_vissim and sync_traffic_lights are set.
+        self.vissim_signal_mapping = self.param_["vissim_signal_mapping"]
+        self.vissim_signal_mapping_path = None
         # See docs/Vissim_CARLA_Autoware_ウォームアップ_EGO安全スポーン_実装計画_v1.0.md.
         # vissim_warmup_time=0 (default) disables the warmup / EGO safe spawn entirely.
         self.vissim_warmup_time = self.param_["vissim_warmup_time"]
@@ -166,6 +171,7 @@ class InitializeInterface(object):
             self._check_vissim_warmup_params()
             self._check_vissim_sim_period_params()
             self._check_traffic_light_params()
+            self._check_vissim_signal_mapping()
         except ValueError:
             # carla_ros2_interface has already started its ROS spin thread, which is not a
             # daemon thread: without shutting it down, the process would never exit after the
@@ -195,6 +201,27 @@ class InitializeInterface(object):
             use_vissim=self.use_vissim,
             sync_traffic_lights=self.sync_traffic_lights,
         )
+
+    def _check_vissim_signal_mapping(self):
+        """
+        Resolve the `vissim_signal_mapping` file (Vissim signal group -> CARLA signal) at startup,
+        before connecting to CARLA or to the vissim adapter. No-op unless `use_vissim` and
+        `sync_traffic_lights` are set (the mapping is only read for traffic light sync).
+
+        `auto` (default) picks vissim_integration/data/signal_mapping_<town>.json from the CARLA
+        map name (`carla_map`, e.g. Town10HD_Opt -> signal_mapping_town10hd.json); a file name is
+        looked up in vissim_integration/data/. See vissim_integration/signal_mapping.py.
+
+            :raises ValueError: if the chosen file does not exist.
+        """
+        if not (self.use_vissim and self.sync_traffic_lights):
+            return
+
+        from .vissim_integration.signal_mapping import resolve_signal_mapping_path
+
+        self.vissim_signal_mapping_path = resolve_signal_mapping_path(
+            self.vissim_signal_mapping, self.carla_map)
+        print(f"Vissim signal mapping: {self.vissim_signal_mapping_path}")
 
     def _check_vissim_traffic_manager_exclusivity(self):
         """
@@ -402,6 +429,7 @@ class InitializeInterface(object):
             vissim_rpc_timeout_ms=self.vissim_rpc_timeout_ms,
             step_length=self.fixed_delta_seconds,
             sync_traffic_lights=self.sync_traffic_lights,
+            signal_mapping_path=self.vissim_signal_mapping_path,
             sim_period=self.vissim_sim_period,
             warmup_time=warmup_time,
             wait_timeout=wait_timeout,

@@ -40,6 +40,10 @@
          CARLA body closest to its size. A relative path is looked up in vissim_integration/data/.
          legacy_vtypes uses the old data/vtypes.json (a random model per vehicle type) instead. -->
     <arg name="vissim_carla_variants" default="carla_variants_town01.yaml" description="carla_variants file that assigns CARLA blueprints to Vissim models (relative to vissim_integration/data/), or legacy_vtypes for the old random choice from vtypes.json (use_vissim only)"/>
+    <!-- Vissim signal group -> CARLA signal mapping (see src/autoware_carla_interface/vissim_integration/signal_mapping.py).
+         auto picks vissim_integration/data/signal_mapping_<CARLA map name, lower case, without _Opt>.json
+         (Town01 -> signal_mapping_town01.json, Town10HD_Opt -> signal_mapping_town10hd.json). -->
+    <arg name="vissim_signal_mapping" default="auto" description="Vissim signal group -> CARLA signal mapping: auto (signal_mapping_&lt;CARLA map&gt;.json in vissim_integration/data/) or a file (relative to vissim_integration/data/). Read only with use_vissim and sync_traffic_lights"/>
     <!-- Vissim warmup / EGO safe spawn (see docs/Vissim_CARLA_Autoware_ウォームアップ_EGO安全スポーン_実装計画_v1.0.md).
          vissim_warmup_time=0 (default) disables it: the EGO is spawned at startup as before.
          The margins are doubles: write them with a decimal point (e.g. 25.0, not 25). -->
@@ -123,6 +127,7 @@
       <param name="vissim_sim_period" value="$(var vissim_sim_period)"/>
       <param name="vissim_max_consecutive_failures" value="$(var vissim_max_consecutive_failures)"/>
       <param name="vissim_carla_variants" value="$(var vissim_carla_variants)"/>
+      <param name="vissim_signal_mapping" value="$(var vissim_signal_mapping)"/>
       <param name="vissim_warmup_time" value="$(var vissim_warmup_time)"/>
       <param name="ego_spawn_front_margin" value="$(var ego_spawn_front_margin)"/>
       <param name="ego_spawn_rear_margin" value="$(var ego_spawn_rear_margin)"/>
@@ -160,6 +165,7 @@
       <param name="vissim_sim_period" value="$(var vissim_sim_period)"/>
       <param name="vissim_max_consecutive_failures" value="$(var vissim_max_consecutive_failures)"/>
       <param name="vissim_carla_variants" value="$(var vissim_carla_variants)"/>
+      <param name="vissim_signal_mapping" value="$(var vissim_signal_mapping)"/>
       <param name="vissim_warmup_time" value="$(var vissim_warmup_time)"/>
       <param name="ego_spawn_front_margin" value="$(var ego_spawn_front_margin)"/>
       <param name="ego_spawn_rear_margin" value="$(var ego_spawn_rear_margin)"/>

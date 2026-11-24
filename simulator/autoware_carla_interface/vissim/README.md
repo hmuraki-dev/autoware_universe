@@ -6,7 +6,7 @@ Vissim(Windows)で読み込む`.inpx`を置く。CARLAの版(0.9.15・0.9.16)に
 | --- | --- | --- |
 | `Town10HD_road.inpx` | Town10HDの道路網だけ(リンク・コネクタ)。信号・交通需要・車両設定はない | 1章(Windows PCのVissimでOpenDRIVEを取り込む) |
 | `Town10HD.inpx` | co-simで使うTown10HDのネットワーク。道路網に、信号・交通需要・車両設定を足したもの | 2章(ツールで作る) |
-| `signal_mapping_town10hd.json` | Vissimの(信号制御, 信号グループ) → CARLAの信号ID。Vissimブリッジの`data/signal_mapping.json`と同じ形 | 2章(同じツールで作る) |
+| `signal_mapping_town10hd.json` | Vissimの(信号制御, 信号グループ) → CARLAの信号ID。Vissimブリッジの`vissim_integration/data/signal_mapping_town10hd.json`と同じもの | 2章(同じツールで作る) |
 
 座標は、Town01.inpxと同じく、OpenDRIVEの座標そのもの(Vissimの(x, y) = CARLAの(x, −y))。
 
@@ -136,7 +136,7 @@ python3 -m pytest test/test_build_vissim_town.py
 手順は、`feature/vissim_windows_co-sim`ブランチの`docs/Vissim(win)-CARLA(0.9.16)-Autoware_co-sim_起動手順.md`(CARLA 0.9.16でTown10HDを使う手順)。
 
 - `Town10HD.inpx`をWindows PCへ写し、`server.py --vissim-network`に渡す。
-- `signal_mapping_town10hd.json`を、Vissimブリッジの`vissim_integration/data/signal_mapping.json`へ写す。今のブリッジは対応表を1つしか置けないので、Town01の対応表を上書きすることになる。
+- `signal_mapping_town10hd.json`は、Vissimブリッジの`vissim_integration/data/signal_mapping_town10hd.json`に同じものが入っている(2026-11-24から)。ブリッジは`map_path`のフォルダ名(`Town10HD_Opt`)からこれを選ぶ(起動の引数`vissim_signal_mapping:=auto`)。作り直したら、ここと`data/`の両方を同じにする。
 - Autowareと使うときは、車両のブループリント表を`build_carla_variants.py --inpx vissim/Town10HD.inpx`で作る(2.1.1)。
 
 ## 2.4 Vissimでの確認

@@ -324,7 +324,7 @@ time of the frame. Each CARLA light is reported as a circular signal whose color
 the CARLA state: `Red`/`Yellow`/`Green` map to `RED`/`AMBER`/`GREEN` with status `SOLID_ON`, the
 known-dark `Off` state maps to status `SOLID_OFF`, and only a state the bridge cannot interpret is
 published as `UNKNOWN`/`UNKNOWN`. With the Vissim co-simulation and `sync_traffic_lights:=true`, the CARLA
-lights mapped in `vissim_integration/data/signal_mapping.json` follow Vissim (written before each
+lights mapped in the signal mapping file (`vissim_signal_mapping`, see below) follow Vissim (written before each
 CARLA tick), so the Vissim signal states reach Autoware the same way, one tick later. Vissim's
 `AMBER` is published as `AMBER`. Nothing is published during the Vissim warmup
 (`vissim_warmup_time`); publishing starts with the regular loop after the EGO is spawned.
@@ -450,11 +450,18 @@ road (two lights) and 2 for the side road (one light), 94 s cycle (main road gre
 road green 47-89 s, 3 s amber and 2 s all-red), offset 0. Controller 5 also drives the crosswalk
 on the side road of light 372 (signal group 3, pedestrians only: green 0-34 s, flashing green
 34-38 s). Every vehicle signal head stands on the approach link at the lanelet2 stop line, before
-the connectors of all movements. `vissim_integration/data/signal_mapping.json` (the same file as
+the connectors of all movements. `vissim_integration/data/signal_mapping_town01.json` (the same file as
 `Co-Simulation/PTV-Vissim/data/signal_mapping.json`) maps each controller's groups 1 and 2 to the
 CARLA lights; pedestrian signal groups are not mapped (CARLA has no pedestrian lights). The CARLA
 repository has the tools used to build it (`util/split_signal_controllers.py`,
 `util/align_signal_heads.py`, `util/generate_signal_mapping.py`).
+
+The bridge picks the signal mapping file with the `vissim_signal_mapping` launch argument (read only
+with `use_vissim:=true sync_traffic_lights:=true`). The default `auto` takes
+`vissim_integration/data/signal_mapping_<map>.json`, where `<map>` is the folder name of `map_path`
+in lower case without a trailing `_Opt` (`Town01` -> `signal_mapping_town01.json`, `Town10HD_Opt` ->
+`signal_mapping_town10hd.json`); a file name is looked up in `vissim_integration/data/`. A missing
+file stops the bridge at startup, before Vissim is started.
 
 ## Vissim Vehicle Blueprints
 

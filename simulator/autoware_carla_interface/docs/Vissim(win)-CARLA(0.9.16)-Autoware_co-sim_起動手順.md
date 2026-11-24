@@ -11,7 +11,7 @@ CARLA 0.9.15(`~/CARLA/`)用の「Vissim(win)-CARLA-Autoware_co-sim_起動手順.
 | マップ | Town01 | **Town10HD(`Town10HD_Opt`)**。0.9.16_jpに入っているマップはこれだけ(3.1.2) |
 | Autowareの地図フォルダ | `~/autoware_map/Town01` | `~/autoware_map/Town10HD_Opt`(`Town10HD`へのシンボリックリンク。2.0.2) |
 | Vissimのネットワーク | `Town01.inpx`(CARLAリポジトリ) | `Town10HD.inpx`(このリポジトリの`vissim/`。3.4) |
-| 信号の対応表(`signal_mapping.json`) | Town01用(リポジトリに入っている) | Town10HD用に置き換える(2.4.2) |
+| 信号の対応表 | `signal_mapping_town01.json` | `signal_mapping_town10hd.json`。どちらもリポジトリに入っていて、ブリッジがマップ名から選ぶ(2.4.2) |
 | 車両のブループリント表 | `carla_variants_town01.yaml`(0.9.15で測った外形) | `carla_variants_town10hd.yaml`(0.9.16で外形を測り直して作る。2.4.3) |
 | 車両 | CARLA標準 | CARLA標準 + 日本の車6台(`vehicle.jp.*`。3.1.4) |
 
@@ -186,7 +186,7 @@ cd ~/CARLA_0.9.16_jp/LinuxNoEditor
 
 - 0.9.15のサーバー(`~/CARLA/CarlaUE4.sh`)が動いていたら、先に止める(どちらもポート2000を使う)。
 
-### 2.4 【Linux側/ターミナル2】マップの設定 → 信号の対応表の置き換え → 車両のブループリント表の生成
+### 2.4 【Linux側/ターミナル2】マップの設定 → 信号の対応表の確認 → 車両のブループリント表の生成
 
 #### 2.4.1 CARLAで使用するマップの設定
 
@@ -200,25 +200,19 @@ python3 config.py --map Town10HD_Opt
 - venv(`~/venvs/carla0916`・`~/carla310_env`)は有効にしない(2.0.1)。有効になっていたら`deactivate`してから実行する。
 - CARLAは起動直後から`Town10HD_Opt`を読み込んでいる。ほかのマップ(`OpenDriveMap`など)にしたときに、このコマンドで戻す。
 
-#### 2.4.2 信号の対応表をTown10HD用にする
+#### 2.4.2 信号の対応表を確かめる
 
-ブリッジは、`vissim_integration/data/signal_mapping.json`(場所は固定)を読む。Town10HD用の対応表で置き換える。
-
-**注意**:
-- **ブリッジは対応表を1つしか置けない**。置き換えると、Town01用の対応表は使えなくなる。Town01に戻すときは`git checkout`で戻す(3.5)。
-- 置き換えたファイルはコミットしない(`git status`に変更として出たままになる)。
-- 0.9.15版の2.4.2(`generate_signal_mapping.py`)は**使わない**。Town10HDでは誤った対応表になる(3.4)。
+Town10HD用の対応表はリポジトリに入っていて、ブリッジが起動時に`map_path`のフォルダ名(`Town10HD_Opt`)から選ぶ(3.4.1)。
+置き換えやコピーはしない。ファイルがあることだけ確かめる。
 
 ```bash
 cd ~/autoware.1.9.0/src/universe/autoware_universe/simulator/autoware_carla_interface
-cp vissim/signal_mapping_town10hd.json src/autoware_carla_interface/vissim_integration/data/signal_mapping.json   # ← 生成物
-cat src/autoware_carla_interface/vissim_integration/data/signal_mapping.json
+cat src/autoware_carla_interface/vissim_integration/data/signal_mapping_town10hd.json
 ```
 
-> 📄 **生成物:** Town10HDのVissim信号グループ-CARLA信号の対応表(ブリッジが読むもの)\
-> `src/autoware_carla_interface/vissim_integration/data/signal_mapping.json`
-
 - 中身は、5つの信号制御(`"1"`〜`"5"`)ごとに、信号グループ`"1"`・`"2"`のCARLAの信号ID(943〜962の15個)。
+- 以前の手順で`vissim_integration/data/signal_mapping.json`へコピーしたファイルが残っていても、ブリッジは読まない。消してよい。
+- 0.9.15版の2.4.2(`generate_signal_mapping.py`)は**使わない**。Town10HDでは誤った対応表になる(3.4)。
 
 #### 2.4.3 Vissimの車両のCARLAブループリント表の生成
 
@@ -328,11 +322,13 @@ ros2 launch autoware_launch e2e_simulator.launch.xml \
 | `map_path` | `$HOME/autoware_map/Town01` | `$HOME/autoware_map/Town10HD_Opt` | フォルダ名がCARLAのマップ名になる(2.0.2) |
 | `lanelet2_map_file`・`traffic_light.publish` | (3.2.2で足す) | 最初から付ける。地図は`lanelet2_map_with_tl_lc.osm` | Town10HDの信号入りの地図がある(3.2)。車線変更できるようにした地図を使う(2.0.3) |
 | `vissim_carla_variants` | (既定の`carla_variants_town01.yaml`) | `carla_variants_town10hd.yaml` | 2.4.3で作った表。作っていないときは`legacy_vtypes` |
+| `vissim_signal_mapping` | (既定の`auto`) | (既定の`auto`。指定しない) | `map_path`のフォルダ名から`signal_mapping_town10hd.json`が選ばれる(3.4.1) |
 | `spawn_point` | Town01の地点 | 信号954の手前(CARLAのスポーン地点#80) | Town10HDの地点(3.4) |
 
 - オプションの一覧と注意は、0.9.15版の2.6.1を参照(変わらない)。
 - 起動ログで確かめること:
   - `[CARLA Interface] Map Path: '.../Town10HD_Opt' -> Loading CARLA Map: 'Town10HD_Opt'`
+  - `Vissim signal mapping: .../vissim_integration/data/signal_mapping_town10hd.json`(信号の対応表。3.4.1)
   - `CARLA blueprints of Vissim vehicles: .../carla_variants_town10hd.yaml ...`(表を使うとき)
   - `Traffic-light matching: 15 matched, 0 ambiguous, 0 too far, 0 overridden (map has 62 heads / 30 groups)`(EGOのスポーン後。SUMO構成のTown10HDで確認した値)
 
@@ -458,7 +454,7 @@ pkill -INT -f "lib/autoware_carla_interface/autoware_carla_interface --ros-args"
 
 ```bash
 cd ~/autoware.1.9.0/src/universe/autoware_universe/simulator/autoware_carla_interface
-python3 tools/check_vissim_lanelet2_tl_ids.py src/autoware_carla_interface/vissim_integration/data/signal_mapping.json \
+python3 tools/check_vissim_lanelet2_tl_ids.py src/autoware_carla_interface/vissim_integration/data/signal_mapping_town10hd.json \
     ~/autoware_map/Town10HD/lanelet2_map_with_tl.osm --carla-json ~/autoware_map/Town10HD/carla_tl.json --group-id-offset 100000
 ```
 
@@ -468,17 +464,30 @@ python3 tools/check_vissim_lanelet2_tl_ids.py src/autoware_carla_interface/vissi
 **スポーン地点**: 2.6.1の`30.02,133.95,0.30,0.0,0.0,-179.7`は、信号954の手前(CARLAのスポーン地点#80、道路4)。CARLAの停止位置まで51 m、手前の交差点から110 m(後ろ36 mから先はカーブ)。
 SUMO構成で確かめた地点で、Vissimの車がこの車線を通るか、空き待ちが起きるかは未確認(3.1.5)。
 
+#### 3.4.1 信号の対応表の選び方(`vissim_signal_mapping`)
+
+ブリッジは、Vissimの(信号制御, 信号グループ) → CARLAの信号IDの対応表を、起動の引数`vissim_signal_mapping`で選ぶ(2026-11-24から)。
+
+| 値 | 読むファイル |
+| --- | --- |
+| `auto`(既定) | `vissim_integration/data/signal_mapping_<マップ名>.json`。マップ名は`map_path`のフォルダ名を小文字にし、末尾の`_Opt`を外したもの。`Town01` → `signal_mapping_town01.json`、`Town10HD_Opt` → `signal_mapping_town10hd.json` |
+| ファイル名・相対パス | `vissim_integration/data/`から探す(例: `vissim_signal_mapping:=signal_mapping_town01.json`) |
+| 絶対パス | そのまま |
+
+- 読むのは`use_vissim:=true sync_traffic_lights:=true`のときだけ。ファイルが無いときは、Vissimにつなぐ前に`Error: invalid parameters: vissim_signal_mapping:=auto for CARLA map 'Town05': signal mapping file not found: ...`で止まる(`data/`にある対応表の一覧も出る)。
+- `data/signal_mapping_town10hd.json`は、`vissim/signal_mapping_town10hd.json`(`feature/sumo_co-sim`の`tools/vissim/build_vissim_town.py`の生成物)の写し。
+  作り直したら両方を同じにする(`test/test_vissim_signal_mapping.py`が同じことを確かめる)。
+- 以前は`data/signal_mapping.json`の1つだけを読み、Townを替えるたびに上書きしていた(このファイルは`data/signal_mapping_town01.json`に名前を変えた)。
+
 ### 3.5 CARLA 0.9.15(Town01)に戻すとき
 
 0.9.15の環境は変えていないので、**`PYTHONPATH`を足していない新しいターミナル**を使えば、そのまま0.9.15になる(2.0.1)。
 
 ```bash
 python3 -c "import carla, importlib.metadata as m; print(m.version('carla'))"   # 0.9.15 と出ること(新しいターミナルで)
-cd ~/autoware.1.9.0/src/universe/autoware_universe/simulator/autoware_carla_interface
-git checkout src/autoware_carla_interface/vissim_integration/data/signal_mapping.json   # Town01の対応表に戻す
-git status --short src/autoware_carla_interface/vissim_integration/data/                 # 何も出ないこと(表を足した場合は ?? が出る)
 ```
 
 - サーバーは`~/CARLA/CarlaUE4.sh`で起動し、手順は0.9.15版の「Vissim(win)-CARLA-Autoware_co-sim_起動手順.md」に従う(Windows側は`Town01.inpx`)。
 - `carla_variants_town10hd.yaml`と`mesh_measurements_carla0.9.16_jp.json`は残しておいてよい(Town01は`carla_variants_town01.yaml`を使う)。
 - `~/autoware_map/Town10HD_Opt`(シンボリックリンク)も残しておいてよい。
+- 信号の対応表は戻さなくてよい(`map_path`が`Town01`なら、ブリッジが`signal_mapping_town01.json`を選ぶ。3.4.1)。

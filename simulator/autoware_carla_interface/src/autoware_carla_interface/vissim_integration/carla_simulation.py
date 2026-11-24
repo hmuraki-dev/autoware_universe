@@ -58,7 +58,7 @@ class CarlaSimulation(object):
 
         # Set traffic lights. {opendrive_id (str): traffic_light actor}. Note this is keyed by the
         # OpenDRIVE signal id (as returned by carla.TrafficLight.get_opendrive_id()), matching the
-        # id space used in data/signal_mapping.json - not the carla actor id.
+        # id space used in data/signal_mapping_<town>.json - not the carla actor id.
         self._traffic_lights = {}
         for traffic_light in self.world.get_actors().filter('traffic.traffic_light*'):
             opendrive_id = traffic_light.get_opendrive_id()

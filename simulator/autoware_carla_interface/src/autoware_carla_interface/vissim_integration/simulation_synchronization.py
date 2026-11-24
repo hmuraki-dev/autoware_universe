@@ -107,11 +107,14 @@ class SimulationSynchronization(object):
 
         # {(controller_id, signal_group_id): [opendrive_id (str), ...]}. Empty if disabled, the
         # mapping file is missing, or it fails to load - in all of those cases signal sync is a
-        # no-op in tick().
+        # no-op in tick(). The file is chosen by the vissim_signal_mapping launch argument
+        # (signal_mapping.py; auto = data/signal_mapping_<CARLA map>.json) and checked to exist
+        # by autoware_carla_interface before Vissim is started; args.signal_mapping_path holds it.
         self.signal_mapping = {}
-        if self.sync_traffic_lights:
-            self.signal_mapping = self._load_signal_mapping(
-                os.path.join(dir_path, 'data', 'signal_mapping.json'))
+        self.signal_mapping_path = getattr(args, 'signal_mapping_path', None)
+        if self.sync_traffic_lights and self.signal_mapping_path:
+            logging.info('Vissim signal mapping file : %s', self.signal_mapping_path)
+            self.signal_mapping = self._load_signal_mapping(self.signal_mapping_path)
 
         # OpenDRIVE ids frozen via switch_off_traffic_lights() below, remembered so close() can
         # hand them back to carla's own autonomous signal program (unfreeze_traffic_lights()).
@@ -134,8 +137,9 @@ class SimulationSynchronization(object):
             logging.info('Carla traffic light(s) mapped : %s', sorted(known_opendrive_ids))
             if missing_opendrive_ids:
                 logging.warning(
-                    'signal_mapping.json references %d carla OpenDRIVE id(s) not found in the '
-                    'current map: %s', len(missing_opendrive_ids), sorted(missing_opendrive_ids))
+                    '%s references %d carla OpenDRIVE id(s) not found in the current map: %s',
+                    os.path.basename(self.signal_mapping_path), len(missing_opendrive_ids),
+                    sorted(missing_opendrive_ids))
 
             # Freeze carla's own signal program on exactly the mapped traffic lights, so that our
             # own per-tick synchronize_traffic_light() calls are not immediately overridden.
@@ -144,7 +148,8 @@ class SimulationSynchronization(object):
         elif self.sync_traffic_lights:
             logging.warning(
                 'Traffic light synchronization was requested (--sync-traffic-lights) but no '
-                'usable signal_mapping.json was found - no traffic lights will be synchronized.')
+                'usable signal mapping file was found (%s) - no traffic lights will be '
+                'synchronized.', self.signal_mapping_path)
         else:
             # Logged explicitly (not just silence) so it is obvious from the log alone - without
             # this, carla's traffic lights keep running their own autonomous program, completely
@@ -164,7 +169,7 @@ class SimulationSynchronization(object):
     @staticmethod
     def _load_signal_mapping(path):
         """
-        Loads data/signal_mapping.json and returns {(controller_id, signal_group_id):
+        Loads a signal mapping file (data/signal_mapping_<town>.json) and returns {(controller_id, signal_group_id):
         [opendrive_id (str), ...]}, or {} if the file is missing/invalid (logged as a warning, not
         a fatal error, so that vehicle-only co-simulation keeps working without this file).
         """

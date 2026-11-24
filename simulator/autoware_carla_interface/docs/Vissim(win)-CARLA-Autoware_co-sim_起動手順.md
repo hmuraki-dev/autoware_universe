@@ -106,7 +106,7 @@ cd ~/CARLA
 ```
 
 ### 2.4 【Linux側/ターミナル2】マップの設定 → 信号マッピングjsonの生成 → 車両のブループリント表の生成
-Town01マップを読み込んだうえで、そのマップの信号機情報からdata/signal_mapping.jsonを生成します。
+Town01マップを読み込んだうえで、そのマップの信号機情報からVissimの信号の対応表(`signal_mapping_town01.json`)を生成します。
 Vissimの車両の設定などを変えたときは、Vissimの車両に割り当てるCARLAのブループリントの表も作り直します(2.4.3)。
 2.4.2と2.4.3は、どちらも**対象の設定を変えたときだけ**実行する(毎回の起動では不要)。
 
@@ -128,7 +128,7 @@ python3 config.py --map Town01
 - **マップをロード済みである必要があります**(このコマンドの直前にマップ設定を行うこと)。CARLAが同期モードで誰もtickしていないときは、1回だけtickしてから信号を読みます。
 - **`.inpx`側の信号配置を変更した場合のみ再実行すればよく**、毎回の起動時に実行する必要はありません。今の`Town01.inpx`の信号の構成は3.4を参照。
 - 横断歩道(歩行者エリアのlink)上の歩行者用signalHeadは、マッピングに入れません(CARLAには歩行者用の信号がないため)。1つのCARLA信号が2つ以上の信号グループに入るときは、ファイルを書き出さずにエラーで止まります。
-- 出力は、Linux側で実際に読まれる`autoware_carla_interface`の`vissim_integration/data/signal_mapping.json`にもコピーして、2か所を同じ内容にします。
+- 出力は、Linux側で実際に読まれる`autoware_carla_interface`の`vissim_integration/data/signal_mapping_town01.json`にもコピーして、2か所を同じ内容にします。ブリッジは`map_path`のフォルダ名(`Town01`)からこのファイルを選びます(起動の引数`vissim_signal_mapping`。2.6.1)。
 
 ```bash
 cd ~/CARLA/Co-Simulation/PTV-Vissim/util
@@ -139,7 +139,16 @@ python3 generate_signal_mapping.py ../examples/Town01/Town01.inpx   # ← 生成
 > `~/CARLA/Co-Simulation/PTV-Vissim/data/signal_mapping.json`
 
 - 出力先は`--output`で変えられる。
-- これを`~/autoware.1.9.0/src/universe/autoware_universe/simulator/autoware_carla_interface/src/autoware_carla_interface/vissim_integration/data/signal_mapping.json`にもコピーする(上の注意)。
+- これを次のようにコピーする(上の注意)。
+
+```bash
+cp ~/CARLA/Co-Simulation/PTV-Vissim/data/signal_mapping.json \
+   ~/autoware.1.9.0/src/universe/autoware_universe/simulator/autoware_carla_interface/src/autoware_carla_interface/vissim_integration/data/signal_mapping_town01.json   # ← 生成物
+```
+
+> 📄 **生成物:** ブリッジが読むTown01の対応表\
+> `src/autoware_carla_interface/vissim_integration/data/signal_mapping_town01.json`
+
 
 | オプション | 説明 | 省略可/不可 | デフォルト値 |
 | --- | --- | --- | --- |
@@ -360,6 +369,7 @@ ros2 launch autoware_launch e2e_simulator.launch.xml \
 | `vissim_sim_period` | co-simulationのシミュレーション期間(秒、1以上の整数)。経過すると、co-simulationを終了してVissimを閉じ、`e2e_simulator.launch.xml`で起動した全ノードを停止する | 省略可 | `600` |
 | `vissim_max_consecutive_failures` | Vissimアダプタとのtickが連続でこの回数失敗したら(タイムアウト・再接続失敗・アダプタのエラー)、期間の途中でも同様に終了する | 省略可 | `3` |
 | `vissim_carla_variants` | Vissimの車両に割り当てるCARLAのブループリントの表(carla_variants)。相対パスは`vissim_integration/data/`から探す。`legacy_vtypes`を指定すると、以前の`vtypes.json`と乱数での選び方に戻る。3.3参照 | 省略可 | `carla_variants_town01.yaml` |
+| `vissim_signal_mapping` | Vissimの信号グループ → CARLAの信号の対応表。`auto`は`vissim_integration/data/signal_mapping_<マップ名>.json`(マップ名は`map_path`のフォルダ名を小文字にし、末尾の`_Opt`を外したもの。Town01なら`signal_mapping_town01.json`)。ファイル名は`vissim_integration/data/`から探す。`sync_traffic_lights:=true`のときだけ読み、無ければ起動時エラー | 省略可 | `auto` |
 | `spectator_follow` | CARLAスペクテーター(自由視点カメラ)をEGO車両のスポーンと同時に自動追従させる | 省略可 | `false` |
 | `vissim_warmup_time` | Vissimだけを先に進める時間(秒、0以上の整数)。0でウォームアップ無効(従来どおり起動直後にEGOをスポーン) | 省略可 | `0` |
 | `spawn_point` | EGOのスポーン地点。`x,y,z,roll,pitch,yaw`の6つの数値をカンマ区切りで指定(CARLAの座標、角度は度)。zには自動で+2 mされる | **ウォームアップ時は省略不可**(ランダムスポーンでは判定する位置が決まらないため、起動時エラー) | `None`(ランダム) |

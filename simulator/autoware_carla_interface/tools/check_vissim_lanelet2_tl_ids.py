@@ -18,7 +18,7 @@ Check that the Vissim signal mapping and a Lanelet2 map refer to the same CARLA 
 
 Verification helper for docs/Vissim_CARLA_Autoware_信号設置_実装計画_v1.0.md (B1). A CARLA traffic
 light is identified by its OpenDRIVE landmark id, which appears in
-- vissim_integration/data/signal_mapping.json: {"<SC>": {"<SG>": [landmark, ...]}}, i.e. which
+- vissim_integration/data/signal_mapping_<town>.json: {"<SC>": {"<SG>": [landmark, ...]}}, i.e. which
   Vissim signal group (signal controller SC, signal group SG) drives which CARLA lights, and
 - the Lanelet2 map: the id of each traffic_light regulatory element, minus --group-id-offset
   (added by tools/carla_tl_to_lanelet2.py). Regulatory elements sharing their light heads
