@@ -301,6 +301,20 @@ Vissimの車は経路を持たず、分岐でコネクタを選びながら走�
 - CARLA 0.9.16_jpのTown10HD_Optで起動し、CARLAの信号機とAutowareが受け取る色が、SUMOの信号と同じ時刻で切り替わることを見る。
 - 車の体(ブループリント)と寸法が合っていること、二輪が出ることを見る。
 
+#### 結果(S6、2026-11-24、CARLA 0.9.16_jp・Town10HD_Opt、SUMO 1.20.0、Autoware全体)
+
+- 2.4.1の「Vissim構成と同じ条件で走らせるとき」のコマンドで起動した(利用者)。起動ログ:
+  `SUMO config: .../share/autoware_carla_interface/sumo/Town10HD_vissim.sumocfg`、
+  `CARLA blueprints of SUMO vehicles: .../carla_variants_sumo_town10hd_vissim.yaml (8 models, sumo_carla_variants=auto)`、
+  `[EGO SPAWN CHECK] t=100.05 ... result=SAFE`、`Traffic-light matching: 15 matched, 0 ambiguous, 0 too far, 0 overridden`。
+- CARLAに出ていた車(走行中に1回読んだもの): `vehicle.jp.alphard` 7・`vehicle.jp.tour_bus` 7・`vehicle.jp.taxi` 6・`vehicle.jp.minivan` 5・
+  `vehicle.jp.route_bus` 4・`vehicle.kawasaki.ninja` 4・`vehicle.carlamotors.carlacola` 4(トレーラー2台の重ね置き)・`vehicle.jp.large_truck` 1、
+  EGOの`vehicle.toyota.prius` 1。表に無いブループリントは出ていない。
+- CARLAの信号機15個はすべて凍結され、SUMOの信号と同じく周期94 s(青42・黄3・全赤2 ×2)で切り替わった
+  (CARLAの時刻で2052.06 s 信号グループ1が青 → 2094.06 s 黄 → 2097.06 s 赤 → 2099.06 s 信号グループ2が青 → 2141.06 s 黄 → 2144.06 s 赤 → 2146.06 s グループ1が青)。
+- Autowareのトピック`/perception/traffic_light_recognition/traffic_signals`(30グループ)の色は、CARLAの信号機と同じだった。
+- シミュレーションは実時間の約0.28倍で進んだ(ループ6〜7 Hz、`fixed_delta_seconds` 0.05 s)。EGOのスポーン直後からほぼ変わらず、網の混み方によるものではない。
+
 ---
 
 ## 5. 決めること(作業の前か途中)
