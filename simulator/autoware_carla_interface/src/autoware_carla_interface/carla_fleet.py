@@ -88,29 +88,62 @@ def load_rules(path) -> dict:
 
 
 def load_mesh(path) -> tuple[dict, dict]:
-    """measure_blueprint_mesh.py の出力 -> ({blueprint: {length, width, center_x, center_y}}, 付帯情報)。
+    """measure_blueprint_mesh.py の出力 -> ({blueprint: {length, width, center_x, center_y[, base_type]}}, 付帯情報)。
 
     幅と長さが測れていないブループリントは入れない(候補にならない)。
     """
     raw = json.loads(Path(path).read_text(encoding="utf-8"))
     rows = raw["measurements"] if isinstance(raw, dict) else raw
     meta = {key: value for key, value in raw.items() if key != "measurements"} if isinstance(raw, dict) else {}
-    mesh = {row["blueprint"]: dict(length=row["mesh_length_m"], width=row["mesh_width_m"],
-                                   center_x=row.get("mesh_center_x_m", 0.0),
-                                   center_y=row.get("mesh_center_y_m", 0.0))
-            for row in rows if "mesh_width_m" in row and "mesh_length_m" in row}
+    mesh = {}
+    for row in rows:
+        if "mesh_width_m" not in row or "mesh_length_m" not in row:
+            continue
+        body = dict(length=row["mesh_length_m"], width=row["mesh_width_m"],
+                    center_x=row.get("mesh_center_x_m", 0.0), center_y=row.get("mesh_center_y_m", 0.0))
+        if "base_type" in row:      # ブループリントの分類(規則の blueprint_classes で使う)
+            body["base_type"] = row["base_type"]
+        mesh[row["blueprint"]] = body
     return mesh, meta
 
 
 # ---------- 規則(設計案 §4.1) ----------
 
-def width_under_tolerance(rules, categories) -> float:
-    """細い側の許容。複数のカテゴリが使うモデルは最も厳しい値。"""
-    table = rules["width_under_tolerance_m"]
+def _per_category(table, categories):
+    """カテゴリごとの表から、モデルのカテゴリの値を並べる。表に無いカテゴリがあれば止める。"""
     unknown = sorted(set(categories) - set(table))
     if not categories or unknown:
         raise VariantError("variant_category_unknown", categories=sorted(categories), unknown=unknown)
-    return min(float(table[category]) for category in categories)
+    return [table[category] for category in categories]
+
+
+def width_under_tolerance(rules, categories) -> float:
+    """細い側の許容。複数のカテゴリが使うモデルは最も厳しい値。"""
+    return min(float(value) for value in _per_category(rules["width_under_tolerance_m"], categories))
+
+
+def width_over_tolerance(rules, categories) -> float:
+    """太い側の許容。数値 1 つなら全カテゴリ共通。カテゴリごとの表なら、複数のカテゴリが使うモデルは最も厳しい値。"""
+    table = rules["width_over_tolerance_m"]
+    if not isinstance(table, dict):
+        return float(table)
+    return min(float(value) for value in _per_category(table, categories))
+
+
+def class_allowed(rules, categories, body, blueprint=None) -> bool:
+    """ブループリントの分類(base_type)が、モデルのカテゴリに合うか。
+
+    規則に blueprint_classes が無ければ分類で絞らない(今までどおり)。あれば、モデルのすべてのカテゴリが
+    許す base_type だけを候補にする(大文字・小文字は区別しない)。fallback には使わない。
+    """
+    table = rules.get("blueprint_classes")
+    if table is None:
+        return True
+    if "base_type" not in body:
+        raise VariantError("variant_base_type_unmeasured", blueprint=blueprint)
+    base_type = str(body["base_type"]).strip().lower()
+    return all(base_type in {str(name).strip().lower() for name in allowed}
+               for allowed in _per_category(table, categories))
 
 
 def excluded(rules, blueprint) -> bool:
@@ -124,14 +157,14 @@ def assign(model, rules, mesh):
     """
     length, width = float(model["L"]), float(model["W"])
     under = width_under_tolerance(rules, model["categories"])
-    over = float(rules["width_over_tolerance_m"])
+    over = width_over_tolerance(rules, model["categories"])
 
     def width_fits(body_width):
         return -under - 1e-9 <= body_width - width <= over + 1e-9
 
     candidates = []
     for name, body in mesh.items():
-        if excluded(rules, name):
+        if excluded(rules, name) or not class_allowed(rules, model["categories"], body, name):
             continue
         d_length, d_width = body["length"] - length, body["width"] - width
         if abs(d_length) <= float(rules["length_tolerance_m"]) + 1e-9 and width_fits(body["width"]):
