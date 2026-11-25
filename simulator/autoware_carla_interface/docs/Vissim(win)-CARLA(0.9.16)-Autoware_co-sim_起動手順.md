@@ -156,8 +156,9 @@ scp divp@192.168.16.33:/home/divp/autoware.1.9.0/src/universe/autoware_universe/
 > `C:\Users\divp\SBIR\Vissim\work_muraki\CARLA\Town10HD.inpx`
 
 - USBメモリや共有フォルダで写してもよい。置き場所は書き込みのできるフォルダにする(アダプタが同じフォルダに`Town10HD.cosim.inpx`を作るため)。
-- Windows側で`.inpx`を直したときは、Linuxへ写し戻して`vissim/Town10HD.inpx`にコミットする(2.4.3の表の入力と同じものにするため)。
-  ただし、`vissim/Town10HD.inpx`はツールで作り直すと上書きされる(`vissim/README.md`の2章)。
+- Windows側で`.inpx`を直したときは、Linuxへ写し戻して`vissim/Town10HD.inpx`にコミットする(2.4.2の「作り直し」の(1))。
+  信号の対応表(2.4.2)と車両のブループリント表(2.4.3)を、同じinpxから作るため。
+  ただし、`vissim/Town10HD.inpx`は`vissim/README.md`の2章のツールで作り直すと上書きされる。
 
 #### 2.2.1 アダプタの起動
 
@@ -186,7 +187,7 @@ cd ~/CARLA_0.9.16_jp/LinuxNoEditor
 
 - 0.9.15のサーバー(`~/CARLA/CarlaUE4.sh`)が動いていたら、先に止める(どちらもポート2000を使う)。
 
-### 2.4 【Linux側/ターミナル2】マップの設定 → 信号の対応表の確認 → 車両のブループリント表の生成
+### 2.4 【Linux側/ターミナル2】マップの設定 → 信号の対応表の確認・作り直し → 車両のブループリント表の生成
 
 #### 2.4.1 CARLAで使用するマップの設定
 
@@ -200,9 +201,12 @@ python3 config.py --map Town10HD_Opt
 - venv(`~/venvs/carla0916`・`~/carla310_env`)は有効にしない(2.0.1)。有効になっていたら`deactivate`してから実行する。
 - CARLAは起動直後から`Town10HD_Opt`を読み込んでいる。ほかのマップ(`OpenDriveMap`など)にしたときに、このコマンドで戻す。
 
-#### 2.4.2 信号の対応表を確かめる
+#### 2.4.2 信号の対応表の確認・作り直し
 
-Town10HD用の対応表はリポジトリに入っていて、ブリッジが起動時に`map_path`のフォルダ名(`Town10HD_Opt`)から選ぶ(3.4.1)。
+Vissimの(信号制御, 信号グループ) → CARLAの信号IDの対応表。Town10HD用はリポジトリに入っていて、ブリッジが起動時に`map_path`のフォルダ名(`Town10HD_Opt`)から選ぶ(3.4.1)。
+
+**確認(毎回の起動では不要。初めて使うときに1回)**
+
 置き換えやコピーはしない。ファイルがあることだけ確かめる。
 
 ```bash
@@ -214,30 +218,56 @@ cat src/autoware_carla_interface/vissim_integration/data/signal_mapping_town10hd
 - 以前の手順で`vissim_integration/data/signal_mapping.json`へコピーしたファイルが残っていても、ブリッジは読まない。消してよい。
 - 0.9.15版の2.4.2(`generate_signal_mapping.py`)は**使わない**。Town10HDでは誤った対応表になる(3.4)。
 
-**作り直し(Windows PCのVissimで`Town10HD.inpx`の信号灯の名前・信号グループを変えたときだけ)**
+**作り直し(Windows PCのVissimで`Town10HD.inpx`の信号灯・信号グループを変えたときだけ)**
 
-対応表は、inpxの信号灯の名前(`CARLA <CARLAの信号ID>`)と信号グループから作る。作るツールと手順は`feature/sumo_co-sim`ブランチにある
-(SUMO構成の起動手順書`SUMO-CARLA(0.9.16)-Autoware_co-sim_起動手順.md`の2.2.3。SUMOのシナリオも同じinpxから作り直す)。
+対応表は、inpxの信号灯の名前(`CARLA <CARLAの信号ID>`)と、その信号灯の信号グループから作る。CARLA・Vissimは使わない。
+信号灯・信号グループを変えていない(信号の秒数・車両の設定だけを変えた)ときは、(1)だけ行う。対応表は変わらない。
 
-1. `feature/sumo_co-sim`で、SUMO構成の起動手順書の2.2.3を行い、inpxと対応表(`vissim/signal_mapping_town10hd.json`)をコミットする。
-2. このブランチ(`feature/vissim_windows_co-sim`)を開き、次のコマンドでinpxと対応表を写す。
+(1) 【Windows側/PowerShell】Vissimで保存した`Town10HD.inpx`を、Linuxの`vissim/Town10HD.inpx`へ写し戻す(IPアドレスとユーザー名は使うPCに合わせる)。
 
-```bash
-cd ~/autoware.1.9.0/src/universe/autoware_universe   # feature/vissim_windows_co-sim を開いた状態で
-git checkout feature/sumo_co-sim -- simulator/autoware_carla_interface/vissim/Town10HD.inpx \
-    simulator/autoware_carla_interface/vissim/signal_mapping_town10hd.json
-cd simulator/autoware_carla_interface
-cp vissim/signal_mapping_town10hd.json \
-    src/autoware_carla_interface/vissim_integration/data/signal_mapping_town10hd.json   # ← 生成物
-python3 -m pytest test/test_vissim_signal_mapping.py
+```powershell
+scp C:\Users\divp\SBIR\Vissim\work_muraki\CARLA\Town10HD.inpx divp@192.168.16.33:/home/divp/autoware.1.9.0/src/universe/autoware_universe/simulator/autoware_carla_interface/vissim/Town10HD.inpx
 ```
 
-> 📄 **生成物:** Vissimブリッジが読む信号の対応表(Town10HD)\
-> `src/autoware_carla_interface/vissim_integration/data/signal_mapping_town10hd.json`
+- 写すのは`Town10HD.inpx`。アダプタが作る`Town10HD.cosim.inpx`(2.2.1)は写さない。
+- USBメモリや共有フォルダで写してもよい。
 
-- テストは、`data/`の対応表が`vissim/`のものと同じかを確かめる。通ったら、写した3つのファイルをコミットする。
-- 信号灯の名前・信号グループを変えていなければ、対応表は変わらない(inpxだけが変わる)。
-- `vissim/README.md`の2章(`build_vissim_town.py`)でも対応表はできるが、`Town10HD.inpx`も作り直すので、Vissimで直した設定が消える。
+(2) 【Linux側/ターミナル2】対応表を作る。
+
+```bash
+cd ~/autoware.1.9.0/src/universe/autoware_universe/simulator/autoware_carla_interface
+python3 tools/make_vissim_signal_mapping.py --inpx vissim/Town10HD.inpx \
+    --out src/autoware_carla_interface/vissim_integration/data/signal_mapping_town10hd.json \
+    --out vissim/signal_mapping_town10hd.json   # ← 生成物
+```
+
+> 📄 **生成物:** Vissimの(信号制御, 信号グループ) → CARLAの信号IDの対応表(ブリッジが読むものと、`vissim/`の控え)\
+> `src/autoware_carla_interface/vissim_integration/data/signal_mapping_town10hd.json`、`vissim/signal_mapping_town10hd.json`
+
+- `信号制御 <番号>: SG 1 -> <CARLAの信号ID> SG 2 -> ...`が信号制御ごとに1行、最後に`信号制御 <数>、CARLA の信号 <数>`が出る。
+  今のinpx(2026-11-17)では、信号制御5・CARLAの信号15。
+- 2つの`--out`に同じものを書く(`vissim/`の控えは、inpxと対応表を一緒に置いておくため)。出力先は上書きする。
+- 写せない信号灯があると`Error: <理由>`を出して、ファイルを書かずに終わる(3.4.2)。
+
+(3) 【Linux側/ターミナル2】確かめる。
+
+```bash
+cd ~/autoware.1.9.0/src/universe/autoware_universe/simulator/autoware_carla_interface
+git status --short vissim/ src/autoware_carla_interface/vissim_integration/data/
+python3 tools/check_vissim_lanelet2_tl_ids.py src/autoware_carla_interface/vissim_integration/data/signal_mapping_town10hd.json \
+    ~/autoware_map/Town10HD_Opt/lanelet2_map_with_tl.osm --carla-json ~/autoware_map/Town10HD_Opt/carla_tl.json --group-id-offset 100000
+python3 -m pytest test/test_make_vissim_signal_mapping.py test/test_vissim_signal_mapping.py
+```
+
+- `git status`: 変えたinpxと、対応表が変わったときは2つの対応表が出る。
+- 照合: 対応表のCARLAの信号が、信号入りのLanelet2地図(`lanelet2_map_with_tl.osm`)とCARLAの信号(`carla_tl.json`)にそろっているかを確かめる。
+  最後に`OK`(終了コード0)が出ればよい。今の対応表では`Vissim: 15 landmarks in 10 signal groups of 5 signal controllers`・
+  `Lanelet2: 15 traffic lights in 30 regulatory elements`・`CARLA: 15 traffic lights`が出る(2026-11-25)。
+  `WARNING: --carla-json has no 'group' ...; intersection checks skipped`は出てよい。`--inpx`は付けない(3.4)。
+- テスト: `test_town10hd_mapping_is_reproduced`は、今のinpxから作った対応表が`data/`・`vissim/`のものと同じかを確かめる((2)をしていないと失敗する)。
+  `test_vissim_signal_mapping.py`は、`data/`と`vissim/`の対応表が同じか、ブリッジが選べるかを確かめる。
+- 確かめたら、inpxと2つの対応表をautoware_universeにコミットする。`--symlink-install`でビルドしていれば、ビルドし直さなくても使われる。
+- `vissim/README.md`の2章(`build_vissim_town.py`)でも対応表はできるが、`Town10HD.inpx`も作り直すので、Vissimで直した設定が消える。使わない。
 
 #### 2.4.3 Vissimの車両のCARLAブループリント表の生成
 
@@ -500,10 +530,27 @@ SUMO構成で確かめた地点で、Vissimの車がこの車線を通るか、�
 | 絶対パス | そのまま |
 
 - 読むのは`use_vissim:=true sync_traffic_lights:=true`のときだけ。ファイルが無いときは、Vissimにつなぐ前に`Error: invalid parameters: vissim_signal_mapping:=auto for CARLA map 'Town05': signal mapping file not found: ...`で止まる(`data/`にある対応表の一覧も出る)。
-- `data/signal_mapping_town10hd.json`は、`vissim/signal_mapping_town10hd.json`の写し。`vissim/`のものは、2026-11-17に`feature/sumo_co-sim`の
-  `tools/vissim/build_vissim_town.py`が`Town10HD.inpx`と一緒に作った。Vissimで直したinpxからは、同じブランチの`tools/sumo_inpx/vissim_to_signal_mapping.py`で作る(2.4.2の「作り直し」)。
-  作り直したら両方を同じにする(`test/test_vissim_signal_mapping.py`が同じことを確かめる)。
+- `data/signal_mapping_town10hd.json`と`vissim/signal_mapping_town10hd.json`は同じもの(`test/test_vissim_signal_mapping.py`が確かめる)。
+  2026-11-17に、`feature/sumo_co-sim`の`tools/vissim/build_vissim_town.py`が`Town10HD.inpx`と一緒に作った。
+  Vissimで直したinpxからは、`tools/make_vissim_signal_mapping.py`で両方を作り直す(2.4.2の「作り直し」)。同じinpxからは、同じバイト列になる。
+- SUMO構成(`feature/sumo_co-sim`)には、この対応表はない。SUMOの信号とCARLAの信号の対応は、SUMOの網(`sumo/net/Town10HD.net.xml`)の
+  `tlLogic`の`linkSignalID`に書かれている(SUMO構成の起動手順書の2.2.2)。どちらもCARLAの信号IDでLanelet2地図(3.2)につながる。
 - 以前は`data/signal_mapping.json`の1つだけを読み、Townを替えるたびに上書きしていた(このファイルは`data/signal_mapping_town01.json`に名前を変えた)。
+
+#### 3.4.2 信号の対応表を作り直すときに止まったとき(2.4.2)
+
+`tools/make_vissim_signal_mapping.py`は、写せない信号灯を見つけると`Error: <理由>`を出して、ファイルを書かずに終わる(終了コード1)。
+
+| 出る理由 | 原因 | 対処 |
+| --- | --- | --- |
+| `信号灯 <番号> の名前 ... が「CARLA <信号 ID>」でない` / `... の CARLA の信号 ID が数でない` | 信号灯の名前がCARLAの信号IDの形でない(Vissimで足した信号灯など) | 名前を`CARLA <CARLAの信号ID>`にする |
+| `CARLA の信号 <ID> の信号灯が別の信号グループにある` | 同じCARLAの信号の信号灯(車線ごとに1つ)が、違う信号グループにある | 同じ信号グループにする |
+| `信号灯 <番号>(CARLA <ID>)の信号制御 ... が inpx に無い` / `信号グループ ... が信号制御に無い` | 信号灯の信号グループが、inpxの信号制御に無い | 信号灯の信号グループを確かめる |
+| `信号灯 <番号> の信号グループ sg=... が「<信号制御> <信号グループ>」でない` | 信号灯に信号グループが付いていない | 信号灯に信号グループを付ける |
+| `名前が「CARLA <信号 ID>」の信号灯が無い` | 信号灯が1つも無い | inpxを確かめる |
+
+- 照合(2.4.2の(3))で`NG`が出たときは、対応表にあるCARLAの信号IDが、Lanelet2地図かCARLAに無い。信号灯の名前のIDを確かめる。
+- 信号灯を、CARLAに信号の無い場所に足すことはできない(CARLAの信号機が無いので、色を書き込めない)。
 
 ### 3.5 CARLA 0.9.15(Town01)に戻すとき
 
