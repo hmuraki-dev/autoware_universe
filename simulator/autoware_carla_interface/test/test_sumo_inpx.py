@@ -340,3 +340,36 @@ def test_town10hd_rou_is_reproduced(tmp_path):
     text = out.read_text(encoding='utf-8')
     assert text.count('<vehicle ') == 582
     assert '--' not in text.split('-->')[0][len('<?xml version="1.0" encoding="UTF-8"?>\n<!--'):]
+
+
+# ---------------------------------------------------------------- Vissim ブリッジの信号の対応表(vissim_to_signal_mapping.py)
+
+mapping_tool = _load('vissim_to_signal_mapping')
+MAPPING = VISSIM / 'signal_mapping_town10hd.json'
+
+
+def test_signal_mapping_from_heads(tmp_path):
+    heads = ('<signalHead no="1" name="CARLA 952" sg="1 1" lane="1 1"/>'
+             '<signalHead no="2" name="CARLA 949" sg="1 1" lane="1 2"/>'
+             '<signalHead no="3" name="CARLA 949" sg="1 1" lane="1 1"/>'
+             '<signalHead no="4" name="CARLA 950" sg="1 2" lane="1 1"/>')
+    mapping = mapping_tool.build(reader.Inpx(_inpx(tmp_path, heads=heads)))
+    assert mapping == {'1': {'1': [949, 952], '2': [950]}}
+
+
+def test_signal_mapping_group_missing_in_the_controller_is_refused(tmp_path):
+    heads = '<signalHead no="1" name="CARLA 949" sg="1 3" lane="1 1"/>'
+    with pytest.raises(reader.InpxError):
+        mapping_tool.build(reader.Inpx(_inpx(tmp_path, heads=heads)))
+
+
+def test_signal_mapping_without_carla_heads_is_refused(tmp_path):
+    with pytest.raises(reader.InpxError):
+        mapping_tool.build(reader.Inpx(_inpx(tmp_path)))
+
+
+def test_town10hd_signal_mapping_is_reproduced(tmp_path):
+    """vissim/signal_mapping_town10hd.json(build_vissim_town.py が作ったもの)と同じバイト列になる。"""
+    out = tmp_path / 'signal_mapping_town10hd.json'
+    assert mapping_tool.main(['--inpx', str(VISSIM / 'Town10HD.inpx'), '--out', str(out)]) == 0
+    assert out.read_bytes() == MAPPING.read_bytes()
