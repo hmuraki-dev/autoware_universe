@@ -61,7 +61,7 @@ CARLA関係のフォルダは次のとおり。
 2.0から順に実行する。
 - 2.0は、**CARLAを0.9.16に切り替えたときに1回だけ**実行する(毎回の起動では不要)。
 - 2.2・2.4の最初の`export PYTHONPATH=...`は、**0.9.16を使うターミナル(2と3)で毎回**実行する(2.0.1)。
-- 2.2.2・2.2.3は、**対象を変えたときだけ**実行する(毎回の起動では不要)。
+- 2.2.2〜2.2.4は、**対象を変えたときだけ**実行する(毎回の起動では不要)。
 
 ## 2.0 【ターミナル2】CARLA 0.9.16に切り替えたときだけ行う準備
 
@@ -123,7 +123,7 @@ cd ~/CARLA_0.9.16_jp/LinuxNoEditor
 - 0.9.15のサーバー(`~/CARLA/CarlaUE4.sh`)が動いていたら、先に止める(どちらもポート2000を使う)。
 
 
-## 2.2 【ターミナル2】マップのロード → 信号入りの地図の作成 → 車両のブループリント表の生成
+## 2.2 【ターミナル2】マップのロード → 信号入りの地図の作成 → inpxからの信号・需要の生成 → 車両のブループリント表の生成
 
 ### 2.2.1 マップのロード
 
@@ -134,7 +134,7 @@ python3 config.py --map Town10HD_Opt
 ```
 コマンドを実行すると、CARLAで読み込まれているマップが Town10HD_Opt に切り替わる(起動直後から Town10HD_Opt のときは、そのまま)。CARLA画面が Town10HD の地図になっていることを確認する。
 
-- 2.2.2・2.2.3も、この`export`をしたターミナル2で実行する。
+- 2.2.2〜2.2.4も、この`export`をしたターミナル2で実行する。
 - 読み込めるマップは、次のコマンドで確かめられる。0.9.16_jpでは`['Town10HD_Opt', 'AnnotationColorLandscape']`が出る(2026-11-17に確認)。
 
 ```bash
@@ -186,7 +186,121 @@ python3 tools/check_sumo_lanelet2_tl_ids.py sumo/net/Town10HD.net.xml \
 - 0.9.15で読んだ信号と比べるときは、`diff <(python3 -m json.tool --sort-keys ~/autoware_map/Town10HD/carla_tl_carla0.9.15.json) <(python3 -m json.tool --sort-keys ~/autoware_map/Town10HD/carla_tl.json)`。
   違うのが`map`(マップ名。`Town10HD`と`Town10HD_Opt`)だけなら、信号は同じ。
 
-### 2.2.3 SUMOの車両のCARLAブループリント表の生成
+### 2.2.3 Vissimのinpxからの信号制御・交通需要・車両寸法の生成(`Town10HD_vissim`)
+
+Vissim構成の`vissim/Town10HD.inpx`から、`Town10HD_vissim.sumocfg`(2.4.1の「Vissim構成と同じ条件で走らせるとき」)で使う、SUMOの信号制御・交通需要・車両寸法を作る。
+作るものと仕組みは3.8を参照。
+
+**注意**:
+- **Windows PCのVissimで`Town10HD.inpx`を変えたときだけ実行する。** 今のinpxから作ったファイルはコミット済みなので、変えていなければ不要。
+- inpxで何を変えたときも、(1)〜(6)を順に行う(どれも数秒で終わる)。どの設定がどのファイルになるかは3.8.1。
+- **網(`sumo/net/Town10HD.net.xml`)は作り直さない。** 信号は、網に重ねる追加ファイル(`.tll.xml`)に書く(3.8.1)。
+  inpxの道路網(リンク・コネクタ)を変えても、SUMOの網には入らない(SUMOの網はCARLAのOpenDRIVEから作ったもの)。
+- CARLAサーバーは要らない。
+
+**(1) inpxを写す**
+
+Windows PCのVissimで保存した`Town10HD.inpx`を、`simulator/autoware_carla_interface/vissim/Town10HD.inpx`に上書きで置く。
+別の名前で保存したときも、この名前で置く(`.sumocfg`・テストがこの名前で読む)。
+
+```bash
+cd ~/autoware.1.9.0/src/universe/autoware_universe/simulator/autoware_carla_interface
+git status --short vissim/
+```
+
+- `M vissim/Town10HD.inpx`が出ればよい(何も出ないときは、inpxが変わっていない)。
+
+**(2) inpxから読んだ内容の確認**
+
+ファイルは書かない。inpxの流入・車両の設定を、SUMOでどうなるかの形で表示する。
+
+```bash
+cd ~/autoware.1.9.0/src/universe/autoware_universe/simulator/autoware_carla_interface
+python3 tools/sumo_inpx/vissim_to_rou.py --inpx vissim/Town10HD.inpx --net sumo/net/Town10HD.net.xml --report
+```
+
+- 次の行が出る。Vissimで変えた値になっているかを確かめる。
+  - `流入 <番号>: リンク <Vissimのリンク> -> edge <SUMOのedge> departPos <位置> <台/h> <台数>`(流入ごと)
+  - `vissim_c1: <vTypeのID> <割合> <長さ> x <幅> m accel <加速度> decel <減速度> <希望速度>`(vTypeごと)
+  - `vType <数>、車 <台数> 台、edge 数 <最小>〜<最大>(中央 <中央値>)`
+- `Error: ...`が出たら、inpxにツールが扱えない設定がある(3.8.2)。
+
+**(3) 信号制御の生成**
+
+```bash
+cd ~/autoware.1.9.0/src/universe/autoware_universe/simulator/autoware_carla_interface
+python3 tools/sumo_inpx/vissim_to_tll.py --inpx vissim/Town10HD.inpx --net sumo/net/Town10HD.net.xml \
+    --out sumo/tll/Town10HD_vissim.tll.xml   # ← 生成物
+```
+
+> 📄 **生成物:** inpxの信号制御から作ったSUMOの信号プログラム(`programID="vissim"`)\
+> `sumo/tll/Town10HD_vissim.tll.xml`
+
+- `tlLogic <SUMOの信号> <- 信号制御 <Vissimの信号制御>: <秒数>:<状態> ...`が信号ごとに1行出る。秒数がVissimの信号プログラムと同じかを確かめる。
+- 出力先は上書きする。
+
+**(4) 交通需要・車両寸法の生成**
+
+```bash
+cd ~/autoware.1.9.0/src/universe/autoware_universe/simulator/autoware_carla_interface
+python3 tools/sumo_inpx/vissim_to_rou.py --inpx vissim/Town10HD.inpx --net sumo/net/Town10HD.net.xml \
+    --out sumo/rou/Town10HD_vissim.rou.xml   # ← 生成物
+```
+
+> 📄 **生成物:** inpxの車両入力・車両構成・車両モデルから作ったSUMOの車両(vTypeと、経路付きの車1台ずつ)\
+> `sumo/rou/Town10HD_vissim.rou.xml`
+
+- `sumo/rou/Town10HD_vissim.rou.xml: 車 <台数> 台、vType <数>`が出る。
+- 出力先は上書きする。オプション(経路の長さなど)は3.8.1。
+
+**(5) ブループリント表の生成**
+
+(4)で`.rou.xml`が変わったら、ブループリント表も作り直す(作り直さないと、co-simの起動時に`variant_source_changed`で止まる。3.6.3)。
+表の作り方は2.2.4の(2)と同じ。
+
+```bash
+cd ~/autoware.1.9.0/src/universe/autoware_universe/simulator/autoware_carla_interface
+python3 tools/carla_fleet/build_carla_variants.py \
+    --sumocfg sumo/Town10HD_vissim.sumocfg \
+    --geometry src/autoware_carla_interface/data/carla_fleet/mesh_measurements_carla0.9.16_jp.json \
+    --rules src/autoware_carla_interface/data/carla_fleet/carla_variant_rules_carla0.9.16_jp.yaml \
+    --out src/autoware_carla_interface/sumo_integration/data/carla_variants_sumo_town10hd_vissim.yaml   # ← 生成物
+```
+
+> 📄 **生成物:** SUMO車両-ブループリント割り当て一覧(Town10HD_vissim)\
+> `src/autoware_carla_interface/sumo_integration/data/carla_variants_sumo_town10hd_vissim.yaml`
+
+- `割り当て <数> モデル`が出る。割り当ては2.2.4の(3)のスクリプトのファイル名を`carla_variants_sumo_town10hd_vissim.yaml`に変えて確かめる。
+- (3)(4)で何も変わらなかった(`git status`で`.rou.xml`が出ない)ときも、作り直してよい。そのときは`generated_at`(作った日時)だけが変わる。
+
+**(6) 確認**
+
+```bash
+cd ~/autoware.1.9.0/src/universe/autoware_universe/simulator/autoware_carla_interface
+git status --short vissim/ sumo/ src/autoware_carla_interface/sumo_integration/data/
+python3 -m pytest test/test_sumo_inpx.py test/test_sumo_fleet_plan.py
+sumo -c sumo/Town10HD_vissim.sumocfg --end 600 --no-step-log
+```
+
+- `git status`: 変えたinpxと、(3)〜(5)で変わったファイルが出る。
+- テスト:
+  - `test_town10hd_tll_is_reproduced`・`test_town10hd_rou_is_reproduced`は、(3)(4)で作ったファイルが、今のinpxから作り直したものと同じかを確かめる。(3)(4)をしていないと失敗する。
+  - 次のテストは、2026-11-24のinpxの値(周期94 s、流入19本、車種の割合と寸法、ブループリントの割り当て)を期待値にしている。
+    inpxでその値を変えたときに失敗するのは正しい。Vissimで変えた値と合っていれば、テストの期待値を直す。
+
+    | テスト | 期待値にしているもの |
+    | --- | --- |
+    | `test_sumo_inpx.py`の`test_town10hd_inputs_map_to_one_edge_each` | 流入の数(19)と、そのSUMOのedge |
+    | `test_sumo_inpx.py`の`test_town10hd_controllers`・`test_town10hd_tll_values` | 信号制御の数(5)・周期(94 s)・青42・黄3・全赤2 s |
+    | `test_sumo_inpx.py`の`test_town10hd_types` | 車種の割合・寸法・追従モデル・希望速度(30〜35 km/h) |
+    | `test_sumo_fleet_plan.py`の`test_town10hd_vissim_plan_loads` | vTypeのIDと、そのブループリント(`TOWN10HD_VISSIM_ASSIGNMENT`) |
+
+- SUMO単体: エラーなく`Simulation ended at time: 600.00`まで進めばよい。今のinpx(2026-11-24)では600 sまでにテレポートは出ない。
+- 確かめたら、変えたinpxと(3)〜(5)で作ったファイルをautoware_universeにコミットする。
+  `--symlink-install`でビルドしていれば、ビルドし直さなくても使われる。
+- Vissim構成のブランチ(`feature/vissim_windows_co-sim`)でも、同じinpxを`vissim/Town10HD.inpx`に置く(3.8.1)。
+
+### 2.2.4 SUMOの車両のCARLAブループリント表の生成
 
 SUMOの車両1台ごとに、どのCARLAのブループリントを使うかを決める表(`sumo_integration/data/carla_variants_sumo_<.sumocfgの名前を小文字>.yaml`)を作る。
 仕組みは3.6を参照。
@@ -196,7 +310,7 @@ SUMOの車両1台ごとに、どのCARLAのブループリントを使うかを�
 | `sumo_cfg_file` | 使う表 | 表がないとき |
 | --- | --- | --- |
 | `.../Town10HD.sumocfg` | `carla_variants_sumo_town10hd.yaml` | 今までの選び方(vTypeのIDのブループリント、なければ`vtypes.json`から乱数) |
-| `.../Town10HD_vissim.sumocfg` | `carla_variants_sumo_town10hd_vissim.yaml`(リポジトリに入っている。3.8) | 同上 |
+| `.../Town10HD_vissim.sumocfg` | `carla_variants_sumo_town10hd_vissim.yaml`(リポジトリに入っている。inpxを変えたら2.2.3の(5)で作り直す) | 同上 |
 | `.../Town01.sumocfg` | `carla_variants_sumo_town01.yaml` | 同上 |
 
 **注意**:
@@ -440,7 +554,7 @@ ros2 launch autoware_launch e2e_simulator.launch.xml \
 - `sumo_warmup_time`は`60`にする。Town10HDのSUMOのルートは0〜199秒に計200台だけなので、`600`にするとEGOのスポーン時には車がいなくなっている。
 - スポーン地点は信号954の手前(3.5.1の「Town10HD」)。
 - 起動ログに、SUMOの車両のブループリントをどう選ぶかが1行出る(3.6)。
-  - 2.2.3でTown10HDの表を作ったとき: `CARLA blueprints of SUMO vehicles: .../carla_variants_sumo_town10hd.yaml (<モデルの数> models, sumo_carla_variants=auto)`
+  - 2.2.4でTown10HDの表を作ったとき: `CARLA blueprints of SUMO vehicles: .../carla_variants_sumo_town10hd.yaml (<モデルの数> models, sumo_carla_variants=auto)`
   - 作っていないとき: `CARLA blueprints of SUMO vehicles: legacy (vType id, else vtypes.json) (sumo_carla_variants=auto: no carla_variants_sumo_town10hd.yaml ...)`(今までの選び方)
 
 | オプション | 説明 | 設定例 | デフォルト値(未指定時) |
@@ -613,9 +727,9 @@ python3 check_jp_vehicles.py --out check_out   # ← 生成物
 > 📄 **生成物:** 日本の車6台の確認結果(全部合格なら終了コード0)\
 > `~/CARLA_0.9.16_jp_incoming/check_out/check_jp_vehicles.json`
 
-- Town10HDの表(2.2.3)がないときは、日本の車は使われない。今までの選び方(3.6)は、vTypeのIDと同じ名前のCARLA標準の車か、
+- Town10HDの表(2.2.4)がないときは、日本の車は使われない。今までの選び方(3.6)は、vTypeのIDと同じ名前のCARLA標準の車か、
   `sumo_integration/data/vtypes.json`の車から選ぶため。
-- 日本の車を使うには、SUMOのvTypeの寸法を日本の車の外形に合わせ、2.2.3の(1)(2)(3)でTown10HDの表を作る。
+- 日本の車を使うには、SUMOのvTypeの寸法を日本の車の外形に合わせ、2.2.4の(1)(2)(3)でTown10HDの表を作る。
 
 ### 3.1.5 まだ確かめていないこと
 
@@ -838,7 +952,7 @@ SUMOの車両1台をCARLAに出すとき、どのブループリントを使う�
 - 生成ツールで事前に作った表(carla_variants)を、ブリッジは起動時に検査し、走行中はSUMOの車のvTypeのIDで引くだけ。
 - どの表を使うかは`sumo_carla_variants`で決まる(2.4.1)。既定の`auto`は、`.sumocfg`の名前から`sumo_integration/data/carla_variants_sumo_<名前を小文字>.yaml`を探し、
   なければ今までの選び方(vTypeのIDと同じ名前のブループリント、なければ`sumo_integration/data/vtypes.json`からvClassで乱数)にする。
-- リポジトリにある表はTown01だけ(0.9.15で作ったもの)。Town10HDは、2.2.3で表を作れば表で、作らなければ今までの選び方になる。
+- リポジトリにある表はTown01だけ(0.9.15で作ったもの)。Town10HDは、2.2.4で表を作れば表で、作らなければ今までの選び方になる。
 
 ### 3.6.1 Town10HDの車両
 
@@ -849,7 +963,7 @@ SUMOの車両1台をCARLAに出すとき、どのブループリントを使う�
 - 0.9.16_jpに、そのブループリントがないときは、`vtypes.json`から同じvClassのものを乱数で選ぶか、選べなければ
   `sumo vtype ... not supported`の警告を出して、その車をCARLAに出さない(3.1.5)。
 
-**表を作るとき(2.2.3)**
+**表を作るとき(2.2.4)**
 
 - vTypeごとに、分類の合う、寸法が最も近いブループリントが割り当たる。vTypeのIDの名前は使わない。
 - 0.9.16_jp用の規則(`carla_variant_rules_carla0.9.16_jp.yaml`、2026-11-24。Vissim構成と同じファイル)は、0.9.15用の規則から次の2つを変えた。
@@ -859,7 +973,7 @@ SUMOの車両1台をCARLAに出すとき、どのブループリントを使う�
     絞らないと、トラックに長さの近いバスが割り当たることがある。`carlacola`の重ね置きは絞らない(バスにも使う)。
   - SUMOのvTypeの車種カテゴリはvClassから決める(passenger → 乗用車、truck・trailer・delivery・emergency → トラック、bus・coach → バス、
     motorcycle・bicycleなど → 二輪)。vClassが乗用車でも、長さが6 mを超えるvTypeはトラックとして扱う。
-  - 分類の合う車も重ね置きも使えないモデルがあると、2.2.3の(2)は`variant_model_empty`で止まり、表を書かない。
+  - 分類の合う車も重ね置きも使えないモデルがあると、2.2.4の(2)は`variant_model_empty`で止まり、表を書かない。
 - 今の`rou/Town10HD.rou.xml`(CARLA標準の車の名前のvType。日本の車のvTypeは無い)では、0.9.16_jp用の規則で作った表と、
   0.9.15用の規則で作った表は、27モデルすべてで同じ割り当てになる(2026-11-24に確認)。
   違いが出るのは、日本のトラック・バスに合わせたvTypeを足したとき。
@@ -870,13 +984,13 @@ SUMOの車両1台をCARLAに出すとき、どのブループリントを使う�
   - `vehicle.dodge.charger_police` → `vehicle.dodge.charger_2020`(パトカーの塗装は、規則で候補から外している)
   - ほかの9つ(`nissan.micra` → `jeep.wrangler_rubicon`、`ford.mustang` → `tesla.model3`など)は、
     vTypeの寸法(`carlavtypes.rou.xml`。CARLAのバウンディングボックスの値)と、規則が比べるLiDARで測った外形がずれているため。
-  - これは、vTypeの寸法を測った外形に合わせていないと、IDの車が選ばれないことの例でもある(2.2.3の(2)の「Town10HD」)。
-- SUMOのvTypeを日本の車に合わせたときの注意は、2.2.3の(2)の「Town10HD」。
+  - これは、vTypeの寸法を測った外形に合わせていないと、IDの車が選ばれないことの例でもある(2.2.4の(2)の「Town10HD」)。
+- SUMOのvTypeを日本の車に合わせたときの注意は、2.2.4の(2)の「Town10HD」。
 
 ### 3.6.2 Town01の表(0.9.16で使うとき)
 
 - 0.9.15で作った`carla_variants_sumo_town01.yaml`(14モデル。Vissim構成と同じ割り当て)は、外形を0.9.15で測ったもの。
-  0.9.16では使えないので、2.2.3の(1)(2)(3)で作り直す。
+  0.9.16では使えないので、2.2.4の(1)(2)(3)で作り直す。
 - 割り当て(0.9.15)の一覧は、0.9.15版の3.5.1を参照。
 
 ### 3.6.3 止まったとき(`Error: CARLA blueprint assignment: <code>: ...`)
@@ -884,13 +998,13 @@ SUMOの車両1台をCARLAに出すとき、どのブループリントを使う�
 | code | 意味 | 直し方 |
 | --- | --- | --- |
 | `variant_config_missing` | `sumo_carla_variants`のファイルがない | パスを確かめる |
-| `variant_source_changed`(`source: route_files`) | 渡された`.sumocfg`の`route-files`の並びか中身(sha256)が、表を作ったときと違う | 表を作り直す(2.2.3の(2)) |
-| `variant_source_changed`(`source: rules`・`geometry`) | 表を作ったときと、規則か実メッシュが違う | 表を作り直す(2.2.3の(2)) |
-| `variant_source_changed`(`source: vehicle_dimensions`、走行中) | SUMOの車の寸法が、表のモデルと違う | `.rou.xml`を確かめ、表を作り直す(2.2.3の(2)) |
-| `variant_blueprint_missing` | 表のブループリントが、接続先のCARLAにない | CARLAの版を確かめ、外形を測り直して表を作り直す(2.2.3の(1)(2)) |
-| `variant_mesh_carla_version_changed` | 外形を測ったCARLAの版と、接続先の版が違う(0.9.15の表を0.9.16_jpで使うと、`measured: 0.9.15`・`server: 294096eb1-dirty`) | 外形を測り直して表を作り直す(2.2.3の(1)(2)) |
+| `variant_source_changed`(`source: route_files`) | 渡された`.sumocfg`の`route-files`の並びか中身(sha256)が、表を作ったときと違う | 表を作り直す(2.2.4の(2)) |
+| `variant_source_changed`(`source: rules`・`geometry`) | 表を作ったときと、規則か実メッシュが違う | 表を作り直す(2.2.4の(2)) |
+| `variant_source_changed`(`source: vehicle_dimensions`、走行中) | SUMOの車の寸法が、表のモデルと違う | `.rou.xml`を確かめ、表を作り直す(2.2.4の(2)) |
+| `variant_blueprint_missing` | 表のブループリントが、接続先のCARLAにない | CARLAの版を確かめ、外形を測り直して表を作り直す(2.2.4の(1)(2)) |
+| `variant_mesh_carla_version_changed` | 外形を測ったCARLAの版と、接続先の版が違う(0.9.15の表を0.9.16_jpで使うと、`measured: 0.9.15`・`server: 294096eb1-dirty`) | 外形を測り直して表を作り直す(2.2.4の(1)(2)) |
 | `variant_model_ambiguous` | 同じvTypeが2つのモデルにある | 表を作り直す |
-| `npc_model_unknown`(走行中) | 表にないvTypeの車が来た | 使っている`.sumocfg`から、表を作り直す(2.2.3の(2)) |
+| `npc_model_unknown`(走行中) | 表にないvTypeの車が来た | 使っている`.sumocfg`から、表を作り直す(2.2.4の(2)) |
 | `variant_model_empty`(起動時・走行中) | 割合 > 0のvTypeに割り当てがない、または表を作ったときに割合0だったvTypeの車が来た | 同上 |
 
 - 起動時の検査は、SUMOを起動する前に行う。そのため、起動時に止まったときはSUMOは起動していない。
@@ -915,19 +1029,19 @@ python3 -c "import carla, importlib.metadata as m; print(m.version('carla'))"   
 - サーバーは`~/CARLA/CarlaUE4.sh`で起動し、手順は0.9.15版の「SUMO-CARLA-Autoware_co-sim_起動手順.md」に従う
   (`map_path:=$HOME/autoware_map/Town10HD`など)。
 - `~/autoware_map/Town10HD_Opt`(シンボリックリンク)は残しておいてよい(0.9.15でも`Town10HD_Opt`のマップはある)。
-- 2.2.3でTown01の表を0.9.16用に作り直してコミットしたときは、0.9.15用の表と計測結果をgitで戻す。
+- 2.2.4でTown01の表を0.9.16用に作り直してコミットしたときは、0.9.15用の表と計測結果をgitで戻す。
 
 ## 3.8 Vissim構成と同じ条件のシナリオ(`Town10HD_vissim`)
 
 `sumo/Town10HD_vissim.sumocfg`は、Vissim構成のTown10HD(`vissim/Town10HD.inpx`)から、信号・交通需要・車両寸法を作ったシナリオ(2026-11-24)。
-網は今の`net/Town10HD.net.xml`のまま。設計と確認結果は`docs/SUMO_CARLA_Autoware_inpxからの信号・需要生成_実装計画_v1.0.md`、作り直しの手順は`sumo/README.md`。
+網は今の`net/Town10HD.net.xml`のまま。設計と確認結果は`docs/SUMO_CARLA_Autoware_inpxからの信号・需要生成_実装計画_v1.0.md`、inpxを変えたときの作り直しの手順は2.2.3。
 
 | 項目 | `Town10HD.sumocfg` | `Town10HD_vissim.sumocfg` |
 | --- | --- | --- |
 | 信号 | 周期90 s(青42・黄3 ×2) | 周期94 s(青42・黄3・全赤2 ×2)。Vissimの信号制御と同じ |
 | 交通需要 | 0〜199 sに200台(決まった経路) | 流入19本・合計600台/h(ポアソン到着)で0〜3600 sに582台。経路は車1台ごとに分岐ごとに等分して選び、2000 m進んだら消える |
 | 車両 | CARLAの車の名前のvType(27種) | inpxの3Dモデルの寸法のvType 8つ(アルファード・ノア・JPNタクシー・GIGA・Volvo E・エルガ・ガーラ・MT-07) |
-| ブループリント表 | 作れば使う(2.2.3) | `carla_variants_sumo_town10hd_vissim.yaml`(リポジトリに入っている)。Vissim構成の表と同じ割り当て(日本の車6台・`carlacola` × 2・`kawasaki.ninja`) |
+| ブループリント表 | 作れば使う(2.2.4) | `carla_variants_sumo_town10hd_vissim.yaml`(リポジトリに入っている)。Vissim構成の表と同じ割り当て(日本の車6台・`carlacola` × 2・`kawasaki.ninja`) |
 | 追従モデル | Krauss(SUMOの既定) | Wiedemann(`minGap` 2 m)。希望速度30〜35 km/h |
 
 - 信号は追加ファイル(`tll/Town10HD_vissim.tll.xml`)の新しいプログラム`vissim`で、網のプログラムの代わりに使われる。
@@ -942,3 +1056,71 @@ python3 -c "import carla, importlib.metadata as m; print(m.version('carla'))"   
   700 sまではテレポート・衝突なし。860 sごろからテレポートが出始める。Vissimの車は網から出ないので、Vissimでも同じように溜まる見込み(未確認)。
 - 0.9.15でも使える。ただし表は0.9.16_jpで測った外形で作ったので、0.9.15では`variant_mesh_carla_version_changed`で止まる。
   0.9.15では`sumo_carla_variants:=legacy_vtypes`にするか、0.9.15の計測結果と規則で表を作る。
+
+### 3.8.1 inpxから作るもの
+
+2.2.3のツール(`tools/sumo_inpx/`)は、inpxの次の設定を読む。ここにない設定は、Vissimで変えてもSUMOには入らない。
+
+| inpxの設定 | SUMOでの形 | ファイル(2.2.3の手順) |
+| --- | --- | --- |
+| 信号制御の信号プログラム(ステージ・信号グループ・各色の秒数) | `tlLogic`のプログラム`vissim`のフェーズ(秒数と状態)。オフセット0 | `sumo/tll/Town10HD_vissim.tll.xml`((3)) |
+| 信号灯の名前(`CARLA <CARLAの信号ID>`)と信号グループ | どの`tlLogic`のどのlinkIndexを動かすか(網の`linkSignalID`で引く) | 同上 |
+| 車両入力(リンク・台/h) | 流入のedge・`departPos`(リンクの位置から幾何で探す)と、ポアソン到着の車 | `sumo/rou/Town10HD_vissim.rou.xml`((4)) |
+| 車両構成(車種・相対交通量・希望速度分布) | vTypeの割合(`vTypeDistribution`)・`speedFactor` | 同上 |
+| 車両タイプ・2D/3Dモデル分布(モデルの長さ・幅) | vTypeの`length`・`width`・`vClass` | 同上 |
+| 加速度・減速度の関数 | vTypeの`accel`・`decel` | 同上 |
+| 運転挙動(Wiedemann 74の`ax`) | `carFollowModel="Wiedemann"`・`minGap` | 同上 |
+
+- 網(`.net.xml`)は変えない。信号は追加ファイル`.tll.xml`に、網と同じIDの`tlLogic`の新しいプログラム`vissim`として書く。
+  SUMOは最後に読んだプログラムを使うので、`.sumocfg`の`additional-files`で読ませると、網のプログラム(周期90 s)の代わりにこちらが使われる。
+  網を作り直さないので、`linkSignalID`(CARLAの信号との対応)と、Lanelet2地図の信号との対応(2.2.2)は変わらない。
+- 信号は、**秒数・色の順は自由に変えられるが、一緒に青になるSUMOのリンクの組は、網の今のプログラムと同じでなければならない**
+  (青の`G`/`g`を網のプログラムから写すため)。信号灯を足す・信号グループの組を変えると、(3)は止まる(3.8.2)。
+  組を変えるときは、網の信号から作り直す(スキル`carla-town-signals`の手順)。
+- 経路: Vissimのinpxには経路が無い(車はコネクタを選びながら走る)ので、車1台ごとに、分岐ごとに次のedgeを等しい確率で選び、
+  長さが`--route-length`(既定2000 m)に達したedgeの終わりで消える。
+- 写していないもの: 道路網(リンク・コネクタ)、Wiedemann 74の`bx`、加速度の速度による変化と車ごとのばらつき、歩行者。
+- `vissim_to_rou.py`のオプション(既定値を変えると、`test_town10hd_rou_is_reproduced`は失敗する。変えたらテストも直す):
+
+  | オプション | 説明 | 既定値 |
+  | --- | --- | --- |
+  | `--inpx` / `--net` | 入力のinpx / SUMOの網 | なし(省略不可) |
+  | `--out` | 書き出す`.rou.xml` | なし(`--report`のときは不要) |
+  | `--report` | 流入・車種・台数を表示する(書き出さない) | なし |
+  | `--route-length` | 経路の長さ [m] | `2000` |
+  | `--horizon` | 車を出す時間 [s] | `3600` |
+  | `--seed` | 出発時刻と経路の乱数の種 | `1` |
+  | `--prefix` | vType・車のIDの頭 | `vissim` |
+
+- 作ったファイルの先頭のコメントに、inpx・網・ツールのsha256と、引数が書かれる(どのinpxから作ったかを確かめられる)。
+- Vissim構成との関係:
+  - Vissim構成のブランチ(`feature/vissim_windows_co-sim`)の`vissim/Town10HD.inpx`は、このブランチのものの写し。
+    inpxを変えてこのブランチにコミットしたら、Vissim構成のブランチを開いて次のコマンドで写す(`vissim/README.md`の2章)。
+
+    ```bash
+    cd ~/autoware.1.9.0/src/universe/autoware_universe   # feature/vissim_windows_co-sim を開いた状態で
+    git checkout feature/sumo_co-sim -- simulator/autoware_carla_interface/vissim/Town10HD.inpx
+    ```
+
+  - 信号灯の名前・信号グループを変えたときは、Vissim構成の信号の対応表(`signal_mapping_town10hd.json`)も合わなくなる。この手順では作り直さない。
+  - `vissim/README.md`の2章(`build_vissim_town.py`)は、`Town10HD_road.inpx`から`Town10HD.inpx`を作り直す。**Vissimで直した設定は消える**ので、
+    Vissimで直したinpxを使うときは実行しない。
+
+### 3.8.2 止まったとき(2.2.3)
+
+ツールは、写せない設定を見つけると`Error: <理由>`を出して、ファイルを書かずに終わる(終了コード1)。
+
+| 出る理由(抜粋) | 原因 | 対処 |
+| --- | --- | --- |
+| `信号プログラムが 1 つでない` | 信号制御に信号プログラムが2つ以上ある | 使うプログラムを1つにする |
+| `信号灯 <番号> の名前 ... が「CARLA <信号 ID>」でない` | 信号灯の名前がCARLAの信号IDの形でない | 名前を`CARLA <CARLAの信号ID>`にする |
+| `CARLA の信号 <ID> の信号灯が別の信号グループにある` | 同じCARLAの信号の信号灯(2車線分)が、違う信号グループにある | 同じ信号グループにする |
+| `... の青の組 ... が今のプログラムに無い` | 一緒に青になるリンクの組が、網のプログラムと違う(3.8.1) | 信号グループの組を元に戻すか、網の信号から作り直す |
+| `CARLA の信号 ... が網の linkSignalID に無い` | 網にないCARLAの信号の信号灯がある | 信号灯の名前を確かめる |
+| `リンク <番号>(<名前>)に合う SUMO の edge が 1 つでない` | 車両入力のリンクに当たるSUMOのedgeが見つからない(リンクの向き・位置で探す) | 車両入力を、OpenDRIVEから取り込んだリンクに置く |
+| `流入 <番号> の時間帯が 1 つでない` / `が STOCHASTIC でない` | 車両入力に時間帯が2つ以上ある / 台数が確率的でない | 時間帯を1つ、台数をStochasticにする |
+| `inpx に静的経路(vehicleRouteStatic)がある` | 経路の決定がある | 経路を消す(このツールは経路の無い網だけを扱う) |
+| `inpx に歩行者の流入が ... 本ある` | 歩行者の入力がある | 歩行者の入力を消す |
+| `運転挙動の追従モデルが Wiedemann 74 でない` / `リンクの運転挙動が 1 つでない` | 追従モデルがWiedemann 99、またはリンクごとに運転挙動が違う | Wiedemann 74の運転挙動を1つにする |
+| `... の vClass が決まっていない` | ツールが知らない車種・カテゴリがある | ツール(`vissim_to_rou.py`の`VCLASS`・`HGV_BY_NAME`)に対応を足す |
+| `SUMO_HOME/tools が無い` | SUMOの環境変数が無い | `SUMO_HOME`を設定する |

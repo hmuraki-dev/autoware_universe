@@ -35,6 +35,7 @@ co-simの`sumo_cfg_file`に渡すSUMOのシナリオ。CARLAの版(0.9.15・0.9.
 | `../src/autoware_carla_interface/sumo_integration/data/carla_variants_sumo_town10hd_vissim.yaml` | ブループリント表(0.9.16_jp)。Vissim構成の`carla_variants_town10hd.yaml`と同じ割り当て |
 
 - `vissim/Town10HD.inpx`を変えたとき(Vissimで車両設定を直したときなど)は、次の順に作り直す。
+  確認の仕方・テストが失敗したときの見方を含む手順は、`docs/SUMO-CARLA(0.9.16)-Autoware_co-sim_起動手順.md`の2.2.3。
   `.rou.xml`を作り直したらブループリント表も作り直す(作り直さないと、co-simの起動時に`variant_source_changed`で止まる)。
 
 ```bash
