@@ -32,19 +32,16 @@ co-simの`sumo_cfg_file`に渡すSUMOのシナリオ。CARLAの版(0.9.15・0.9.
 | --- | --- |
 | `tll/Town10HD_vissim.tll.xml` | 信号5つの新しいプログラム(`programID="vissim"`)。周期94 s(青42・黄3・全赤2 ×2)。`linkSignalID`は網のものを写す |
 | `rou/Town10HD_vissim.rou.xml` | 流入19本・合計600台/hから、0〜3600 sに582台。経路は車1台ごとに分岐ごとに等分して選び、2000 m進んだら消える。vTypeは8つ(inpxの日本の車の3Dモデルの寸法) |
-| `../vissim/signal_mapping_town10hd.json` | Vissim構成のブリッジの信号の対応表(SUMOでは使わない)。`tools/sumo_inpx/vissim_to_signal_mapping.py`が、同じinpxの信号灯から作る |
 | `../src/autoware_carla_interface/sumo_integration/data/carla_variants_sumo_town10hd_vissim.yaml` | ブループリント表(0.9.16_jp)。Vissim構成の`carla_variants_town10hd.yaml`と同じ割り当て |
 
 - `vissim/Town10HD.inpx`を変えたとき(Vissimで車両設定を直したときなど)は、次の順に作り直す。
-  確認の仕方・テストが失敗したときの見方を含む手順は、`docs/SUMO-CARLA(0.9.16)-Autoware_co-sim_起動手順.md`の2.2.3。
+  確認の仕方・テストが失敗したときの見方を含む手順は、`docs/SUMO-CARLA(0.9.16)-Autoware_co-sim_起動手順.md`の2.2.4。
   `.rou.xml`を作り直したらブループリント表も作り直す(作り直さないと、co-simの起動時に`variant_source_changed`で止まる)。
 
 ```bash
 cd ~/autoware.1.9.0/src/universe/autoware_universe/simulator/autoware_carla_interface
 python3 tools/sumo_inpx/vissim_to_tll.py --inpx vissim/Town10HD.inpx --net sumo/net/Town10HD.net.xml \
     --out sumo/tll/Town10HD_vissim.tll.xml   # ← 生成物
-python3 tools/sumo_inpx/vissim_to_signal_mapping.py --inpx vissim/Town10HD.inpx \
-    --out vissim/signal_mapping_town10hd.json   # ← 生成物
 python3 tools/sumo_inpx/vissim_to_rou.py --inpx vissim/Town10HD.inpx --net sumo/net/Town10HD.net.xml \
     --out sumo/rou/Town10HD_vissim.rou.xml   # ← 生成物
 python3 tools/carla_fleet/build_carla_variants.py --sumocfg sumo/Town10HD_vissim.sumocfg \
@@ -54,8 +51,8 @@ python3 tools/carla_fleet/build_carla_variants.py --sumocfg sumo/Town10HD_vissim
 python3 -m pytest test/test_sumo_inpx.py test/test_sumo_fleet_plan.py
 ```
 
-> 📄 **生成物:** inpxから作った信号・需要と、そのブループリント表、Vissim構成の信号の対応表\
-> `sumo/tll/Town10HD_vissim.tll.xml`、`vissim/signal_mapping_town10hd.json`、`sumo/rou/Town10HD_vissim.rou.xml`、`src/autoware_carla_interface/sumo_integration/data/carla_variants_sumo_town10hd_vissim.yaml`
+> 📄 **生成物:** inpxから作った信号・需要と、そのブループリント表\
+> `sumo/tll/Town10HD_vissim.tll.xml`、`sumo/rou/Town10HD_vissim.rou.xml`、`src/autoware_carla_interface/sumo_integration/data/carla_variants_sumo_town10hd_vissim.yaml`
 
 - テストは、作り直した`.tll.xml`・`.rou.xml`がコミットしたものと同じかを確かめる。inpxを変えて作り直したときは、作り直したものをコミットする。
 - `vissim_to_rou.py`のオプション: `--route-length`(経路の長さ、既定2000 m)、`--horizon`(車を出す時間、既定3600 s)、`--seed`(乱数の種、既定1)、
