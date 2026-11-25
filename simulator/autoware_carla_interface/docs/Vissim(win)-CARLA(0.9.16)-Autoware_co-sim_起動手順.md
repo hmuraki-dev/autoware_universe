@@ -214,6 +214,31 @@ cat src/autoware_carla_interface/vissim_integration/data/signal_mapping_town10hd
 - 以前の手順で`vissim_integration/data/signal_mapping.json`へコピーしたファイルが残っていても、ブリッジは読まない。消してよい。
 - 0.9.15版の2.4.2(`generate_signal_mapping.py`)は**使わない**。Town10HDでは誤った対応表になる(3.4)。
 
+**作り直し(Windows PCのVissimで`Town10HD.inpx`の信号灯の名前・信号グループを変えたときだけ)**
+
+対応表は、inpxの信号灯の名前(`CARLA <CARLAの信号ID>`)と信号グループから作る。作るツールと手順は`feature/sumo_co-sim`ブランチにある
+(SUMO構成の起動手順書`SUMO-CARLA(0.9.16)-Autoware_co-sim_起動手順.md`の2.2.3。SUMOのシナリオも同じinpxから作り直す)。
+
+1. `feature/sumo_co-sim`で、SUMO構成の起動手順書の2.2.3を行い、inpxと対応表(`vissim/signal_mapping_town10hd.json`)をコミットする。
+2. このブランチ(`feature/vissim_windows_co-sim`)を開き、次のコマンドでinpxと対応表を写す。
+
+```bash
+cd ~/autoware.1.9.0/src/universe/autoware_universe   # feature/vissim_windows_co-sim を開いた状態で
+git checkout feature/sumo_co-sim -- simulator/autoware_carla_interface/vissim/Town10HD.inpx \
+    simulator/autoware_carla_interface/vissim/signal_mapping_town10hd.json
+cd simulator/autoware_carla_interface
+cp vissim/signal_mapping_town10hd.json \
+    src/autoware_carla_interface/vissim_integration/data/signal_mapping_town10hd.json   # ← 生成物
+python3 -m pytest test/test_vissim_signal_mapping.py
+```
+
+> 📄 **生成物:** Vissimブリッジが読む信号の対応表(Town10HD)\
+> `src/autoware_carla_interface/vissim_integration/data/signal_mapping_town10hd.json`
+
+- テストは、`data/`の対応表が`vissim/`のものと同じかを確かめる。通ったら、写した3つのファイルをコミットする。
+- 信号灯の名前・信号グループを変えていなければ、対応表は変わらない(inpxだけが変わる)。
+- `vissim/README.md`の2章(`build_vissim_town.py`)でも対応表はできるが、`Town10HD.inpx`も作り直すので、Vissimで直した設定が消える。
+
 #### 2.4.3 Vissimの車両のCARLAブループリント表の生成
 
 Vissimの車両1台ごとに、どのCARLAのブループリントを使うかを決める表を作る。仕組みは3.3、0.9.15版の3.3を参照。
@@ -475,7 +500,8 @@ SUMO構成で確かめた地点で、Vissimの車がこの車線を通るか、�
 | 絶対パス | そのまま |
 
 - 読むのは`use_vissim:=true sync_traffic_lights:=true`のときだけ。ファイルが無いときは、Vissimにつなぐ前に`Error: invalid parameters: vissim_signal_mapping:=auto for CARLA map 'Town05': signal mapping file not found: ...`で止まる(`data/`にある対応表の一覧も出る)。
-- `data/signal_mapping_town10hd.json`は、`vissim/signal_mapping_town10hd.json`(`feature/sumo_co-sim`の`tools/vissim/build_vissim_town.py`の生成物)の写し。
+- `data/signal_mapping_town10hd.json`は、`vissim/signal_mapping_town10hd.json`の写し。`vissim/`のものは、2026-11-17に`feature/sumo_co-sim`の
+  `tools/vissim/build_vissim_town.py`が`Town10HD.inpx`と一緒に作った。Vissimで直したinpxからは、同じブランチの`tools/sumo_inpx/vissim_to_signal_mapping.py`で作る(2.4.2の「作り直し」)。
   作り直したら両方を同じにする(`test/test_vissim_signal_mapping.py`が同じことを確かめる)。
 - 以前は`data/signal_mapping.json`の1つだけを読み、Townを替えるたびに上書きしていた(このファイルは`data/signal_mapping_town01.json`に名前を変えた)。
 

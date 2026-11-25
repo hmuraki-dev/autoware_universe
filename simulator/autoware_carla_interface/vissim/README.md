@@ -6,7 +6,7 @@ Vissim(Windows)で読み込む`.inpx`を置く。CARLAの版(0.9.15・0.9.16)に
 | --- | --- | --- |
 | `Town10HD_road.inpx` | Town10HDの道路網だけ(リンク・コネクタ)。信号・交通需要・車両設定はない | 1章(Windows PCのVissimでOpenDRIVEを取り込む) |
 | `Town10HD.inpx` | co-simで使うTown10HDのネットワーク。道路網に、信号・交通需要・車両設定を足したもの | 2章(ツールで作る) |
-| `signal_mapping_town10hd.json` | Vissimの(信号制御, 信号グループ) → CARLAの信号ID。Vissimブリッジの`vissim_integration/data/signal_mapping_town10hd.json`と同じもの | 2章(同じツールで作る) |
+| `signal_mapping_town10hd.json` | Vissimの(信号制御, 信号グループ) → CARLAの信号ID。Vissimブリッジの`vissim_integration/data/signal_mapping_town10hd.json`と同じもの | 2章(同じツールで作る)。Vissimで直した`Town10HD.inpx`からは`tools/sumo_inpx/vissim_to_signal_mapping.py`(SUMO構成の起動手順書の2.2.3) |
 
 座標は、Town01.inpxと同じく、OpenDRIVEの座標そのもの(Vissimの(x, y) = CARLAの(x, −y))。
 
@@ -49,6 +49,10 @@ grep -oE 'name="[0-9]+: Road [0-9]+-[0-9]+-(Right|Left)"' vissim/Town10HD_road.i
 # 2. 信号・交通需要・車両設定を足す
 
 `Town10HD_road.inpx`(1章)を変えたとき、またはSUMOの信号・CARLAの信号を変えたときだけ実行する。
+
+**この章を実行すると、`Town10HD.inpx`を作り直すので、Vissimで直した設定(2.1.1など)は消える。**
+Vissimで直した`Town10HD.inpx`から、SUMOのシナリオと信号の対応表だけを作り直すときは、この章ではなく、
+`docs/SUMO-CARLA(0.9.16)-Autoware_co-sim_起動手順.md`の2.2.3を行う(対応表は`tools/sumo_inpx/vissim_to_signal_mapping.py`)。
 
 **この章のツール(`tools/vissim/build_vissim_town.py`)とテストは、`feature/sumo_co-sim`ブランチにある**(入力にSUMOのnet・ルート(`sumo/`)を使うため)。
 Vissim構成のブランチ(`feature/vissim_windows_co-sim`)の`vissim/`は、`feature/sumo_co-sim`で作ったものの写し。作り直したら、次のコマンドでこちらにも写す。
