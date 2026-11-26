@@ -645,6 +645,31 @@ def test_crossing_net_and_pedestrian_signal(tmp_path):
 
 
 @needs_sumolib
+def test_crossing_runs_counter_clockwise_around_the_junction(tmp_path, town10hd):
+    _, net = town10hd
+    item = crossings.build(reader.Inpx(_town10hd_with_crosswalk(tmp_path)), net, _crosswalk_map(tmp_path))[0]
+    # 交差点 189 の北の脚(中心から +y)を渡る: 反時計回りは東(+x)から西へ
+    assert item['start'][0] > item['end'][0]
+    assert crossings.ccw_ends(net.getNode('189'), net, item['end'], item['start']) == (item['start'], item['end'])
+
+
+@needs_sumolib
+@needs_netconvert
+def test_walkingareas_stay_at_their_end_of_the_crossing(tmp_path, monkeypatch, capsys):
+    inpx = _town10hd_with_crosswalk(tmp_path)
+    out = tmp_path / 'net' / 'Town10HD_vissim.net.xml'
+    args = ['--inpx', str(inpx), '--net', str(SUMO / 'net' / 'Town10HD.net.xml'),
+            '--map', str(_crosswalk_map(tmp_path)), '--out', str(out)]
+    assert crossings.main(args) == 0
+    # 逆向きの crossing は walkingarea が道路をまたぐので止まり、網を残さない
+    ccw = crossings.ccw_ends
+    monkeypatch.setattr(crossings, 'ccw_ends', lambda node, net, start, end: tuple(reversed(ccw(node, net, start, end))))
+    assert crossings.main(args) == 1
+    assert 'walkingarea が道路をまたいでいる' in capsys.readouterr().err
+    assert not out.exists()
+
+
+@needs_sumolib
 @needs_netconvert
 def test_crossing_without_pedestrian_signal_is_refused(tmp_path):
     inpx = _town10hd_with_crosswalk(tmp_path, head='')

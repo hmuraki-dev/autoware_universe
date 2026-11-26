@@ -191,6 +191,58 @@ def _extend(start, end, d):
     return (start[0] - u[0] * d, start[1] - u[1] * d), (end[0] + u[0] * d, end[1] + u[1] * d)
 
 
+def ccw_ends(node, net, start, end):
+    """横断歩道の両端を、交差点の中心のまわりで反時計回りの順にする -> (始点, 終点)。
+
+    netconvert は crossing の shape をこの向きとみなし、始点の側の walkingarea を手前の歩道に、終点の側を
+    向こうの歩道につなぐ。逆向きに渡すと walkingarea が道路をまたいで反対の端まで伸び、歩行者は赤の間に
+    walkingarea の上を歩いて車道を横切る(網の上では crossing に入っていないので信号を守ったことになる)。
+    """
+    off_x, off_y = net_offset(net)
+    cx, cy = node.getCoord()
+    cx, cy = cx - off_x, cy - off_y
+    mx, my = (start[0] + end[0]) / 2, (start[1] + end[1]) / 2
+    ox, oy = mx - cx, my - cy
+    dx, dy = end[0] - start[0], end[1] - start[1]
+    return (start, end) if ox * dy - oy * dx > 0 else (end, start)
+
+
+def check_walkingareas(net_path, items):
+    """出来た網で、crossing の両端の walkingarea がその端のまわりに収まっているかを確かめる。
+
+    walkingarea の点が、つながる端から横断歩道の長さの半分より遠くにあれば、道路をまたいでいる。
+    """
+    root = ET.parse(net_path).getroot()
+    shapes, crossings = {}, []
+    for edge in root.iter('edge'):
+        function = edge.get('function')
+        if function in ('crossing', 'walkingarea'):
+            lane = edge.find('lane')
+            points = [tuple(map(float, p.split(',')[:2])) for p in lane.get('shape').split()]
+            shapes[edge.get('id')] = points
+            if function == 'crossing':
+                crossings.append(edge.get('id'))
+    nodes = {item['node'] for item in items}
+    bad = []
+    for crossing in crossings:
+        if crossing[1:].rsplit('_', 1)[0] not in nodes:
+            continue
+        shape = shapes[crossing]
+        half = math.dist(shape[0], shape[-1]) / 2
+        for conn in root.iter('connection'):
+            if conn.get('to') == crossing and conn.get('from') in shapes:
+                walk, end = conn.get('from'), shape[0]
+            elif conn.get('from') == crossing and conn.get('to') in shapes:
+                walk, end = conn.get('to'), shape[-1]
+            else:
+                continue
+            far = max(math.dist(p, end) for p in shapes[walk])
+            if far > half:
+                bad.append(f'{walk}({crossing} の端から {far:.1f} m)')
+    if bad:
+        raise CrossingError('walkingarea が道路をまたいでいる: ' + '、'.join(sorted(set(bad))))
+
+
 def axis_sidewalk(crossing_end, outward, area):
     """横断歩道の延長線上の歩道の (始点, 終点)。始点は待ち場所の外側の端、終点は横断歩道の端の手前。"""
     def at(t):
@@ -229,8 +281,9 @@ def build(inpx, net, osm):
             sidewalks.append(dict(id=f'{PREFIX}_area{area}', area=area, shape=list(shape)))
         if len(sidewalks) == 2 and sidewalks[0]['area'] == sidewalks[1]['area']:
             raise CrossingError(f'地図の横断歩道 {cw_id} の両端が同じ待ち場所 {sidewalks[0]["area"]} に近い')
+        start, end = ccw_ends(node, net, ext_start, ext_end)
         out.append(dict(crosswalk=cw_id, links=links[cw_id], node=node.getID(), edges=[e.getID() for e in edges],
-                        start=ext_start, end=ext_end, width=cw['width'], z=node.getCoord3D()[2],
+                        start=start, end=end, width=cw['width'], z=node.getCoord3D()[2],
                         sidewalks=sidewalks))
     return out
 
@@ -263,10 +316,10 @@ def write_parts(items, prefix, net, header):
     with open(paths[2], 'w', encoding='utf-8') as f:
         f.write(f'<?xml version="1.0" encoding="UTF-8"?>\n{header}\n<connections>\n')
         for item in items:
-            # 向きは地図の横断歩道の終わり -> 始まり(移植元と同じ。逆にすると walkingarea が反対の端につながる)
+            # 向きは交差点のまわりで反時計回り(ccw_ends)。逆にすると walkingarea が反対の端につながる
             f.write(f'    <!-- 地図の横断歩道 {item["crosswalk"]}、Vissim の歩行者リンク {"・".join(item["links"])} -->\n')
             f.write(f'    <crossing node="{item["node"]}" edges="{" ".join(item["edges"])}" priority="true"'
-                    f' width="{item["width"]:.2f}" shape="{sumo(item["end"], item["z"])} {sumo(item["start"], item["z"])}"/>\n')
+                    f' width="{item["width"]:.2f}" shape="{sumo(item["start"], item["z"])} {sumo(item["end"], item["z"])}"/>\n')
         f.write('</connections>\n')
     return paths
 
@@ -317,7 +370,10 @@ def main(argv=None) -> int:
     parts = write_parts(items, prefix, net, header)
     try:
         run_netconvert(args.net, parts, args.out)
+        check_walkingareas(args.out, items)
     except CrossingError as error:
+        if os.path.exists(args.out):
+            os.remove(args.out)
         print(f'Error: {error}', file=sys.stderr)
         return 1
     print(f'{args.out}: 横断歩道 {len(items)} 本  sha256 {digest(args.out)}')
