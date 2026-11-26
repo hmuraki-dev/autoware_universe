@@ -60,6 +60,7 @@ from xml.sax.saxutils import quoteattr
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from inpx_reader import (Inpx, InpxError, digest, distance_to, fmt, link_to_edge, net_offset,  # noqa: E402
                          point_at, sumo_tools_on_path)
+from vissim_to_crossings import EXTEND_M as CROSSING_EXTEND_M  # noqa: E402
 
 PREFIX = 'vissim'
 HORIZON_S = 3600.0
@@ -410,9 +411,107 @@ def assign_types(inpx, net, vehicles, prefix, vtypes, distributions):
                                          override_of(inpx, points[v['speed']]))
 
 
+# ---------------------------------------------------------------- 歩行者
+
+def sidewalk(area):
+    """待ち場所の歩道の edge(tools/sumo_inpx/vissim_to_crossings.py が足したもの)。"""
+    return f'ped_area{area}'
+
+
+def add_ped_distribution(inpx, composition, prefix, vtypes, distributions):
+    """歩行者構成の vTypeDistribution を足し、名前を返す(歩行者タイプ × 3D モデル × 希望速度の区間)。
+
+    寸法の同じ 3D モデル(色違い)は 1 つにまとめる。"""
+    name = f'{prefix}_pc{composition}'
+    if name in distributions:
+        return name
+    comp = inpx.ped_compositions[composition]
+    total = sum(share for _, share, _ in comp)
+    if total <= 0:
+        raise RouError(f'歩行者構成 {composition} の相対交通量の合計が 0')
+    members = []
+    for ped_type, share, speed in comp:
+        if share <= 0:
+            continue
+        if speed not in inpx.speed:
+            raise RouError(f'歩行者タイプ {ped_type} の速度分布 {speed} が inpx に無い')
+        shares = inpx.model_distributions[inpx.ped_types[ped_type]['model2D3DDistr']]
+        sizes = {}
+        for model, model_share in sorted(shares.items(), key=lambda t: int(t[0])):
+            if model_share <= 0 or model not in inpx.models:
+                continue
+            body = inpx.models[model]
+            size = (round(body['length'], 3), round(body['width'], 3), round(body['height'], 3))
+            first, weight = sizes.get(size, (model, 0.0))
+            sizes[size] = (first, weight + model_share)
+        for size, (model, model_share) in sorted(sizes.items(), key=lambda kv: int(kv[1][0])):
+            for index, (p, low, high) in enumerate(speed_bins(inpx.speed[speed])):
+                key = f'{prefix}_pedestrian{ped_type}_m{model}_s{speed}_b{index}'
+                vtypes[key] = dict(id=key, vClass='pedestrian', length=fmt(size[0], 3), width=fmt(size[1], 3),
+                                   height=fmt(size[2], 3), desiredMaxSpeed='1',
+                                   speedFactor=f'normc({fmt((low + high) / 2)},{UNIFORM_DEV},{fmt(low)},{fmt(high)})')
+                members.append((key, share / total * model_share * p))
+    distributions[name] = members
+    return name
+
+
+def build_persons(inpx, net, prefix, seed, horizon, vtypes, distributions, notes):
+    """歩行者入力 -> [dict](出発時刻の順)。待ち場所の歩道が網に無ければ歩行者を入れず、notes に書く。"""
+    if not inpx.ped_inputs:
+        return []
+    needed = sorted({sidewalk(a) for item in inpx.ped_inputs
+                     for a in [item['area']] + [r['dest'] for r in inpx.ped_routes.get(item['area'], [])]},
+                    key=lambda e: int(e[len('ped_area'):]))
+    missing = [e for e in needed if not net.hasEdge(e)]
+    if missing:
+        notes.append(f'歩行者: 網に待ち場所の歩道 {", ".join(missing)} が無いので入れていない'
+                     '(tools/sumo_inpx/vissim_to_crossings.py で横断歩道を足した網を使う)')
+        return []
+    persons = []
+    for item in sorted(inpx.ped_inputs, key=lambda i: int(i['no'])):
+        if item['volume'] <= 0:
+            continue
+        name = add_ped_distribution(inpx, item['composition'], prefix, vtypes, distributions)
+        routes = [r for r in inpx.ped_routes[item['area']] if r['share'] > 0]
+        rng = random.Random(f'{seed}:p{item["no"]}')
+        rate = item['volume'] / 3600.0
+        t, count = rng.expovariate(rate), 0
+        while t < horizon:
+            route = rng.choices(routes, weights=[r['share'] for r in routes])[0]
+            persons.append(dict(id=f'{prefix}_p{int(item["no"]):02d}_{count:05d}', depart=t, type=name,
+                                origin=sidewalk(item['area']), dest=sidewalk(route['dest']), input=item['no']))
+            count += 1
+            t += rng.expovariate(rate)
+    persons.sort(key=lambda p: (round(p['depart'], 2), p['id']))
+    return persons
+
+
+def crossing_gap(inpx, vtypes, notes):
+    """車の jmCrossingGap = 歩行者との競合エリアの前の余裕の最大 [s] × 歩行者の最大の希望速度 [m/s]
+    + 横断歩道を地図から延ばした長さ(仕様 P6)。競合エリアが無ければ SUMO の既定のまま。"""
+    peds = [spec for spec in vtypes.values() if spec['vClass'] == 'pedestrian']
+    if not peds:
+        return None
+    if not inpx.ped_conflict_gaps:
+        notes.append('歩行者: 歩行者リンクの競合エリアが無いので、車の jmCrossingGap は SUMO の既定(10 m)')
+        return None
+    front = max(inpx.ped_conflict_gaps)
+    fastest = max(float(spec['speedFactor'].split(',')[-1].rstrip(')')) for spec in peds)
+    gap = front * fastest + CROSSING_EXTEND_M
+    for spec in vtypes.values():
+        if spec['vClass'] != 'pedestrian':
+            spec['jmCrossingGap'] = fmt(gap, 3)
+    notes.append(f'車の jmCrossingGap {gap:.2f} m = 競合エリアの前の余裕 {fmt(front)} s x 歩行者の最大の希望速度 '
+                 f'{fastest:.2f} m/s + 横断歩道を地図から延ばした {fmt(CROSSING_EXTEND_M)} m')
+    return gap
+
+
 def check_supported(inpx):
-    if inpx.pedestrian_inputs:
-        raise RouError(f'inpx に歩行者の流入が {inpx.pedestrian_inputs} 本ある。このツールは歩行者を扱わない')
+    for item in inpx.ped_inputs:
+        if not inpx.ped_routes.get(item['area']):
+            raise RouError(f'歩行者入力 {item["no"]} の待ち場所 {item["area"]} に歩行者の静的経路が無い(行き先が決まらない)')
+        if item['composition'] not in inpx.ped_compositions:
+            raise RouError(f'歩行者入力 {item["no"]} の歩行者構成 {item["composition"]} が inpx に無い')
     input_links = {item['link'] for item in inpx.inputs}
     seen = set()
     for decision in inpx.routing_decisions:
@@ -429,7 +528,7 @@ def check_supported(inpx):
                 raise RouError(f'経路決定 {decision["no"]} の経路 {route["no"]} の行き先リンク {route["dest"]} が無い')
 
 
-def render(inpx, net_path, args, vtypes, distributions, vehicles, origins, notes=()):
+def render(inpx, net_path, args, vtypes, distributions, vehicles, origins, notes=(), persons=()):
     total = sum(o['volume'] for o in origins.values())
     routed = sorted((no for no, o in origins.items() if o['routes']), key=int)
     lines = [
@@ -464,6 +563,11 @@ def render(inpx, net_path, args, vtypes, distributions, vehicles, origins, notes
         '     追従は Wiedemann(minGap = w74ax)。希望速度は vType の speedFactor × desiredMaxSpeed(=1) [m/s]。',
         '     移していないもの: Wiedemann 74 の bx、加速度の速度依存と車ごとのばらつき。',
     ]
+    if persons:
+        inputs = sorted({p['input'] for p in persons}, key=int)
+        lines += [f'     歩行者: 歩行者入力 {len(inputs)} 本から、ポアソン到着で 0〜{fmt(args.horizon)} s に {len(persons)} 人を出す。'
+                  '待ち場所の歩道の中のランダムな位置から、',
+                  '     歩行者の経路の行き先の歩道のランダムな位置まで歩く。']
     lines += [f'     {note}' for note in notes]
     for no in sorted(origins, key=int):
         o = origins[no]
@@ -479,7 +583,14 @@ def render(inpx, net_path, args, vtypes, distributions, vehicles, origins, notes
         members = distributions[name]
         lines.append(f'    <vTypeDistribution id="{name}" vTypes="{" ".join(k for k, _ in members)}"'
                      f' probabilities="{" ".join(f"{p:.8g}" for _, p in members)}"/>')
-    for v in vehicles:
+    items = [('v', v) for v in vehicles] + [('p', p) for p in persons]
+    items.sort(key=lambda kv: (round(kv[1]['depart'], 2), kv[1]['id']))
+    for kind, v in items:
+        if kind == 'p':
+            lines.append(f'    <person id="{v["id"]}" type="{v["type"]}" depart="{v["depart"]:.2f}" departPos="random">')
+            lines.append(f'        <walk from="{v["origin"]}" to="{v["dest"]}" arrivalPos="random"/>')
+            lines.append('    </person>')
+            continue
         arrival = f' arrivalPos="{v["arrival_pos"]:.2f}"' if v['arrival_pos'] is not None else ''
         lines.append(f'    <vehicle id="{v["id"]}" type="{v["type"]}" depart="{v["depart"]:.2f}" departLane="random"'
                      f' departPos="{v["depart_pos"]:.2f}" departSpeed="max"{arrival}>')
@@ -514,6 +625,8 @@ def main(argv=None) -> int:
         notes = []
         vehicles, origins = build_vehicles(inpx, net, args.prefix, args.seed, args.horizon, args.route_length, notes)
         assign_types(inpx, net, vehicles, args.prefix, vtypes, distributions)
+        persons = build_persons(inpx, net, args.prefix, args.seed, args.horizon, vtypes, distributions, notes)
+        crossing_gap(inpx, vtypes, notes)
     except (InpxError, RouError) as error:
         print(f'Error: {error}', file=sys.stderr)
         return 1
@@ -525,18 +638,21 @@ def main(argv=None) -> int:
         for name, members in sorted(distributions.items()):
             for key, p in members:
                 spec = vtypes[key]
-                print(f'{name}: {key:<36} {p:.4f}  {spec["length"]} x {spec["width"]} m  accel {spec["accel"]} '
-                      f'decel {spec["decel"]} {spec["speedFactor"]}')
+                print(f'{name}: {key:<36} {p:.4f}  {spec["length"]} x {spec["width"]} m  accel {spec.get("accel", "-")} '
+                      f'decel {spec.get("decel", "-")} {spec["speedFactor"]}')
         for note in notes:
             print(note)
+        if persons:
+            print(f'歩行者 {len(persons)} 人')
         lengths = sorted(len(v['edges']) for v in vehicles)
         print(f'vType {len(vtypes)}、車 {len(vehicles)} 台、edge 数 {lengths[0]}〜{lengths[-1]}(中央 {lengths[len(lengths) // 2]})')
         return 0
-    text = render(inpx, args.net, args, vtypes, distributions, vehicles, origins, notes)
+    text = render(inpx, args.net, args, vtypes, distributions, vehicles, origins, notes, persons)
     os.makedirs(os.path.dirname(os.path.abspath(args.out)), exist_ok=True)
     with open(args.out, 'w', encoding='utf-8') as stream:
         stream.write(text)
-    print(f'{args.out}: 車 {len(vehicles)} 台、vType {len(vtypes)}  sha256 {digest(args.out)}')
+    print(f'{args.out}: 車 {len(vehicles)} 台、' + (f'歩行者 {len(persons)} 人、' if persons else '')
+          + f'vType {len(vtypes)}  sha256 {digest(args.out)}')
     return 0
 
 

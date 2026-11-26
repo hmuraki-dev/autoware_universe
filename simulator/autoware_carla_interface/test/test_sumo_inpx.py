@@ -526,7 +526,7 @@ def _crosswalk_map(tmp_path):
     return path
 
 
-def _town10hd_with_crosswalk(tmp_path, head='1 1', offset=0.0):
+def _town10hd_with_crosswalk(tmp_path, head='1 1', offset=0.0, ped_volume=60):
     """Town10HD.inpx に、横断歩道 9725 に沿う歩行者リンク 9001・両端の待ち場所 9001/9002・歩行者入力・
     歩行者信号灯(信号グループ head。'' なら無し)を足す。offset [m] は歩行者リンクを横にずらす量。"""
     left, right = CROSSWALK_9725['left'], CROSSWALK_9725['right']
@@ -553,12 +553,17 @@ def _town10hd_with_crosswalk(tmp_path, head='1 1', offset=0.0):
             '<lanes><lane width="2.7"/></lanes></link>\n')
     text = text.replace('\t</links>', link + '\t</links>', 1)
     text = text.replace('\t</areas>', area(9001, rect(s, (-u[0], -u[1]))) + area(9002, rect(e, u)) + '\t</areas>', 1)
-    ped = ('<pedestrianInputs><pedestrianInput no="1"><location area="9001"/></pedestrianInput></pedestrianInputs>\n'
+    ped = ('<pedestrianInputs><pedestrianInput no="1"><location area="9001"/><timeIntPedVols>'
+           f'<timeIntervalPedVolume timeInt="1 0" pedComp="1" volType="STOCHASTIC" volume="{ped_volume}"/>'
+           '</timeIntPedVols></pedestrianInput></pedestrianInputs>\n'
            '<pedestrianRoutingDecisionsStatic><pedestrianRoutingDecisionStatic no="1"><location area="9001"/>'
-           '<pedRoutSta><pedestrianRouteStatic no="1"><pedestrianRouteLocations><pedestrianRouteLocation area="9002"/>'
+           '<pedRoutSta><pedestrianRouteStatic no="1" relFlow="1 0:1"><pedestrianRouteLocations><pedestrianRouteLocation area="9002"/>'
            '</pedestrianRouteLocations></pedestrianRouteStatic></pedRoutSta></pedestrianRoutingDecisionStatic>'
            '</pedestrianRoutingDecisionsStatic>\n')
     text = text.replace('\t<pedestrianTypes>', ped + '\t<pedestrianTypes>', 1)
+    # 歩行者リンクと車のリンク 1 の競合エリア(前の余裕 0.5 s)
+    text = text.replace('\t</conflictAreas>', '<conflictArea no="9001" linkA="9001" linkB="1" frontGapDef="0.5"'
+                        ' rearGapDef="0.5"/>\n\t</conflictAreas>', 1)
     if head:
         text = text.replace('\t</signalHeads>',
                             f'<signalHead no="9001" name="ped" lane="9001 1" pos="1" sg="{head}"/>\n\t</signalHeads>', 1)
@@ -648,3 +653,64 @@ def test_crossing_without_pedestrian_signal_is_refused(tmp_path):
                            '--map', str(_crosswalk_map(tmp_path)), '--out', str(out)]) == 0
     with pytest.raises(tll.TllError):
         tll.build(reader.Inpx(inpx), tll.read_net_programs(out))
+
+
+# ---------------------------------------------------------------- 歩行者(vissim_to_rou.py)
+
+def test_pedestrian_inputs_and_routes_are_read(tmp_path):
+    inpx = reader.Inpx(_town10hd_with_crosswalk(tmp_path))
+    assert inpx.ped_inputs == [dict(no='1', area='9001', volume=60.0, composition='1')]
+    assert inpx.ped_routes == {'9001': [dict(no='1', dest='9002', share=1.0)]}
+    assert inpx.ped_compositions['1'] == [('100', 1.0, '1022'), ('200', 1.0, '1023')]
+    assert inpx.ped_conflict_gaps == [0.5]
+    rou.check_supported(inpx)
+
+
+def test_pedestrian_input_without_route_is_refused(tmp_path):
+    text = _town10hd_with_crosswalk(tmp_path).read_text(encoding='utf-8')
+    path = tmp_path / 'no_route.inpx'
+    path.write_text(text.replace('<location area="9001"/>\n<pedRoutSta>', '<location area="8888"/>\n<pedRoutSta>')
+                    .replace('<pedestrianRoutingDecisionStatic no="1"><location area="9001"/>',
+                             '<pedestrianRoutingDecisionStatic no="1"><location area="8888"/>'), encoding='utf-8')
+    with pytest.raises(rou.RouError):
+        rou.check_supported(reader.Inpx(path))
+
+
+@needs_sumolib
+def test_pedestrians_need_the_sidewalks(tmp_path, town10hd):
+    _, net = town10hd
+    inpx = reader.Inpx(_town10hd_with_crosswalk(tmp_path))
+    notes = []
+    assert rou.build_persons(inpx, net, 'vissim', 1, 3600.0, {}, {}, notes) == []
+    assert 'ped_area9001' in notes[0]
+
+
+@needs_sumolib
+@needs_netconvert
+def test_pedestrians_walk_between_the_waiting_areas(tmp_path):
+    import sumolib
+    path = _town10hd_with_crosswalk(tmp_path)
+    out = tmp_path / 'net' / 'Town10HD_vissim.net.xml'
+    assert crossings.main(['--inpx', str(path), '--net', str(SUMO / 'net' / 'Town10HD.net.xml'),
+                           '--map', str(_crosswalk_map(tmp_path)), '--out', str(out)]) == 0
+    net = sumolib.net.readNet(str(out), withInternal=True)
+    inpx = reader.Inpx(path)
+    vtypes, distributions = rou.build_types(inpx, {'1'}, 'vissim')
+    notes = []
+    persons = rou.build_persons(inpx, net, 'vissim', 1, 3600.0, vtypes, distributions, notes)
+    assert 40 <= len(persons) <= 80                      # 60 人/h
+    assert {(p['origin'], p['dest'], p['type']) for p in persons} == {('ped_area9001', 'ped_area9002', 'vissim_pc1')}
+    members = dict(distributions['vissim_pc1'])
+    assert sum(members.values()) == pytest.approx(1.0)
+    assert {vtypes[k]['vClass'] for k in members} == {'pedestrian'}
+    assert rou.build_persons(inpx, net, 'vissim', 1, 3600.0, vtypes, distributions, []) == persons
+    # 車の jmCrossingGap = 0.5 s x 歩行者の最大の希望速度 + 1 m
+    gap = rou.crossing_gap(inpx, vtypes, notes)
+    fastest = max(float(vtypes[k]['speedFactor'].split(',')[-1].rstrip(')')) for k in members)
+    assert gap == pytest.approx(0.5 * fastest + 1.0)
+    assert all(spec.get('jmCrossingGap') == reader.fmt(gap, 3) for spec in vtypes.values()
+               if spec['vClass'] != 'pedestrian')
+    rou_out = tmp_path / 'Town10HD_vissim.rou.xml'
+    assert rou.main(['--inpx', str(path), '--net', str(out), '--out', str(rou_out), '--horizon', '600']) == 0
+    text = rou_out.read_text(encoding='utf-8')
+    assert '<person ' in text and '<walk from="ped_area9001" to="ped_area9002"' in text

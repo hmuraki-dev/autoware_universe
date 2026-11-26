@@ -179,6 +179,37 @@ class Inpx:
                            for x in decision.iter('vehClassDesSpeedDistribution')}))
 
         self.pedestrian_inputs = len(_section(root, 'pedestrianInputs'))
+
+        # 歩行者: 入力(待ち場所から)、静的経路(待ち場所 -> 待ち場所)、構成、歩行者タイプ、競合エリアの余裕
+        self.ped_inputs = []
+        for item in _section(root, 'pedestrianInputs'):
+            volumes = list(item.iter('timeIntervalPedVolume'))
+            if len(volumes) != 1:
+                raise InpxError(f'歩行者入力 {item.get("no")} の時間帯が 1 つでない(時間帯ごとの流量は写せない)')
+            if volumes[0].get('volType') != 'STOCHASTIC':
+                raise InpxError(f'歩行者入力 {item.get("no")} が STOCHASTIC でない: {volumes[0].get("volType")}')
+            self.ped_inputs.append(dict(no=item.get('no'), area=item.find('location').get('area'),
+                                        volume=float(volumes[0].get('volume')),
+                                        composition=volumes[0].get('pedComp')))
+        self.ped_routes = {}
+        for decision in _section(root, 'pedestrianRoutingDecisionsStatic'):
+            routes = []
+            for route in decision.iter('pedestrianRouteStatic'):
+                areas = [p.get('area') for p in route.iter('pedestrianRouteLocation')]
+                routes.append(dict(no=route.get('no'), dest=areas[-1],
+                                   share=_rel_flow(route.get('relFlow'), decision.get('no'), route.get('no'))))
+            self.ped_routes.setdefault(decision.find('location').get('area'), []).extend(routes)
+        self.ped_compositions = {
+            c.get('no'): [(x.get('pedType'), float(x.get('relFlow')), x.get('desSpeedDistr'))
+                          for x in c.iter('pedestrianCompositionRelativeFlow')]
+            for c in _section(root, 'pedestrianCompositions')}
+        self.ped_types = {t.get('no'): dict(name=t.get('name') or '', model2D3DDistr=t.get('model2D3DDistr'))
+                          for t in _section(root, 'pedestrianTypes')}
+        ped_links = {no for no, link in self.links.items() if link['is_ped']}
+        # 歩行者リンクと車のリンクの競合エリアの、前の時間の余裕 [s]
+        self.ped_conflict_gaps = [float(c.get('frontGapDef'))
+                                  for c in _section(root, 'conflictAreas')
+                                  if {c.get('linkA'), c.get('linkB')} & ped_links and c.get('frontGapDef')]
         # 歩行者の待ち場所: 歩行者入力・歩行者の静的経路(出発・行き先)が使うエリア
         self.waiting_areas = set()
         for item in _section(root, 'pedestrianInputs'):
