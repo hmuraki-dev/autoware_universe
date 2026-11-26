@@ -752,7 +752,7 @@ Ctrl+Cで止めたときに、最後に`[ERROR] [launch]: Caught exception in la
 ## 3.1 CARLA 0.9.16(0.9.16_jp)で変わったこと
 
 2026-11-17に、`~/CARLA_0.9.16_jp/LinuxNoEditor`のファイルと、起動したサーバーで確かめた。
-**SUMO-CARLA-Autowareのco-simを0.9.16で通しで動かす確認は、まだしていない**(3.1.5)。
+SUMO-CARLA-Autowareのco-simを0.9.16で通しで動かす確認は、2026-11-26にした。確かめたこと・まだ確かめていないことは3.1.5。
 
 ### 3.1.1 Pythonクライアント
 
@@ -806,15 +806,26 @@ python3 check_jp_vehicles.py --out check_out   # ← 生成物
   `sumo_integration/data/vtypes.json`の車から選ぶため。
 - 日本の車を使うには、SUMOのvTypeの寸法を日本の車の外形に合わせ、2.2.5の(1)(2)(3)でTown10HDの表を作る。
 
-### 3.1.5 まだ確かめていないこと
+### 3.1.5 確かめたこと・まだ確かめていないこと
+
+**確かめたこと**(2026-11-26)
+
+| 項目 | 結果 |
+| --- | --- |
+| 2.4.1の起動コマンドで、EGOがスポーンし、目的地まで自動運転できるか | できた(利用者が確認)。Vissim構成(`Town10HD_vissim`)に歩行者を足した試験用のシナリオでも、EGOがスポーンし、自動運転で横断歩道の手前で止まった |
+| 信号の対応付け(`Traffic-light matching: 15 matched, ...`) | 起動ログに`Traffic-light matching: 15 matched, 0 ambiguous, 0 too far, 0 overridden (map has 62 heads / 30 groups)`が出た |
+| センサーのうちLiDAR | Autowareの認識(CenterPoint)で、CARLAの歩行者を見つけた |
+
+**まだ確かめていないこと**
 
 | 項目 | 確かめ方 |
 | --- | --- |
-| 2.4.1の起動コマンドで、EGOがスポーンし、目的地まで自動運転できるか | 2.4.1・2.4.2 |
-| Town10HDのSUMOのルートの車(`rou/Town10HD.rou.xml`のvType。`vehicle.audi.a2`などCARLAのブループリント名)が、0.9.16_jpにすべてあるか | 起動ログに`sumo vtype ... not supported`が出ないこと |
-| センサー(カメラ・LiDAR・GNSS・IMU)のトピックが0.9.15と同じに出るか | RViz、`ros2 topic hz` |
-| 信号の対応付け(`Traffic-light matching: 15 matched, ...`) | 3.5.2のgrep |
+| Town10HDのSUMOのルートの車(`rou/Town10HD.rou.xml`のvType。`vehicle.audi.a2`などCARLAのブループリント名)が、0.9.16_jpにすべてあるか | `Town10HD.sumocfg`で起動し、ログに`sumo vtype ... not supported`が出ないこと |
+| センサー(カメラ・GNSS・IMU)のトピックが0.9.15と同じに出るか | RViz、`ros2 topic hz` |
 | 0.9.16のサーバーから読み直したCARLAの信号が、0.9.15の`carla_tl.json`と同じか | 2.2.3の「作り直し」のあとの`diff` |
+
+- `sumo_carla_variants:=legacy_vtypes`でVissim構成の需要を走らせると、バスとトレーラー(`vissim_bus1031_s30_b0`など)は`not supported`になり、CARLAに出ない。
+  Vissim構成は、2.4.1のとおり`sumo_carla_variants`を指定せず(`auto`)、2.2.5の表(`carla_variants_sumo_town10hd_vissim.yaml`)を使う。
 
 ## 3.2 ウォームアップ・EGO安全スポーン
 
