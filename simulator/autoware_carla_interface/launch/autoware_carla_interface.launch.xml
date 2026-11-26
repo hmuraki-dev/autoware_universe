@@ -131,9 +131,12 @@
          the actor and re-acquires it if it is (re)spawned, so launch order does not matter.
          Uses executable (not node), because scripts/spectator_follow is a plain argparse
          script (not an rclpy node) and would reject the ros-args that a node action always
-         appends. -->
+         appends. Runs the installed script directly (not via "ros2 run"): with "ros2 run" in
+         between, a launch shutdown that escalates to SIGTERM stopped only the ros2 wrapper and
+         left spectator_follow running, and the next launch's spectator_follow then fought it
+         over the camera. -->
     <executable
-      cmd="ros2 run autoware_carla_interface spectator_follow --host $(var host) --port $(var port) --role $(var ego_vehicle_role_name)"
+      cmd="$(find-pkg-prefix autoware_carla_interface)/lib/autoware_carla_interface/spectator_follow --host $(var host) --port $(var port) --role $(var ego_vehicle_role_name)"
       output="screen"
       if="$(var spectator_follow)"
     />

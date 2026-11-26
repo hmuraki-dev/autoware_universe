@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 import argparse
 import math
+import signal
 import sys
 import time
 
@@ -29,6 +30,23 @@ def compute_spectator_transform(ego_transform, distance, height, pitch_deg):
     return carla.Transform(location, rotation)
 
 
+def stop_with_parent():
+    """Ask Linux to SIGTERM this process when its parent (the launch) dies.
+
+    Without it, a launch that is itself killed (SIGTERM/SIGKILL) leaves this loop running, and the
+    next launch's spectator_follow then fights it over the spectator camera.
+    """
+    if not sys.platform.startswith("linux"):
+        return
+    try:
+        import ctypes
+
+        pr_set_pdeathsig = 1
+        ctypes.CDLL("libc.so.6", use_errno=True).prctl(pr_set_pdeathsig, signal.SIGTERM)
+    except OSError:
+        pass
+
+
 def main():
     parser = argparse.ArgumentParser(
         description="Lock the CARLA spectator camera to the ego vehicle."
@@ -48,6 +66,7 @@ def main():
     )
     parser.add_argument("--rate", type=float, default=30.0, help="Update rate in Hz")
     args = parser.parse_args()
+    stop_with_parent()
 
     client = carla.Client(args.host, args.port)
     client.set_timeout(args.timeout)
