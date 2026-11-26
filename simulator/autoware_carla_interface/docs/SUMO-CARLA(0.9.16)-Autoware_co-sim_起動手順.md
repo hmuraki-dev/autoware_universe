@@ -247,6 +247,7 @@ Vissim構成の`vissim/Town10HD.inpx`から、`Town10HD_vissim.sumocfg`(2.4.1の
 - inpxで何を変えたときも、(1)〜(6)を順に行う(どれも数秒で終わる)。どの設定がどのファイルになるかは3.8.1。
 - **網(`sumo/net/Town10HD.net.xml`)は作り直さない。** 信号は、網に重ねる追加ファイル(`.tll.xml`)に書く(3.8.1)。
   inpxの道路網(リンク・コネクタ)を変えても、SUMOの網には入らない(SUMOの網はCARLAのOpenDRIVEから作ったもの)。
+  ただし、inpxに歩行者リンク(横断歩道)があるときだけ、今の網に横断歩道と歩道を足した網`sumo/net/Town10HD_vissim.net.xml`を作る((2)の後半)。
 - CARLAサーバーは要らない。
 
 **(1) inpxを写す**
@@ -275,6 +276,29 @@ python3 tools/sumo_inpx/vissim_to_rou.py --inpx vissim/Town10HD.inpx --net sumo/
   - `vissim_c1: <vTypeのID> <割合> <長さ> x <幅> m accel <加速度> decel <減速度> <希望速度>`(vTypeごと)
   - `vType <数>、車 <台数> 台、edge 数 <最小>〜<最大>(中央 <中央値>)`
 - `Error: ...`が出たら、inpxにツールが扱えない設定がある(3.8.2)。
+
+続けて、inpxの横断歩道(歩行者リンク)を確かめる。2.2.3の横断歩道の入った地図を使う。
+
+```bash
+python3 tools/sumo_inpx/vissim_to_crossings.py --inpx vissim/Town10HD.inpx --net sumo/net/Town10HD.net.xml \
+    --map ~/autoware_map/Town10HD/lanelet2_map_with_tl.osm --report
+```
+
+- `歩行者リンクが無い。横断歩道は足さない`が出たら、網はそのまま使う(今の`Town10HD.inpx`はこれ)。(3)へ進む。
+- `地図の横断歩道 <id>: 歩行者リンク <番号> -> 交差点 <SUMOの交差点> の edge <edge> ...`が出たら、横断歩道入りの網を作る(下)。
+
+**横断歩道入りの網の生成(上で横断歩道が出たときだけ)**
+
+```bash
+python3 tools/sumo_inpx/vissim_to_crossings.py --inpx vissim/Town10HD.inpx --net sumo/net/Town10HD.net.xml \
+    --map ~/autoware_map/Town10HD/lanelet2_map_with_tl.osm --out sumo/net/Town10HD_vissim.net.xml   # ← 生成物
+```
+
+> 📄 **生成物:** 今の網に、inpxの横断歩道(crossing)と待ち場所からの歩道を足した網と、その部品\
+> `sumo/net/Town10HD_vissim.net.xml`、`sumo/net/Town10HD_vissim.crossings.{nod,edg,con}.xml`
+
+- 作ったときは、(3)・(4)の`--net`を`sumo/net/Town10HD_vissim.net.xml`にし、`sumo/Town10HD_vissim.sumocfg`の`net-file`も
+  `net/Town10HD_vissim.net.xml`にする。車のつながり・`linkSignalID`は今の網と同じ(3.8.1)。
 
 **(3) 信号制御の生成**
 
@@ -1132,6 +1156,8 @@ python3 -c "import carla, importlib.metadata as m; print(m.version('carla'))"   
 | 運転挙動(Wiedemann 74の`ax`) | `carFollowModel="Wiedemann"`・`minGap` | 同上 |
 | 静的経路の経路決定(車両入力のリンクにあるもの。経路のリンク列・行き先・割合) | 車の`route`(経路に沿うedge列)と`arrivalPos`(行き先) | 同上 |
 | 希望速度決定(車両クラスごとの希望速度分布) | 決定点を通る車のvTypeの割合(変更後の分布の`vTypeDistribution`) | 同上 |
+| 歩行者リンク(横断歩道)・待ち場所 | 網の横断歩道(crossing。位置と幅は2.2.3の地図の横断歩道)と、待ち場所からの歩道`ped_area<エリアの番号>` | `sumo/net/Town10HD_vissim.net.xml`((2)の後半) |
+| 歩行者信号灯(歩行者リンクの上の信号灯)の信号グループ | 横断歩道のlinkIndexの色(青だけ`G`) | `sumo/tll/Town10HD_vissim.tll.xml`((3)) |
 
 - 網(`.net.xml`)は変えない。信号は追加ファイル`.tll.xml`に、網と同じIDの`tlLogic`の新しいプログラム`vissim`として書く。
   SUMOは最後に読んだプログラムを使うので、`.sumocfg`の`additional-files`で読ませると、網のプログラム(周期90 s)の代わりにこちらが使われる。
@@ -1148,7 +1174,18 @@ python3 -c "import carla, importlib.metadata as m; print(m.version('carla'))"   
     作ったファイルの先頭のコメントに書く。
 - 希望速度決定: 決定点を通る車(経路決定の無い車も、その車のedge列で調べる)に、変更後の速度分布を**出発時から**使う
   (SUMOの車は走っている途中でvTypeを変えられない)。決定点を2つ以上通るときは、最初に通るものを使う。
-- 写していないもの: 道路網(リンク・コネクタ)、Wiedemann 74の`bx`、加速度の速度による変化と車ごとのばらつき、歩行者。
+- 横断歩道(2026-11-26に追加。`vissim_to_crossings.py`。統一仕様`docs/SUMO_inpx変換_統一仕様_v1.0.md`の4・5章):
+  - 歩行者リンク(コネクタでないもの)ごとに、中ほどが地図の横断歩道の中心線の近く(半幅 + 1 m)にあり、向きが30度以内の横断歩道を対応付ける。
+  - 渡る車の道は、横断歩道の中心線の近く(8 m以内)で交差点に入る・出る、横断歩道と45度以上交わる道。Town10HDの地図の横断歩道16個は、
+    どれも1つの交差点の、入る道と出る道の2本になる(2026-11-26に確かめた)。
+  - 横断歩道は地図の横断歩道の両端から1 mずつ延ばし、`priority="true"`(車が歩行者に譲る)にする。
+  - 待ち場所(歩行者入力・歩行者の経路が使うエリア)が横断歩道の端の近く(15 m以内)にあれば、横断歩道の延長線上に歩道を足す。
+    無い端は、網の今の歩道(OpenDRIVEから作った歩道)につながる。
+  - 網は作り直さず、netconvertで今の網に部品を足す。変わるのは横断歩道のある交差点の信号プログラム(netconvertが横断歩道のlinkIndexを
+    車の後ろに足す)と、歩行者の通り道(walkingarea)だけ。車のつながり・linkIndex・`linkSignalID`・ほかの信号は変わらない。
+  - 信号のある交差点の横断歩道には、歩行者信号灯が要る。その色は信号グループが青のときだけ`G`(青点滅・黄・赤は`r`)。
+    横断歩道が青の間、交わる車のリンクは`g`(譲る)。
+- 写していないもの: 道路網(リンク・コネクタ)、Wiedemann 74の`bx`、加速度の速度による変化と車ごとのばらつき、歩行者の需要(歩行者入力)。
 - 経路と希望速度決定は、`Town10HD.inpx`には無い。これらを足したinpxで作れることは、テスト(`test/test_sumo_inpx.py`の
   `test_town10hd_static_routes_follow_the_route`など。`Town10HD.inpx`に経路決定と希望速度決定を足したもので確かめる)で確かめた。
   Vissimで作ったinpxでは、まだ確かめていない。
@@ -1191,6 +1228,11 @@ python3 -c "import carla, importlib.metadata as m; print(m.version('carla'))"   
 | `経路決定 <番号> が一部の車両クラスだけのもの` | 経路決定が「全車種」でない | 全車種にする |
 | `経路決定 <番号> の経路 <番号> の割合の時間帯が 1 つでない` | 経路の割合が時間帯ごとに違う | 時間帯を1つにする |
 | `流入 <番号>(リンク <番号>)の経路がどれも SUMO の網で着けない` | 経路のリンク列の近くを通るSUMOのedge列が無い | 経路のリンク列・行き先を確かめる |
+| `歩行者リンク <番号>(...)に合う地図の横断歩道が 1 つでない` | 歩行者リンクの近くに地図の横断歩道が無い(または2つある) | 歩行者リンクを地図の横断歩道に合わせて置く。地図に横断歩道が入っているか確かめる(2.2.3) |
+| `地図の横断歩道 <id> の渡る車道が 1 つの交差点に集まらない` | 横断歩道が交差点の近くに無い | 地図の横断歩道の位置を確かめる |
+| `待ち場所 <番号> が地図の横断歩道 <id> の延長線上に無い` | 横断歩道の端の近くの待ち場所が、横断歩道の延長線上に無い | 待ち場所を横断歩道の延長線上に置く |
+| `tlLogic <id> の横断歩道 ... に歩行者信号灯が無い` | 信号のある交差点の横断歩道に、歩行者信号灯が無い | 歩行者リンクに歩行者信号灯を置く |
+| `tlLogic <id> の横断歩道 ... に別の信号グループの歩行者信号灯がある` | 1本の横断歩道の歩行者信号灯が、違う信号グループにある | 同じ信号グループにする |
 | `希望速度決定 <番号> がコネクタ <番号> の上にある` | 希望速度決定がコネクタの上にある | リンクの上に置く |
 | `リンク <番号> の希望速度決定が車線ごとに違う` | 同じリンクの車線ごとに、違う希望速度分布の決定がある | 全車線で同じ分布にする |
 | `inpx に歩行者の流入が ... 本ある` | 歩行者の入力がある | 歩行者の入力を消す |

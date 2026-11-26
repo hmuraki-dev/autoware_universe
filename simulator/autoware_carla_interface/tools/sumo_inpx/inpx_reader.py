@@ -24,6 +24,7 @@ import xml.etree.ElementTree as ET
 
 # Vissim の信号の表示(display の state)
 GREEN, AMBER, RED, REDAMBER = 'GREEN', 'AMBER', 'RED', 'REDAMBER'
+FLASH = 'FLASHING_GREEN'
 # link_to_edge の許容
 HEADING_TOLERANCE_DEG = 45.0
 LATERAL_MARGIN_M = 0.5
@@ -88,7 +89,11 @@ class Inpx:
                 no=link.get('no'), name=link.get('name') or '',
                 pts=_points(link, 'linkPolyPoint'),
                 widths=[float(lane.get('width', '3.5')) for lane in (lanes if lanes is not None else [])],
-                connector=link.find('fromLinkEndPt') is not None)
+                connector=link.find('fromLinkEndPt') is not None,
+                is_ped=link.get('isPedArea') == 'true')
+
+        # 歩行者の待ち場所などのエリア: 番号 -> 頂点の並び
+        self.areas = {area.get('no'): _points(area, 'point') for area in _section(root, 'areas')}
 
         self.models = {}
         for model in root.iter('model2D3D'):
@@ -174,6 +179,19 @@ class Inpx:
                            for x in decision.iter('vehClassDesSpeedDistribution')}))
 
         self.pedestrian_inputs = len(_section(root, 'pedestrianInputs'))
+        # 歩行者の待ち場所: 歩行者入力・歩行者の静的経路(出発・行き先)が使うエリア
+        self.waiting_areas = set()
+        for item in _section(root, 'pedestrianInputs'):
+            location = item.find('location')
+            if location is not None and location.get('area'):
+                self.waiting_areas.add(location.get('area'))
+        for decision in _section(root, 'pedestrianRoutingDecisionsStatic'):
+            location = decision.find('location')
+            if location is not None and location.get('area'):
+                self.waiting_areas.add(location.get('area'))
+            for point in decision.iter('pedestrianRouteLocation'):
+                if point.get('area'):
+                    self.waiting_areas.add(point.get('area'))
 
         self.controllers = {}
         for controller in root.iter('signalController'):
@@ -234,6 +252,8 @@ def signal_timeline(supply_xml):
             begin = offset_ms + int(cmd.get('begin'))
             if colour == RED and fixed.get(AMBER):
                 out.append((begin - fixed[AMBER], AMBER))
+            if colour == RED and fixed.get(FLASH):
+                out.append((begin - fixed[FLASH] - fixed.get(AMBER, 0), FLASH))
             if colour == GREEN and fixed.get(REDAMBER):
                 out.append((begin - fixed[REDAMBER], REDAMBER))
             out.append((begin, colour))
@@ -281,6 +301,16 @@ def signal_timeline(supply_xml):
     return cycle / 1000.0, timeline
 
 
+def pedestrian_signal_heads(inpx):
+    """歩行者リンクの上の信号灯 -> {歩行者リンク: {(信号制御, 信号グループ)}}。"""
+    result = {}
+    for head in inpx.signal_heads:
+        link = (head['lane'] or ' ').split()[0]
+        if inpx.links.get(link, {}).get('is_ped'):
+            result.setdefault(link, set()).add((head['controller'], head['group']))
+    return result
+
+
 def colour_at(timeline, t):
     colour = timeline[0][1]
     for start, c in timeline:
@@ -300,6 +330,8 @@ def carla_signal_groups(inpx):
     """
     result = {}
     for head in inpx.signal_heads:
+        if head['lane'] and inpx.links.get(head['lane'].split()[0], {}).get('is_ped'):
+            continue   # 歩行者信号灯(歩行者リンクの上)は CARLA の信号機に対応しない(pedestrian_signal_groups)
         match = CARLA_HEAD_NAME.fullmatch(head['name'].strip())
         if not match:
             raise InpxError(f'信号灯 {head["no"]} の名前 {head["name"]!r} が「CARLA <信号 ID>」でない')

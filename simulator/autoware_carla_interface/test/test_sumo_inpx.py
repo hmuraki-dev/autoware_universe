@@ -497,3 +497,154 @@ def test_town10hd_rou_is_reproduced(tmp_path):
     text = out.read_text(encoding='utf-8')
     assert text.count('<vehicle ') == 582
     assert '--' not in text.split('-->')[0][len('<?xml version="1.0" encoding="UTF-8"?>\n<!--'):]
+
+
+# ---------------------------------------------------------------- 横断歩道(vissim_to_crossings.py)
+
+crossings = _load('vissim_to_crossings')
+HAVE_NETCONVERT = __import__('shutil').which('netconvert') is not None
+needs_netconvert = pytest.mark.skipif(not HAVE_NETCONVERT, reason='netconvert が無い')
+
+# Town10HD の地図(lanelet2_map_with_tl.osm)の横断歩道 9725(交差点 189 の北の枝を渡る)だけの地図
+CROSSWALK_9725 = dict(left=[(-36.702, -4.993), (-57.289, -4.104)], right=[(-35.726, -2.535), (-58.324, -1.554)])
+
+
+def _crosswalk_map(tmp_path):
+    nodes, ids = [], {}
+    for side in ('left', 'right'):
+        for k, (x, y) in enumerate(CROSSWALK_9725[side]):
+            ids[(side, k)] = 100 + len(ids)
+            nodes.append(f'<node id="{ids[(side, k)]}" lat="0" lon="0"><tag k="ele" v="0"/>'
+                         f'<tag k="local_x" v="{x}"/><tag k="local_y" v="{y}"/></node>')
+    text = ('<?xml version="1.0"?>\n<osm version="0.6">\n' + '\n'.join(nodes)
+            + f'\n<way id="200"><nd ref="{ids[("left", 0)]}"/><nd ref="{ids[("left", 1)]}"/></way>'
+            + f'\n<way id="201"><nd ref="{ids[("right", 0)]}"/><nd ref="{ids[("right", 1)]}"/></way>'
+            + '\n<relation id="9725"><member type="way" ref="200" role="left"/><member type="way" ref="201" role="right"/>'
+            + '<tag k="type" v="lanelet"/><tag k="subtype" v="crosswalk"/></relation>\n</osm>\n')
+    path = tmp_path / 'lanelet2_map_with_tl.osm'
+    path.write_text(text, encoding='utf-8')
+    return path
+
+
+def _town10hd_with_crosswalk(tmp_path, head='1 1', offset=0.0):
+    """Town10HD.inpx に、横断歩道 9725 に沿う歩行者リンク 9001・両端の待ち場所 9001/9002・歩行者入力・
+    歩行者信号灯(信号グループ head。'' なら無し)を足す。offset [m] は歩行者リンクを横にずらす量。"""
+    left, right = CROSSWALK_9725['left'], CROSSWALK_9725['right']
+    s = ((left[0][0] + right[0][0]) / 2, (left[0][1] + right[0][1]) / 2)
+    e = ((left[1][0] + right[1][0]) / 2, (left[1][1] + right[1][1]) / 2)
+    length = ((e[0] - s[0]) ** 2 + (e[1] - s[1]) ** 2) ** 0.5
+    u = ((e[0] - s[0]) / length, (e[1] - s[1]) / length)
+    n = (-u[1], u[0])
+    s, e = (s[0] + n[0] * offset, s[1] + n[1] * offset), (e[0] + n[0] * offset, e[1] + n[1] * offset)
+
+    def rect(p, out):
+        a = (p[0] + out[0] * 1.5, p[1] + out[1] * 1.5)
+        b = (p[0] + out[0] * 5.5, p[1] + out[1] * 5.5)
+        return [(a[0] + n[0] * 1.5, a[1] + n[1] * 1.5), (b[0] + n[0] * 1.5, b[1] + n[1] * 1.5),
+                (b[0] - n[0] * 1.5, b[1] - n[1] * 1.5), (a[0] - n[0] * 1.5, a[1] - n[1] * 1.5)]
+
+    def area(no, pts):
+        return (f'<area no="{no}" name="wait"><geometry><points>'
+                + ''.join(f'<point x="{x}" y="{y}"/>' for x, y in pts) + '</points></geometry></area>\n')
+
+    text = (VISSIM / 'Town10HD.inpx').read_text(encoding='utf-8')
+    link = (f'<link no="9001" name="crosswalk" isPedArea="true" linkBehavType="1"><geometry><linkPolyPts>'
+            f'<linkPolyPoint x="{s[0]}" y="{s[1]}"/><linkPolyPoint x="{e[0]}" y="{e[1]}"/></linkPolyPts></geometry>'
+            '<lanes><lane width="2.7"/></lanes></link>\n')
+    text = text.replace('\t</links>', link + '\t</links>', 1)
+    text = text.replace('\t</areas>', area(9001, rect(s, (-u[0], -u[1]))) + area(9002, rect(e, u)) + '\t</areas>', 1)
+    ped = ('<pedestrianInputs><pedestrianInput no="1"><location area="9001"/></pedestrianInput></pedestrianInputs>\n'
+           '<pedestrianRoutingDecisionsStatic><pedestrianRoutingDecisionStatic no="1"><location area="9001"/>'
+           '<pedRoutSta><pedestrianRouteStatic no="1"><pedestrianRouteLocations><pedestrianRouteLocation area="9002"/>'
+           '</pedestrianRouteLocations></pedestrianRouteStatic></pedRoutSta></pedestrianRoutingDecisionStatic>'
+           '</pedestrianRoutingDecisionsStatic>\n')
+    text = text.replace('\t<pedestrianTypes>', ped + '\t<pedestrianTypes>', 1)
+    if head:
+        text = text.replace('\t</signalHeads>',
+                            f'<signalHead no="9001" name="ped" lane="9001 1" pos="1" sg="{head}"/>\n\t</signalHeads>', 1)
+    path = tmp_path / 'Town10HD_ped.inpx'
+    path.write_text(text, encoding='utf-8')
+    return path
+
+
+def test_pedestrian_links_areas_and_heads_are_read(tmp_path):
+    inpx = reader.Inpx(_town10hd_with_crosswalk(tmp_path))
+    assert inpx.links['9001']['is_ped'] and not inpx.links['1']['is_ped']
+    assert inpx.waiting_areas == {'9001', '9002'}
+    assert len(inpx.areas['9001']) == 4
+    assert reader.pedestrian_signal_heads(inpx) == {'9001': {('1', '1')}}
+    # 歩行者信号灯は CARLA の信号機の対応に入れない(名前が「CARLA <信号ID>」でなくても止めない)
+    assert len(reader.carla_signal_groups(inpx)) == 15
+
+
+def test_flashing_green_is_put_before_red():
+    supply = GROUP_SUPPLY.replace('<display id="4" name="Amber" state="AMBER"/>',
+                                  '<display id="4" name="Amber" state="AMBER"/>'
+                                  '<display id="5" name="Flash" state="FLASHING_GREEN"/>')
+    supply = supply.replace('<fixedstate display="4" duration="4000"/>', '<fixedstate display="5" duration="5000"/>')
+    _, timeline = reader.signal_timeline(supply)
+    assert timeline['1'] == [(0.0, 'GREEN'), (99.0, 'FLASHING_GREEN'), (104.0, 'RED')]
+
+
+@needs_sumolib
+def test_town10hd_has_no_crossing(tmp_path, town10hd, capsys):
+    _, net = town10hd
+    assert crossings.build(reader.Inpx(VISSIM / 'Town10HD.inpx'), net, _crosswalk_map(tmp_path)) == []
+    out = tmp_path / 'net' / 'Town10HD_vissim.net.xml'
+    assert crossings.main(['--inpx', str(VISSIM / 'Town10HD.inpx'), '--net', str(SUMO / 'net' / 'Town10HD.net.xml'),
+                           '--map', str(_crosswalk_map(tmp_path)), '--out', str(out)]) == 0
+    assert '歩行者リンクが無い' in capsys.readouterr().out
+    assert not out.exists()
+
+
+@needs_sumolib
+def test_crossing_is_matched_to_the_leg(tmp_path, town10hd):
+    _, net = town10hd
+    items = crossings.build(reader.Inpx(_town10hd_with_crosswalk(tmp_path)), net, _crosswalk_map(tmp_path))
+    assert len(items) == 1
+    item = items[0]
+    assert (item['crosswalk'], item['links'], item['node'], item['edges']) == ('9725', ['9001'], '189', ['-22', '-15'])
+    assert [sw['id'] for sw in item['sidewalks']] == ['ped_area9001', 'ped_area9002']
+
+
+@needs_sumolib
+def test_pedestrian_link_off_the_crosswalks_is_refused(tmp_path, town10hd):
+    _, net = town10hd
+    inpx = reader.Inpx(_town10hd_with_crosswalk(tmp_path, offset=6.0))
+    with pytest.raises(crossings.CrossingError):
+        crossings.build(inpx, net, _crosswalk_map(tmp_path))
+
+
+@needs_sumolib
+@needs_netconvert
+def test_crossing_net_and_pedestrian_signal(tmp_path):
+    inpx = _town10hd_with_crosswalk(tmp_path)
+    out = tmp_path / 'net' / 'Town10HD_vissim.net.xml'
+    assert crossings.main(['--inpx', str(inpx), '--net', str(SUMO / 'net' / 'Town10HD.net.xml'),
+                           '--map', str(_crosswalk_map(tmp_path)), '--out', str(out)]) == 0
+    base = tll.read_net_programs(SUMO / 'net' / 'Town10HD.net.xml')
+    programs = tll.read_net_programs(out)
+    # 車の linkIndex・linkSignalID はそのまま。横断歩道は後ろ(18)に付く
+    assert programs['189']['params'] == base['189']['params']
+    assert list(programs['189']['crossings']) == [18]
+    assert all(programs[t]['phases'] == base[t]['phases'] for t in base if t != '189')
+    logics, _ = tll.build(reader.Inpx(inpx), programs)
+    phases = {logic['id']: logic['phases'] for logic in logics}
+    # 歩行者信号灯は信号グループ 1(車の 0〜3・8〜12 と同じ時間に青)。その間、交わる車のリンク 0 は g
+    assert phases['189'] == [(42.0, 'gGGgrrrrGGGggrrrrrG'), (3.0, 'yyyyrrrryyyyyrrrrrr'), (2.0, 'r' * 19),
+                             (42.0, 'rrrrGGGgrrrrrGGGggr'), (3.0, 'rrrryyyyrrrrryyyyyr'), (2.0, 'r' * 19)]
+    # 横断歩道の無い信号は、今の網から作るものと同じ
+    before, _ = tll.build(reader.Inpx(inpx), base)
+    assert {k: v for k, v in phases.items() if k != '189'} == \
+        {logic['id']: logic['phases'] for logic in before if logic['id'] != '189'}
+
+
+@needs_sumolib
+@needs_netconvert
+def test_crossing_without_pedestrian_signal_is_refused(tmp_path):
+    inpx = _town10hd_with_crosswalk(tmp_path, head='')
+    out = tmp_path / 'net' / 'Town10HD_vissim.net.xml'
+    assert crossings.main(['--inpx', str(inpx), '--net', str(SUMO / 'net' / 'Town10HD.net.xml'),
+                           '--map', str(_crosswalk_map(tmp_path)), '--out', str(out)]) == 0
+    with pytest.raises(tll.TllError):
+        tll.build(reader.Inpx(inpx), tll.read_net_programs(out))
