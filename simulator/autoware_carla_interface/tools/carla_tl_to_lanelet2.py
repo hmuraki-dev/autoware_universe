@@ -251,7 +251,12 @@ class Lanelet2Map:
         closest to the point wins.
         """
         candidates = []
-        for lanelet_id, (_, left, right) in self.lanelets.items():
+        for lanelet_id, (rel, left, right) in self.lanelets.items():
+            # Only road lanelets carry stop lines (not crosswalks added by
+            # carla_crosswalks_to_lanelet2.py, which overlap the approach lanes)
+            tags = {t.get("k"): t.get("v") for t in rel.findall("tag")}
+            if tags.get("subtype", "road") != "road":
+                continue
             if not _point_in_polygon(point[0], point[1], left + right[::-1]):
                 continue
             ldir = _direction_near(left, point)
@@ -438,6 +443,14 @@ class _OsmBuilder:
         ET.SubElement(rel, "member", {"type": "way", "ref": str(stop_way_id), "role": "ref_line"})
         ET.SubElement(rel, "tag", {"k": "subtype", "v": "traffic_light"})
         ET.SubElement(rel, "tag", {"k": "type", "v": "regulatory_element"})
+        self.new_relations.append(rel)
+
+    def add_lanelet(self, lanelet_id, left_way_id, right_way_id, tags):
+        rel = ET.Element("relation", {"id": str(lanelet_id), "visible": "true", "version": "1"})
+        ET.SubElement(rel, "member", {"type": "way", "ref": str(left_way_id), "role": "left"})
+        ET.SubElement(rel, "member", {"type": "way", "ref": str(right_way_id), "role": "right"})
+        for key, value in tags.items():
+            ET.SubElement(rel, "tag", {"k": key, "v": value})
         self.new_relations.append(rel)
 
     def attach(self, lanelet_id, regelem_id):

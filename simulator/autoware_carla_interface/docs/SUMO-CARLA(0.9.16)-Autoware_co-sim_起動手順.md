@@ -191,9 +191,9 @@ python3 tools/sumo_net/add_carla_tls.py $XODR $TMP/base.net.xml --edge-suffix ''
 CARLAの信号状態をAutowareへ直接通知する(2.4.1の`traffic_light.publish:=true`)ときに使う、信号入りの地図を作る。仕組みと注意点は3.5を参照。
 
 **注意**:
-- **0.9.15で作った`~/autoware_map/Town10HD/lanelet2_map_with_tl.osm`があれば、作り直さなくてよい。** 下の照合だけ行う。
-  CARLAの信号(OpenDRIVEの信号ID・位置)は、0.9.15と同じ`Town10HD.xodr`から作られるため(3.1.2)。
-- 作り直すのは、CARLAの信号・元の地図・停止線をずらす量を変えたとき。
+- **横断歩道の入った`~/autoware_map/Town10HD/lanelet2_map_with_tl.osm`(2026-11-26以降に作ったもの)があれば、作り直さなくてよい。** 下の照合だけ行う。
+  `grep -c 'v="crosswalk"' ~/autoware_map/Town10HD/lanelet2_map_with_tl.osm`が`16`なら、横断歩道が入っている(`0`なら作り直す)。
+- 作り直すのは、横断歩道が入っていないとき、またはCARLAの信号・横断歩道・元の地図・停止線をずらす量を変えたとき。
 - 2.2.1で`Town10HD_Opt`を読み込んでおくこと。
 
 **照合(毎回の起動では不要。0.9.16に切り替えたときに1回)**
@@ -210,24 +210,30 @@ python3 tools/check_sumo_lanelet2_tl_ids.py sumo/net/Town10HD.net.xml \
 **作り直し(上の「注意」の対象を変えたときだけ)**
 
 `lanelet2_map.osm`は、0.9.15のときに重複点を直してある(直す前の地図は`lanelet2_map.osm.orig`)。ここでは直さない。
-CARLAの信号は、0.9.16のサーバーから読み直す(`--dump-json`。`carla_tl.json`を上書きする)。
+先に横断歩道を足し、その地図に信号を足す(信号入りの地図の名前は今までどおり`lanelet2_map_with_tl.osm`)。
+CARLAの横断歩道と信号は、0.9.16のサーバーから読み直す(`--dump-json`。`carla_crosswalks.json`・`carla_tl.json`を上書きする)。
 
 ```bash
 cd ~/autoware.1.9.0/src/universe/autoware_universe/simulator/autoware_carla_interface
 # 0.9.15で読んだ信号を残しておく(0.9.16で読んだものと比べるため)
 cp -n ~/autoware_map/Town10HD/carla_tl.json ~/autoware_map/Town10HD/carla_tl_carla0.9.15.json
-python3 tools/carla_tl_to_lanelet2.py ~/autoware_map/Town10HD_Opt/lanelet2_map.osm \
+python3 tools/carla_crosswalks_to_lanelet2.py ~/autoware_map/Town10HD_Opt/lanelet2_map.osm \
+    --dump-json ~/autoware_map/Town10HD_Opt/carla_crosswalks.json --force   # ← 生成物
+python3 tools/carla_tl_to_lanelet2.py ~/autoware_map/Town10HD_Opt/lanelet2_map_with_crosswalk.osm \
+    --output ~/autoware_map/Town10HD_Opt/lanelet2_map_with_tl.osm \
     --dump-json ~/autoware_map/Town10HD_Opt/carla_tl.json --stop-line-forward-offset 0 --group-id-offset 100000 --force   # ← 生成物
 python3 tools/check_sumo_lanelet2_tl_ids.py sumo/net/Town10HD.net.xml \
     ~/autoware_map/Town10HD_Opt/lanelet2_map_with_tl.osm --carla-json ~/autoware_map/Town10HD_Opt/carla_tl.json \
     --report-mixed --group-id-offset 100000
 ```
 
-> 📄 **生成物:** 信号入りのLanelet2地図(Town10HD)と、CARLAの信号の記録\
-> `~/autoware_map/Town10HD_Opt/lanelet2_map_with_tl.osm`、`~/autoware_map/Town10HD_Opt/carla_tl.json`(実体は`~/autoware_map/Town10HD/`)
+> 📄 **生成物:** 横断歩道と信号の入ったLanelet2地図(Town10HD)、途中の横断歩道だけの地図、CARLAの横断歩道と信号の記録\
+> `~/autoware_map/Town10HD_Opt/lanelet2_map_with_tl.osm`、`lanelet2_map_with_crosswalk.osm`、`carla_crosswalks.json`、`carla_tl.json`(実体は`~/autoware_map/Town10HD/`)
 
 - `--force`は、すでにある地図を上書きする。元の地図(`lanelet2_map.osm`)は変更しない。
-- `WARNING: ... not added`が出たときは終了コードが2になる(3.5.1)。
+- 横断歩道のツールは`CARLA map Carla/Maps/Town10HD_Opt: 16 crosswalks`と、横断歩道ごとに重なる車線のlaneletを出す。
+  `WARNING: crosswalk lanelet ... overlaps no road lanelet`が出たときは終了コードが2になる(3.5.1)。
+- 信号のツールで`WARNING: ... not added`が出たときは終了コードが2になる(3.5.1)。
 - 0.9.15で読んだ信号と比べるときは、`diff <(python3 -m json.tool --sort-keys ~/autoware_map/Town10HD/carla_tl_carla0.9.15.json) <(python3 -m json.tool --sort-keys ~/autoware_map/Town10HD/carla_tl.json)`。
   違うのが`map`(マップ名。`Town10HD`と`Town10HD_Opt`)だけなら、信号は同じ。
 
@@ -931,6 +937,15 @@ CARLAから信号を読み取って地図に追加するツールで、信号入
   0.9.16では`Town10HD_Opt`が`Town10HD`へのシンボリックリンクなので、どちらのパスで作っても同じファイルになる。
 - `WARNING: ... not added`が出た信号は、停止位置に合うlaneletが見つからなかったもの、または前に出した停止線がlaneletの外に出たもの。終了コードは2になる。
 - 照合ツール(`check_sumo_lanelet2_tl_ids.py`)は、最後に`OK`(終了コード0)が出れば、CARLAの全信号がSUMOと地図の両方にある。ずれがあると`NG ...`と、そのIDが出る。
+- 横断歩道(2026-11-26に追加。`carla_crosswalks_to_lanelet2.py`):
+  - CARLAの`Map.get_crosswalks()`が返す横断歩道の外形(OpenDRIVEの横断歩道。Town10HDは16個、どれも4つの角)を、
+    `subtype=crosswalk`のlanelet(`participant:pedestrian=yes`、`one_way=no`)にする。長い2辺を左右の境界線(`type=pedestrian_marking`)にする。
+  - 16個とも車線のlaneletと重なる(長さ14〜26 m、幅2.5〜2.6 m)。Autowareの横断歩道モジュールは、経路の車線と重なる横断歩道のlaneletを
+    歩行者の経路グラフから見つけるので、横断歩道の規制要素(regulatory element)は足さない(停止線はモジュールが決める)。
+  - 信号のツールは、停止位置のlaneletを探すとき、横断歩道のlaneletを飛ばす(車線だけに停止線を付ける)。
+    横断歩道を足した地図に信号を足しても、信号の付く車線は足す前と同じ30か所(2026-11-26に確かめた)。
+  - 横断歩道を足す前の地図は`lanelet2_map_with_tl_before_crosswalk.osm`として残してある。
+  - 横断歩道の位置は、SUMOの横断歩道の位置にも使う(統一仕様`docs/SUMO_inpx変換_統一仕様_v1.0.md`のD2・4章)。
 - 信号の手前に向かうスポーン地点: 信号954の手前(CARLAのスポーン地点#80、SUMOの`1_4`、ルートの34台が通る)
   `spawn_point:="30.02,133.95,0.30,0.0,0.0,-179.7"`。CARLAの停止位置まで51 m、手前の交差点から110 m
   (後ろ36 mから先はカーブ)。SUMOの車両の19台がこのedge(`1`)の始点から出発するが、スポーン地点から約110 m後ろ。
