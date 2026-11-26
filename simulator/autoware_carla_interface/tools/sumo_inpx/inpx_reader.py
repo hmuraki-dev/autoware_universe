@@ -63,6 +63,17 @@ def _section(root, tag):
     return list(found) if found is not None else []
 
 
+def _rel_flow(text, decision, route):
+    """経路の relFlow「<時間帯の組> <開始>:<割合>」-> 割合。時間帯が 2 つ以上あるときは止める。"""
+    if not text:
+        return 1.0
+    parts = text.split()[1:] or text.split()
+    if len(parts) != 1:
+        raise InpxError(f'経路決定 {decision} の経路 {route} の割合の時間帯が 1 つでない: {text!r}'
+                        '(時間帯ごとの割合は写せない)')
+    return float(parts[0].split(':')[-1])
+
+
 class Inpx:
     """inpx の、リンクの幾何・車種・3D モデル・車両構成・速度分布・加減速の関数・運転挙動・流入・信号。"""
 
@@ -137,7 +148,31 @@ class Inpx:
             self.inputs.append(dict(no=vi.get('no'), link=vi.get('link'), volume=float(volume.get('volume')),
                                     composition=volume.get('vehComp')))
 
-        self.has_static_routes = any(True for _ in root.iter('vehicleRouteStatic'))
+        self.vehicle_classes = {c.get('no'): [e.get('key') for e in c.iter('intObjectRef')]
+                                for c in _section(root, 'vehicleClasses')}
+
+        # 静的経路の経路決定: 決定点のリンク -> 行き先リンクまでのリンク列(コネクタを含む)と割合
+        self.routing_decisions = []
+        for decision in _section(root, 'vehicleRoutingDecisionsStatic'):
+            routes = []
+            for route in decision.iter('vehicleRouteStatic'):
+                routes.append(dict(no=route.get('no'), dest=route.get('destLink'),
+                                   dest_pos=float(route.get('destPos')) if route.get('destPos') else None,
+                                   share=_rel_flow(route.get('relFlow'), decision.get('no'), route.get('no')),
+                                   via=[e.get('key') for e in route.iter('intObjectRef')]))
+            self.routing_decisions.append(dict(
+                no=decision.get('no'), link=decision.get('link'), pos=float(decision.get('pos') or 0.0),
+                all_types=decision.get('allVehTypes', 'true') == 'true', routes=routes))
+
+        # 希望速度決定: 決定点(リンク・車線・位置)-> {車両クラス: 速度分布}
+        self.speed_decisions = []
+        for decision in _section(root, 'desSpeedDecisions'):
+            link, lane = (decision.get('lane') or ' ').split()
+            self.speed_decisions.append(dict(
+                no=decision.get('no'), link=link, lane=int(lane), pos=float(decision.get('pos') or 0.0),
+                per_class={x.get('vehClass'): x.get('desSpeedDistr')
+                           for x in decision.iter('vehClassDesSpeedDistribution')}))
+
         self.pedestrian_inputs = len(_section(root, 'pedestrianInputs'))
 
         self.controllers = {}
@@ -310,6 +345,23 @@ def _midpoint(points):
             return (ax + t * (bx - ax), ay + t * (by - ay)), math.degrees(math.atan2(by - ay, bx - ax))
         walked += seg
     raise InpxError('長さ 0 のポリライン')
+
+
+def point_at(points, s):
+    """ポリラインの始点から s [m] の点(範囲の外は端の点)。"""
+    walked = 0.0
+    for (ax, ay), (bx, by) in zip(points, points[1:]):
+        seg = math.hypot(bx - ax, by - ay)
+        if seg > 0 and walked + seg >= s:
+            t = max(0.0, (s - walked) / seg)
+            return (ax + t * (bx - ax), ay + t * (by - ay))
+        walked += seg
+    return points[-1] if s > 0 else points[0]
+
+
+def distance_to(points, x, y):
+    """点 (x, y) からポリラインまでの距離。"""
+    return _project(points, x, y)[2]
 
 
 def _angle_diff(a, b):

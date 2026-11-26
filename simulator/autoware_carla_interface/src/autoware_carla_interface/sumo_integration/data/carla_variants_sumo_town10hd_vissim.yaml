@@ -14,7 +14,7 @@
 #   dL・dW = CARLA の外形(LiDAR で測った外形、幅はミラー込み) − モデルの寸法 [m]
 name: carla_variants_sumo_town10hd_vissim
 generated_by: tools/carla_fleet/build_carla_variants.py
-generated_at: '2026-11-24T19:01:38+09:00'
+generated_at: '2026-11-26T13:36:36+09:00'
 
 # 生成元。ブリッジは起動時に geometry と rules の sha256 を照合し、違えば止める(variant_source_changed)
 #   geometry・rules のパスは、このファイルのあるディレクトリからの相対パス
@@ -23,7 +23,7 @@ generated_at: '2026-11-24T19:01:38+09:00'
 #   route-files の sha256 と照合し、違えば止める(variant_source_changed)
 sources:
   sumocfg: {path: ../../../../sumo/Town10HD_vissim.sumocfg, sha256: f058fdfd19df77b1acc07c81d8fe946bf3b4def43c80ea8df2e3acbb08f55324}
-  route_files: {rou/Town10HD_vissim.rou.xml: df72a0ab76890e1ffecf601d920a6c3b29d389864215244851990ee672debfd0}
+  route_files: {rou/Town10HD_vissim.rou.xml: "39612f9d3ecd32a3e5c88440a53860b87b295ab91ec81c483a4c586a3350fc1b"}
   geometry: {path: ../../data/carla_fleet/mesh_measurements_carla0.9.16_jp.json, sha256: "6fc7afa0f7a21938da8c0db3075ddedfa056ae37df72c57413fb5bdab88f89f6", carla_server_version: "294096eb1-dirty"}
   rules: {path: ../../data/carla_fleet/carla_variant_rules_carla0.9.16_jp.yaml, sha256: d4cb633fbd86c98451238732fc4e2ccb91e54308f0513bca79a409207ae1987b}
 

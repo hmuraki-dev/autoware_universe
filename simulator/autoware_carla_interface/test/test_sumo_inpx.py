@@ -194,7 +194,8 @@ def test_town10hd_controllers(town10hd):
         assert cycle == 94.0
         assert timeline['1'] == [(0.0, 'GREEN'), (42.0, 'AMBER'), (45.0, 'RED')]
     assert len(reader.carla_signal_groups(inpx)) == 15
-    assert not inpx.has_static_routes
+    assert inpx.routing_decisions == []
+    assert inpx.speed_decisions == []
     assert inpx.pedestrian_inputs == 0
 
 
@@ -286,12 +287,168 @@ def test_speed_bins():
         [(0.5, 30 / 3.6, 35 / 3.6), (0.5, 35 / 3.6, 40 / 3.6)]
 
 
-def test_static_routes_are_refused(tmp_path):
-    extra = '<vehicleRoutingDecisionsStatic><vehicleRoutingDecisionStatic no="1" link="1">' \
-            '<vehRoutSta><vehicleRouteStatic no="1" destLink="1"/></vehRoutSta>' \
-            '</vehicleRoutingDecisionStatic></vehicleRoutingDecisionsStatic>'
+INPUT_ON_LINK_1 = ('<vehicleInput no="1" link="1"><timeIntVehVols>'
+                   '<timeIntervalVehVolume timeInt="1 0" vehComp="1" volType="STOCHASTIC" volume="10"/>'
+                   '</timeIntVehVols></vehicleInput>')
+
+
+def _decision(link='1', all_types='true', rel_flow='1 0:3'):
+    return (f'<vehicleRoutingDecisionsStatic><vehicleRoutingDecisionStatic no="1" link="{link}" pos="5" '
+            f'allVehTypes="{all_types}"><vehRoutSta>'
+            f'<vehicleRouteStatic no="1" destLink="1" destPos="20" relFlow="{rel_flow}">'
+            '<linkSeq><intObjectRef key="1"/></linkSeq></vehicleRouteStatic>'
+            '</vehRoutSta></vehicleRoutingDecisionStatic></vehicleRoutingDecisionsStatic>')
+
+
+def test_static_routes_are_read(tmp_path):
+    inpx = reader.Inpx(_inpx(tmp_path, inputs=INPUT_ON_LINK_1, extra=_decision()))
+    assert inpx.routing_decisions == [dict(no='1', link='1', pos=5.0, all_types=True, routes=[
+        dict(no='1', dest='1', dest_pos=20.0, share=3.0, via=['1'])])]
+    rou.check_supported(inpx)
+
+
+def test_route_share_with_two_time_intervals_is_refused(tmp_path):
+    with pytest.raises(reader.InpxError):
+        reader.Inpx(_inpx(tmp_path, inputs=INPUT_ON_LINK_1, extra=_decision(rel_flow='1 0:3 900:1')))
+
+
+def test_routing_decision_off_the_input_link_is_refused(tmp_path):
     with pytest.raises(rou.RouError):
-        rou.check_supported(reader.Inpx(_inpx(tmp_path, extra=extra)))
+        rou.check_supported(reader.Inpx(_inpx(tmp_path, extra=_decision())))
+
+
+def test_routing_decision_for_some_classes_is_refused(tmp_path):
+    with pytest.raises(rou.RouError):
+        rou.check_supported(reader.Inpx(_inpx(tmp_path, inputs=INPUT_ON_LINK_1, extra=_decision(all_types='false'))))
+
+
+def test_speed_decisions_are_read(tmp_path):
+    extra = ('<desSpeedDecisions><desSpeedDecision no="1" lane="1 2" pos="10"><desSpeedDistrs>'
+             '<vehClassDesSpeedDistribution vehClass="10" desSpeedDistr="50"/></desSpeedDistrs></desSpeedDecision>'
+             '</desSpeedDecisions><vehicleClasses><vehicleClass no="10"><vehTypes><intObjectRef key="100"/>'
+             '</vehTypes></vehicleClass></vehicleClasses>')
+    inpx = reader.Inpx(_inpx(tmp_path, extra=extra))
+    assert inpx.speed_decisions == [dict(no='1', link='1', lane=2, pos=10.0, per_class={'10': '50'})]
+    assert inpx.vehicle_classes == {'10': ['100']}
+    assert rou.override_of(inpx, dict(per_class={'10': '50'})) == {'100': '50'}
+
+
+def test_branch_shares_split_at_each_branch():
+    class E:
+        def __init__(self, name):
+            self.name = name
+
+        def getID(self):
+            return self.name
+
+    a, b, c, d, e = E('a'), E('b'), E('c'), E('d'), E('e')
+    assert rou.branch_shares([[a, b], [a, c, d], [a, c, e]]) == [0.5, 0.25, 0.25]
+    assert rou.branch_shares([[a, b]]) == [1.0]
+
+
+def test_first_speed_decision_on_the_path():
+    points = [dict(edge='-2', pos=10.0, link='5'), dict(edge='4', pos=30.0, link='3')]
+    assert rou.first_speed_decision(points, ['4', '-2'], 0.0)['link'] == '3'
+    # 出発位置より後ろの決定点は通らない
+    assert rou.first_speed_decision(points, ['4', '-2'], 40.0)['link'] == '5'
+    assert rou.first_speed_decision(points, ['1', '2'], 0.0) is None
+
+
+# Town10HD.inpx に足す経路決定(流入 1 のリンク 3 -> 90 -> 5 -> 82 -> 7 と、-> 85 -> 44)と
+# 希望速度決定(リンク 5 の 2 車線。乗用車 50 km/h、バス 40 km/h)
+TOWN10HD_ROUTES = '''
+  <vehicleRoutingDecisionsStatic>
+    <vehicleRoutingDecisionStatic allVehTypes="true" link="3" no="1" pos="5"><vehRoutSta>
+      <vehicleRouteStatic destLink="7" destPos="20" no="1" relFlow="1 0:3"><linkSeq>
+        <intObjectRef key="10002"/><intObjectRef key="90"/><intObjectRef key="10126"/><intObjectRef key="5"/>
+        <intObjectRef key="10004"/><intObjectRef key="82"/><intObjectRef key="10118"/></linkSeq></vehicleRouteStatic>
+      <vehicleRouteStatic destLink="44" destPos="20" no="2" relFlow="1 0:1"><linkSeq>
+        <intObjectRef key="10002"/><intObjectRef key="90"/><intObjectRef key="10126"/><intObjectRef key="5"/>
+        <intObjectRef key="10006"/><intObjectRef key="85"/><intObjectRef key="10121"/></linkSeq></vehicleRouteStatic>
+      <vehicleRouteStatic destLink="82" destPos="23" no="3" relFlow="1 0:0"><linkSeq>
+        <intObjectRef key="10002"/><intObjectRef key="90"/><intObjectRef key="10126"/><intObjectRef key="5"/>
+        <intObjectRef key="10004"/></linkSeq></vehicleRouteStatic>
+    </vehRoutSta></vehicleRoutingDecisionStatic>
+  </vehicleRoutingDecisionsStatic>
+  <desSpeedDecisions>
+    <desSpeedDecision lane="5 1" no="1" pos="10"><desSpeedDistrs>
+      <vehClassDesSpeedDistribution desSpeedDistr="50" vehClass="10"/>
+      <vehClassDesSpeedDistribution desSpeedDistr="40" vehClass="30"/></desSpeedDistrs></desSpeedDecision>
+    <desSpeedDecision lane="5 2" no="2" pos="10"><desSpeedDistrs>
+      <vehClassDesSpeedDistribution desSpeedDistr="50" vehClass="10"/>
+      <vehClassDesSpeedDistribution desSpeedDistr="40" vehClass="30"/></desSpeedDistrs></desSpeedDecision>
+  </desSpeedDecisions>
+'''
+
+
+def _town10hd_with_routes(tmp_path, extra=TOWN10HD_ROUTES):
+    text = (VISSIM / 'Town10HD.inpx').read_text(encoding='utf-8')
+    path = tmp_path / 'Town10HD_routes.inpx'
+    path.write_text(text.replace('\t<vehicleTypes>', extra + '\t<vehicleTypes>', 1), encoding='utf-8')
+    return path
+
+
+@needs_sumolib
+def test_town10hd_static_routes_follow_the_route(tmp_path, town10hd):
+    _, net = town10hd
+    inpx = reader.Inpx(_town10hd_with_routes(tmp_path))
+    rou.check_supported(inpx)
+    notes = []
+    options = rou.static_routes(inpx, net, inpx.inputs[0], net.getEdge('4'), notes)
+    assert notes == []
+    paths = {tuple(e.getID() for e in path): (round(weight, 3), round(arrival, 2), route)
+             for weight, path, arrival, route in options}
+    # 経路 3(割合 0)は使わない。リンク 7 は 4 m なので、destPos 20 は edge -3 の 4 m(リンクの終わり)
+    assert paths == {('4', '-2', '-3'): (0.75, 4.0, '1'), ('4', '-2', '21'): (0.25, 20.63, '2')}
+    vehicles, origins = rou.build_vehicles(inpx, net, 'vissim', 1, 3600.0, 2000.0)
+    assert origins['1']['routes'] == 2
+    routed = [v for v in vehicles if v['input'] == '1']
+    assert {tuple(v['edges']) for v in routed} == set(paths)
+    assert all(v['arrival_pos'] is not None for v in routed)
+    assert all(v['arrival_pos'] is None for v in vehicles if v['input'] != '1')
+
+
+@needs_sumolib
+def test_town10hd_route_ending_inside_a_junction(tmp_path, town10hd):
+    _, net = town10hd
+    extra = TOWN10HD_ROUTES.replace('relFlow="1 0:3"', 'relFlow="1 0:0"').replace(
+        'relFlow="1 0:1"', 'relFlow="1 0:0"').replace('destPos="23" no="3" relFlow="1 0:0"',
+                                                      'destPos="23" no="3" relFlow="1 0:1"')
+    inpx = reader.Inpx(_town10hd_with_routes(tmp_path, extra))
+    options = rou.static_routes(inpx, net, inpx.inputs[0], net.getEdge('4'), [])
+    # リンク 82(46 m)は交差点の中の道。その中ほどで消える経路は、交差点を出た edge -3 の頭で消す
+    assert [[e.getID() for e in path] for _, path, _, _ in options] == [['4', '-2', '-3']]
+    assert options[0][2] < 1.0
+
+
+@needs_sumolib
+def test_town10hd_speed_decision(tmp_path, town10hd):
+    _, net = town10hd
+    inpx = reader.Inpx(_town10hd_with_routes(tmp_path))
+    assert [(p['edge'], p['link']) for p in rou.speed_points(inpx, net)] == [('-2', '5')]
+    vehicles, _ = rou.build_vehicles(inpx, net, 'vissim', 1, 600.0, 2000.0)
+    for v in vehicles:
+        assert (v['speed'] == '5') == ('-2' in v['edges'])
+    vtypes, distributions = rou.build_types(inpx, {'1'}, 'vissim')
+    rou.assign_types(inpx, net, vehicles, 'vissim', vtypes, distributions)
+    changed = {v['type'] for v in vehicles if v['speed']}
+    assert changed == {'vissim_c1_s30_40_50'}
+    members = dict(distributions['vissim_c1_s30_40_50'])
+    assert sum(members.values()) == pytest.approx(1.0)
+    speeds = {vtypes[key]['vClass']: key.split('_s')[1].split('_')[0] for key in members}
+    assert speeds == {'passenger': '50', 'bus': '40', 'truck': '30', 'trailer': '30', 'motorcycle': '30'}
+    assert {v['type'] for v in vehicles if not v['speed']} == {'vissim_c1'}
+
+
+@needs_sumolib
+def test_speed_decisions_that_differ_by_lane_are_refused(tmp_path, town10hd):
+    _, net = town10hd
+    extra = TOWN10HD_ROUTES.replace('desSpeedDistr="50" vehClass="10"/>\n      <vehClassDesSpeedDistribution '
+                                    'desSpeedDistr="40" vehClass="30"/></desSpeedDistrs></desSpeedDecision>\n  </des',
+                                    'desSpeedDistr="60" vehClass="10"/></desSpeedDistrs></desSpeedDecision>\n  </des')
+    inpx = reader.Inpx(_town10hd_with_routes(tmp_path, extra))
+    with pytest.raises(rou.RouError):
+        rou.speed_points(inpx, net)
 
 
 @needs_sumolib
